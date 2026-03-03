@@ -1,0 +1,150 @@
+import { toArray } from "@main/utils/common";
+import { Website } from "@shared/enums";
+import type { ActorProfile, CrawlerData } from "@shared/types";
+import { XMLParser } from "fast-xml-parser";
+
+const WEBSITE_VALUES = new Set(Object.values(Website));
+
+const parseWebsite = (value: unknown): Website | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  return WEBSITE_VALUES.has(value as Website) ? (value as Website) : null;
+};
+
+const toStringValue = (value: unknown): string | undefined => {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  if (typeof value === "number") {
+    return String(value);
+  }
+  return undefined;
+};
+
+const parser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+});
+
+export const parseNfo = (xml: string): CrawlerData => {
+  const root = parser.parse(xml) as unknown;
+  if (!root || typeof root !== "object" || !("movie" in root)) {
+    throw new Error("Invalid NFO root");
+  }
+
+  const movie = (root as Record<string, unknown>).movie;
+  if (!movie || typeof movie !== "object") {
+    throw new Error("Invalid NFO movie node");
+  }
+
+  const movieNode = movie as Record<string, unknown>;
+  const title = toStringValue(movieNode.title) ?? "";
+  const originaltitle = toStringValue(movieNode.originaltitle);
+  const plot = toStringValue(movieNode.plot);
+  const premiered = toStringValue(movieNode.premiered);
+  const yearText = toStringValue(movieNode.year);
+  const runtimeText = toStringValue(movieNode.runtime);
+  const ratingText = toStringValue(movieNode.rating);
+
+  const uniqueidNode = movieNode.uniqueid;
+  const uniqueid =
+    uniqueidNode && typeof uniqueidNode === "object"
+      ? (uniqueidNode as Record<string, unknown>)["#text"]
+      : uniqueidNode;
+  const number = toStringValue(uniqueid) ?? "";
+
+  const website =
+    parseWebsite(movieNode.website) ??
+    (uniqueidNode && typeof uniqueidNode === "object"
+      ? parseWebsite((uniqueidNode as Record<string, unknown>)["@_type"])
+      : null);
+
+  if (!website) {
+    throw new Error("NFO missing website");
+  }
+
+  if (!title || !number) {
+    throw new Error("NFO missing required fields");
+  }
+
+  const actorNodes = toArray(movieNode.actor);
+  const actors = actorNodes
+    .map((node) => {
+      if (typeof node === "string") {
+        return node;
+      }
+      if (node && typeof node === "object") {
+        const nameValue = (node as Record<string, unknown>).name;
+        return toStringValue(nameValue) ?? "";
+      }
+      return "";
+    })
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+  const actorProfiles = actorNodes
+    .map((node): ActorProfile | null => {
+      if (!node || typeof node !== "object") {
+        return null;
+      }
+
+      const name = toStringValue((node as Record<string, unknown>).name);
+      if (!name) {
+        return null;
+      }
+
+      return {
+        name,
+        cover_url: toStringValue((node as Record<string, unknown>).thumb),
+      };
+    })
+    .filter((item): item is ActorProfile => item !== null);
+
+  const genres = toArray(movieNode.genre)
+    .map((item) => toStringValue(item) ?? "")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+  const coverUrl = toArray(movieNode.thumb)
+    .map((item) => {
+      if (typeof item === "string") {
+        return item;
+      }
+      if (item && typeof item === "object") {
+        return toStringValue((item as Record<string, unknown>)["#text"]) ?? "";
+      }
+      return "";
+    })
+    .find((item) => item.trim().length > 0);
+
+  const runtime = runtimeText ? Number.parseInt(runtimeText, 10) : undefined;
+  const rating = ratingText ? Number.parseFloat(ratingText) : undefined;
+  const releaseYear = yearText ? Number.parseInt(yearText, 10) : undefined;
+
+  return {
+    title: originaltitle ?? title,
+    title_zh: title,
+    number,
+    actors,
+    actor_profiles: actorProfiles.length > 0 ? actorProfiles : undefined,
+    genres,
+    studio: toStringValue(movieNode.studio),
+    director: toStringValue(movieNode.director),
+    publisher: toStringValue(movieNode.publisher),
+    series: toStringValue(movieNode.series),
+    plot,
+    plot_zh: plot,
+    release_date: premiered,
+    release_year: Number.isFinite(releaseYear) ? releaseYear : undefined,
+    runtime: Number.isFinite(runtime) ? runtime : undefined,
+    rating: Number.isFinite(rating) ? rating : undefined,
+    cover_url: coverUrl,
+    poster_url: undefined,
+    fanart_url: undefined,
+    sample_images: [],
+    trailer_url: undefined,
+    website,
+  };
+};

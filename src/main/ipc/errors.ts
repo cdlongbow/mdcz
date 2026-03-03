@@ -1,0 +1,118 @@
+/**
+ * Centralized IPC error handling
+ */
+
+import { toErrorMessage } from "../utils/common.js";
+
+export interface IpcError {
+  code: string;
+  message: string;
+  details?: unknown;
+}
+
+/**
+ * Creates a standardized IPC error object
+ */
+export function createIpcError(code: string, message: string, details?: unknown): IpcError {
+  return {
+    code,
+    message,
+    ...(details !== undefined && { details }),
+  };
+}
+
+/**
+ * Converts an unknown error to a standardized IPC error
+ */
+export function toIpcError(error: unknown): IpcError {
+  // Already an IPC error
+  if (isIpcError(error)) {
+    return error;
+  }
+
+  // Error with code property
+  if (error instanceof Error && "code" in error) {
+    return createIpcError(String((error as Error & { code: unknown }).code), error.message);
+  }
+
+  // Standard Error
+  if (error instanceof Error) {
+    return createIpcError(error.name || "ERROR", error.message);
+  }
+
+  // String error
+  if (typeof error === "string") {
+    return createIpcError("ERROR", error);
+  }
+
+  // Object with message
+  if (error && typeof error === "object" && "message" in error) {
+    const msg = (error as { message: unknown }).message;
+    return createIpcError("ERROR", typeof msg === "string" ? msg : String(msg));
+  }
+
+  // Unknown error
+  return createIpcError("UNKNOWN_ERROR", toErrorMessage(error));
+}
+
+/**
+ * Type guard to check if a value is an IPC error
+ */
+export function isIpcError(value: unknown): value is IpcError {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "code" in value &&
+    "message" in value &&
+    typeof (value as IpcError).code === "string" &&
+    typeof (value as IpcError).message === "string"
+  );
+}
+
+/**
+ * Wraps an IPC handler with error handling
+ */
+export function withErrorHandling<TArgs extends unknown[], TResult>(
+  handler: (...args: TArgs) => Promise<TResult>,
+): (...args: TArgs) => Promise<TResult> {
+  return async (...args: TArgs): Promise<TResult> => {
+    try {
+      return await handler(...args);
+    } catch (error) {
+      throw toIpcError(error);
+    }
+  };
+}
+
+/**
+ * Common IPC error codes
+ */
+export const IpcErrorCode = {
+  // Configuration errors
+  CONFIG_VALIDATION_ERROR: "CONFIG_VALIDATION_ERROR",
+  CONFIG_LOAD_ERROR: "CONFIG_LOAD_ERROR",
+  CONFIG_SAVE_ERROR: "CONFIG_SAVE_ERROR",
+
+  // File system errors
+  FILE_NOT_FOUND: "FILE_NOT_FOUND",
+  FILE_READ_ERROR: "FILE_READ_ERROR",
+  FILE_WRITE_ERROR: "FILE_WRITE_ERROR",
+  DIRECTORY_NOT_FOUND: "DIRECTORY_NOT_FOUND",
+
+  // Scraper errors
+  SCRAPER_ERROR: "SCRAPER_ERROR",
+  CRAWLER_ERROR: "CRAWLER_ERROR",
+  NETWORK_ERROR: "NETWORK_ERROR",
+  PARSE_ERROR: "PARSE_ERROR",
+
+  // Translation errors
+  TRANSLATION_ERROR: "TRANSLATION_ERROR",
+  TRANSLATION_API_ERROR: "TRANSLATION_API_ERROR",
+
+  // General errors
+  INVALID_ARGUMENT: "INVALID_ARGUMENT",
+  OPERATION_CANCELLED: "OPERATION_CANCELLED",
+  UNKNOWN_ERROR: "UNKNOWN_ERROR",
+} as const;
+
+export type IpcErrorCodeType = (typeof IpcErrorCode)[keyof typeof IpcErrorCode];

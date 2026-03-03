@@ -1,0 +1,80 @@
+import type { CrawlerData } from "@shared/types";
+
+import { BaseCrawler } from "../base/BaseCrawler";
+import type { Context, CrawlerInput } from "../base/types";
+import { normalizeFc2Number } from "./helpers";
+
+/**
+ * Base class for FC2-family crawlers.
+ *
+ * Shared behavior:
+ * - Number normalization via `normalizeFc2Number`
+ * - Common CrawlerData fields: `series: "FC2系列"`, `actors` derived from `studio`,
+ *   `publisher === studio`, FC2-prefixed number formatting
+ *
+ * Subclasses must implement:
+ * - `site()` — return the Website enum value
+ * - `fc2BaseUrl()` — return the site base URL
+ * - `generateSearchUrl()` / `parseSearchPage()` / `parseFc2DetailPage()` — site-specific parsing
+ */
+export abstract class BaseFc2Crawler extends BaseCrawler {
+  protected static readonly FC2_SERIES = "FC2系列";
+
+  protected override newContext(input: CrawlerInput): Context {
+    const context = super.newContext(input);
+    context.number = normalizeFc2Number(input.number);
+    return context;
+  }
+
+  /**
+   * Format the FC2 number for output CrawlerData.
+   * Override if the site uses a different format.
+   */
+  protected formatFc2Number(digits: string): string {
+    return `FC2-${digits}`;
+  }
+
+  /**
+   * Build common FC2 CrawlerData fields.
+   * Subclasses call this and spread the result, overriding only site-specific fields.
+   */
+  protected buildFc2Data(
+    context: Context,
+    fields: {
+      title: string;
+      studio?: string;
+      genres?: string[];
+      coverUrl?: string;
+      posterUrl?: string;
+      plot?: string;
+      releaseDate?: string;
+      runtime?: number;
+      rating?: number;
+      sampleImageUrls?: string[];
+      trailerUrl?: string;
+    },
+  ): CrawlerData {
+    const studio = fields.studio || undefined;
+
+    return {
+      title: fields.title,
+      number: this.formatFc2Number(context.number),
+      actors: studio ? [studio] : [],
+      genres: fields.genres ?? [],
+      studio,
+      director: undefined,
+      publisher: studio,
+      series: BaseFc2Crawler.FC2_SERIES,
+      plot: fields.plot,
+      release_date: fields.releaseDate,
+      runtime: fields.runtime,
+      rating: fields.rating,
+      cover_url: fields.coverUrl,
+      poster_url: fields.posterUrl,
+      fanart_url: undefined,
+      sample_images: fields.sampleImageUrls ?? [],
+      trailer_url: fields.trailerUrl,
+      website: this.site(),
+    };
+  }
+}

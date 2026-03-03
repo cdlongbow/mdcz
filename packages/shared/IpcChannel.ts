@@ -1,0 +1,49 @@
+export enum IpcChannel {
+  Config_Get = "config:get",
+  Config_Save = "config:save",
+  Config_List = "config:list",
+  Config_Reset = "config:reset",
+  Config_ListProfiles = "config:list-profiles",
+  Config_CreateProfile = "config:create-profile",
+  Config_SwitchProfile = "config:switch-profile",
+  Config_DeleteProfile = "config:delete-profile",
+
+  Scraper_Start = "scraper:start",
+  Scraper_Stop = "scraper:stop",
+  Scraper_Pause = "scraper:pause",
+  Scraper_Resume = "scraper:resume",
+  Scraper_GetStatus = "scraper:get-status",
+  Scraper_Requeue = "scraper:requeue",
+  Scraper_RetryFailed = "scraper:retry-failed",
+  Scraper_GetFailedFiles = "scraper:get-failed-files",
+  Scraper_HasRecoverableSession = "scraper:has-recoverable-session",
+  Scraper_RecoverSession = "scraper:recover-session",
+
+  Crawler_Test = "crawler:test",
+  Crawler_ListSites = "crawler:list-sites",
+
+  Network_CheckCookies = "network:check-cookies",
+
+  File_ListDirectory = "file:list-directory",
+  File_Browse = "file:browse",
+  File_Delete = "file:delete",
+  File_NfoRead = "file:nfo-read",
+  File_NfoWrite = "file:nfo-write",
+
+  Event_Log = "event:log",
+  Event_Progress = "event:progress",
+  Event_ScrapeResult = "event:scrape-result",
+  Event_ScrapeInfo = "event:scrape-info",
+  Event_FailedInfo = "event:failed-info",
+  Event_ButtonStatus = "event:button-status",
+  Event_Shortcut = "event:shortcut",
+
+  App_Info = "app:info",
+  App_OpenExternal = "app:open-external",
+
+  Tool_ActorPhotoSync = "tool:actor-photo-sync",
+  Tool_ActorInfoSync = "tool:actor-info-sync",
+  Tool_ServerCheckConnection = "tool:server-check-connection",
+  Tool_CreateSymlink = "tool:create-symlink",
+  Tool_ToggleDevTools = "tool:toggle-devtools",
+}

@@ -1,0 +1,109 @@
+@import "tailwindcss";
+@config "../tailwind.config.ts";
+
+@layer base {
+  :root {
+    --background: 240 5% 96%; /* #F5F5F6 */
+    --foreground: 240 10% 4%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 4%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 4%;
+    --primary: 232 100% 65%; /* #4C6EFF approx */
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 6% 10%;
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
+    --accent: 240 5% 96%;
+    --accent-foreground: 240 6% 10%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 240 5% 65%;
+    --radius: 0.5rem;
+    --sidebar: 0 0% 98%; /* #FAFAFA */
+    --sidebar-foreground: 240 6% 10%;
+    --surface: 0 0% 100%;
+    --surface-foreground: 240 6% 10%;
+  }
+
+  .dark {
+    --background: 212 25% 12%; /* Deeper background for dark mode */
+    --foreground: 0 0% 98%;
+    --card: 212 25% 12%;
+    --card-foreground: 0 0% 98%;
+    --popover: 212 25% 12%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 213 94% 55%; /* #2080F7 */
+    --primary-foreground: 0 0% 98%;
+    --secondary: 212 25% 18%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 212 25% 18%;
+    --muted-foreground: 215 20% 60%;
+    --accent: 212 25% 18%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 212 20% 20%;
+    --input: 212 20% 20%;
+    --ring: 213 94% 55%;
+    --sidebar: 212 25% 14%;
+    --sidebar-foreground: 0 0% 98%;
+    --surface: 212 25% 16%;
+    --surface-foreground: 0 0% 98%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body {
+    @apply bg-background text-foreground overflow-hidden h-full antialiased;
+  }
+
+  /* Default transitions for interactive elements */
+  button,
+  a,
+  [role="button"],
+  [role="tab"] {
+    @apply transition-colors duration-200;
+  }
+
+  /* Global Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::selection {
+    @apply bg-primary/20;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/20 rounded-full border-2 border-transparent bg-clip-content;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/40;
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

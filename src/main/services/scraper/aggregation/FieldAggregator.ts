@@ -1,0 +1,289 @@
+import type { Website } from "@shared/enums";
+import type { ActorProfile, CrawlerData } from "@shared/types";
+
+import type { AggregationStrategy, SourceMap } from "./types";
+import { FIELD_STRATEGIES } from "./types";
+
+const SCRIPT_PATTERN =
+  /(?:<script|<\/script|<style|function\s*\(|=>\s*\{|window\.|document\.\w+\(|var\s+\w+\s*=|const\s+\w+\s*=|let\s+\w+\s*=)/i;
+
+function looksLikeCode(text: string): boolean {
+  return SCRIPT_PATTERN.test(text);
+}
+
+interface AggregationBehavior {
+  preferLongerPlot: boolean;
+  maxSceneImages: number;
+  maxActors: number;
+  maxGenres: number;
+}
+
+const DEFAULT_BEHAVIOR: AggregationBehavior = {
+  preferLongerPlot: true,
+  maxSceneImages: 30,
+  maxActors: 50,
+  maxGenres: 30,
+};
+
+type SourceEntry = { site: Website; data: CrawlerData };
+
+/** Selects the best value for each CrawlerData field from multiple sources. */
+export class FieldAggregator {
+  private readonly behavior: AggregationBehavior;
+
+  constructor(
+    private readonly priorities: Partial<Record<string, Website[]>>,
+    behavior?: Partial<AggregationBehavior>,
+  ) {
+    this.behavior = { ...DEFAULT_BEHAVIOR, ...behavior };
+  }
+
+  aggregate(results: Map<Website, CrawlerData>): { data: CrawlerData; sources: SourceMap } {
+    const sources: SourceMap = {};
+
+    const entries: SourceEntry[] = Array.from(results.entries()).map(([site, data]) => ({ site, data }));
+    if (entries.length === 0) {
+      throw new Error("No results to aggregate");
+    }
+
+    // Use first entry as fallback for required fields
+    const firstEntry = entries[0];
+
+    const resolve = <K extends keyof CrawlerData>(field: K): CrawlerData[K] => {
+      const strategy = FIELD_STRATEGIES[field] ?? "first_non_null";
+      const priority = (this.priorities[field] ?? []) as Website[];
+      const ordered = this.orderByPriority(entries, priority);
+
+      const result = this.applyStrategy(field, strategy, ordered);
+      if (result.value !== undefined && result.value !== null) {
+        sources[field] = result.source;
+      }
+      return result.value as CrawlerData[K];
+    };
+
+    const data: CrawlerData = {
+      title: resolve("title") || firstEntry.data.title,
+      title_zh: resolve("title_zh"),
+      number: resolve("number") || firstEntry.data.number,
+      actors: resolve("actors") ?? [],
+      actor_profiles: resolve("actor_profiles"),
+      genres: resolve("genres") ?? [],
+      content_type: resolve("content_type"),
+      studio: resolve("studio"),
+      director: resolve("director"),
+      publisher: resolve("publisher"),
+      series: resolve("series"),
+      plot: resolve("plot"),
+      plot_zh: resolve("plot_zh"),
+      release_date: resolve("release_date"),
+      release_year: resolve("release_year"),
+      runtime: resolve("runtime"),
+      rating: resolve("rating"),
+      cover_url: resolve("cover_url"),
+      poster_url: resolve("poster_url"),
+      fanart_url: resolve("fanart_url"),
+      sample_images: resolve("sample_images") ?? [],
+      trailer_url: resolve("trailer_url"),
+      website: resolve("website") ?? firstEntry.data.website,
+    };
+
+    return { data, sources };
+  }
+
+  private orderByPriority(entries: SourceEntry[], priority: Website[]): SourceEntry[] {
+    if (priority.length === 0) {
+      return entries;
+    }
+
+    const ordered: SourceEntry[] = [];
+    const remaining = new Set(entries.map((e) => e.site));
+
+    for (const site of priority) {
+      const entry = entries.find((e) => e.site === site);
+      if (entry) {
+        ordered.push(entry);
+        remaining.delete(site);
+      }
+    }
+
+    // Append remaining entries not in priority list
+    for (const entry of entries) {
+      if (remaining.has(entry.site)) {
+        ordered.push(entry);
+      }
+    }
+
+    return ordered;
+  }
+
+  private applyStrategy(
+    field: keyof CrawlerData,
+    strategy: AggregationStrategy,
+    entries: SourceEntry[],
+  ): { value: unknown; source?: Website } {
+    switch (strategy) {
+      case "first_non_null":
+        return this.firstNonNull(field, entries);
+      case "first_non_empty":
+        return this.firstNonEmpty(field, entries);
+      case "longest":
+        return this.longest(field, entries);
+      case "union":
+        return this.union(field, entries);
+      case "highest_quality":
+        return this.highestQuality(field, entries);
+      default:
+        return this.firstNonNull(field, entries);
+    }
+  }
+
+  private firstNonNull(field: keyof CrawlerData, entries: SourceEntry[]): { value: unknown; source?: Website } {
+    for (const entry of entries) {
+      const value = entry.data[field];
+      if (value !== undefined && value !== null && value !== "") {
+        return { value, source: entry.site };
+      }
+    }
+    return { value: undefined };
+  }
+
+  private firstNonEmpty(field: keyof CrawlerData, entries: SourceEntry[]): { value: unknown; source?: Website } {
+    for (const entry of entries) {
+      const value = entry.data[field];
+      if (Array.isArray(value) && value.length > 0) {
+        return { value, source: entry.site };
+      }
+      if (typeof value === "string" && value.length > 0) {
+        return { value, source: entry.site };
+      }
+    }
+    return { value: undefined };
+  }
+
+  private longest(field: keyof CrawlerData, entries: SourceEntry[]): { value: unknown; source?: Website } {
+    let best: { value: string; source: Website } | null = null;
+
+    for (const entry of entries) {
+      const value = entry.data[field];
+      if (typeof value === "string" && value.length > 0) {
+        if (looksLikeCode(value)) continue;
+        if (!best || value.length > best.value.length) {
+          best = { value, source: entry.site };
+        }
+      }
+    }
+
+    return best ? { value: best.value, source: best.source } : { value: undefined };
+  }
+
+  private union(field: keyof CrawlerData, entries: SourceEntry[]): { value: unknown; source?: Website } {
+    if (field === "actors") {
+      return this.unionActors(entries);
+    }
+    if (field === "actor_profiles") {
+      return this.unionActorProfiles(entries);
+    }
+    if (field === "genres") {
+      return this.unionGenres(entries);
+    }
+
+    // Generic array union for unknown fields
+    const seen = new Set<string>();
+    const merged: unknown[] = [];
+    let source: Website | undefined;
+
+    for (const entry of entries) {
+      const value = entry.data[field];
+      if (!Array.isArray(value)) continue;
+      for (const item of value) {
+        const key = typeof item === "string" ? item : JSON.stringify(item);
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(item);
+          if (!source) source = entry.site;
+        }
+      }
+    }
+
+    return { value: merged.length > 0 ? merged : undefined, source };
+  }
+
+  private unionActors(entries: SourceEntry[]): { value: string[]; source?: Website } {
+    const seen = new Set<string>();
+    const merged: string[] = [];
+    let source: Website | undefined;
+
+    for (const entry of entries) {
+      for (const actor of entry.data.actors) {
+        const normalized = actor.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+        if (!seen.has(normalized)) {
+          seen.add(normalized);
+          merged.push(actor);
+          if (!source) source = entry.site;
+        }
+      }
+    }
+
+    return {
+      value: merged.slice(0, this.behavior.maxActors),
+      source,
+    };
+  }
+
+  private unionActorProfiles(entries: SourceEntry[]): { value: ActorProfile[] | undefined; source?: Website } {
+    const seen = new Set<string>();
+    const merged: ActorProfile[] = [];
+    let source: Website | undefined;
+
+    for (const entry of entries) {
+      for (const profile of entry.data.actor_profiles ?? []) {
+        const normalized = profile.name.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+        if (!seen.has(normalized)) {
+          seen.add(normalized);
+          merged.push(profile);
+          if (!source) source = entry.site;
+        }
+      }
+    }
+
+    return {
+      value: merged.length > 0 ? merged.slice(0, this.behavior.maxActors) : undefined,
+      source,
+    };
+  }
+
+  private unionGenres(entries: SourceEntry[]): { value: string[]; source?: Website } {
+    const seen = new Set<string>();
+    const merged: string[] = [];
+    let source: Website | undefined;
+
+    for (const entry of entries) {
+      for (const genre of entry.data.genres) {
+        const normalized = genre.normalize("NFKC").toLowerCase().trim();
+        if (!seen.has(normalized)) {
+          seen.add(normalized);
+          merged.push(genre);
+          if (!source) source = entry.site;
+        }
+      }
+    }
+
+    return {
+      value: merged.slice(0, this.behavior.maxGenres),
+      source,
+    };
+  }
+
+  private highestQuality(field: keyof CrawlerData, entries: SourceEntry[]): { value: unknown; source?: Website } {
+    // Prefer AWS DMM URLs regardless of priority
+    for (const entry of entries) {
+      const value = entry.data[field];
+      if (typeof value === "string" && value.includes("awsimgsrc.dmm.co.jp")) {
+        return { value, source: entry.site };
+      }
+    }
+
+    // Fall back to first_non_null
+    return this.firstNonNull(field, entries);
+  }
+}
