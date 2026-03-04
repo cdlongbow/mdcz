@@ -39,7 +39,5 @@ linux:
   category: Utility
   maintainer: ShotHeadman <123543875+ShotHeadman@users.noreply.github.com>
   executableName: mdcz
-  desktop:
-    StartupWMClass: mdcz
   target:
     - AppImage
