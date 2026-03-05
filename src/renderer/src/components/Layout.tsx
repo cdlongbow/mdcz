@@ -107,7 +107,7 @@ function NavContent({
         )}
       </div>
 
-      <Separator className="mx-3 w-auto" />
+      <Separator className="w-[calc(100%-16px)]! mx-auto my-1" />
 
       {/* Navigation */}
       <nav
@@ -117,7 +117,7 @@ function NavContent({
           <NavLink key={item.to} item={item} collapsed={collapsed} isActive={pathname === item.to} />
         ))}
 
-        <Separator className={cn("my-2.5", collapsed ? "w-8" : "mx-1 w-auto")} />
+        <Separator />
 
         {systemNav.map((item) => (
           <NavLink key={item.to} item={item} collapsed={collapsed} isActive={pathname === item.to} />

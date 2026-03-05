@@ -13,7 +13,7 @@ function TreeButton({ isSelected, className, children, asChild, type, ...props }
       type={asChild ? undefined : (type ?? "button")}
       variant="ghost"
       className={cn(
-        "h-auto w-full justify-start gap-3 rounded-md p-2 text-left hover:bg-accent/50 transition-all",
+        "h-auto w-full justify-start gap-3 rounded-md p-2 text-left hover:bg-accent/50 transition-all cursor-pointer",
         isSelected && "bg-accent text-accent-foreground",
         className,
       )}

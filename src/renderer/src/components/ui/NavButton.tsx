@@ -14,7 +14,7 @@ function NavButton({ isActive, collapsed, className, children, asChild, type, ..
       type={asChild ? undefined : (type ?? "button")}
       variant="ghost"
       className={cn(
-        "h-auto justify-start gap-3 rounded-lg transition-all",
+        "h-auto justify-start gap-3 rounded-lg transition-all cursor-pointer",
         collapsed ? "h-10 w-10 p-0 justify-center" : "px-3 py-2",
         isActive
           ? "bg-muted text-foreground font-medium"

@@ -111,7 +111,7 @@ function About() {
             </Card>
 
             {/* Related Projects */}
-            <Card className="bg-muted/20 border-none shadow-none">
+            <Card className="bg-muted/20 border-none shadow-none p-0">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium">相关项目</CardTitle>
                 <CardDescription>感谢以下开源项目为本工具提供的核心功能支持</CardDescription>

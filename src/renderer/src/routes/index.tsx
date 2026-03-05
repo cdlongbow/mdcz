@@ -239,7 +239,7 @@ function Index() {
               <Button
                 variant="outline"
                 onClick={scrapeStatus === "paused" ? handleResumeScrape : handlePauseScrape}
-                className="h-10 rounded-lg px-5"
+                className="h-9 rounded-lg px-5"
               >
                 {scrapeStatus === "paused" ? (
                   <>
@@ -255,7 +255,7 @@ function Index() {
             <Button
               variant={isScraping ? "destructive" : "default"}
               onClick={isScraping ? handleStopScrape : handleStartScrape}
-              className="h-10 rounded-lg px-6 font-semibold shadow-sm"
+              className="h-9 rounded-lg px-6 font-semibold shadow-sm"
             >
               {isScraping ? (
                 <>
@@ -271,8 +271,8 @@ function Index() {
         }
       />
 
-      <div className="px-8 pb-2 border-b bg-background/60 backdrop-blur-md">
-        <div className="flex items-center gap-2">
+      <div className="px-8 pb-2 border-b bg-background/60 backdrop-blur-md h-11 flex items-center">
+        <div className="flex items-center gap-2 flex-1">
           <Button
             variant="ghost"
             size="sm"
