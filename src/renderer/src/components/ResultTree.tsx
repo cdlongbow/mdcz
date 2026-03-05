@@ -2,10 +2,10 @@ import { CheckCircle2, ChevronDown, ChevronRight, Copy, FileText, Trash2, XCircl
 import { useState } from "react";
 import { toast } from "sonner";
 import { deleteFile, deleteFileAndFolder, requeueScrapeByNumber, requeueScrapeByUrl } from "@/api/manual";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/Collapsible";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -13,8 +13,9 @@ import {
   ContextMenuSeparator,
   ContextMenuShortcut,
   ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import { ScrollArea } from "@/components/ui/scroll-area";
+} from "@/components/ui/ContextMenu";
+import { ScrollArea } from "@/components/ui/ScrollArea";
+import { TreeButton } from "@/components/ui/TreeButton";
 import { cn } from "@/lib/utils";
 import type { ScrapeResult } from "@/store/scrapeStore";
 import { useScrapeStore } from "@/store/scrapeStore";
@@ -116,9 +117,8 @@ function ResultItem({ result }: { result: ScrapeResult }) {
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <Button
-          variant={isSelected ? "treeActive" : "tree"}
-          size="clean"
+        <TreeButton
+          isSelected={isSelected}
           className="group flex-col items-start"
           onClick={() => setSelectedResultId(result.id)}
         >
@@ -138,7 +138,7 @@ function ResultItem({ result }: { result: ScrapeResult }) {
               {result.error_msg && <div className="text-xs text-red-500 truncate mt-0.5">{result.error_msg}</div>}
             </div>
           </div>
-        </Button>
+        </TreeButton>
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onClick={handleCopyNumber}>

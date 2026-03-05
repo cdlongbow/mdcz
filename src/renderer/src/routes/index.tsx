@@ -20,9 +20,9 @@ import type { ConfigOutput } from "@/client/types";
 import { DetailPanel } from "@/components/DetailPanel";
 import { PageHeader } from "@/components/PageHeader";
 import { ResultTree } from "@/components/ResultTree";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 import {
   Dialog,
   DialogClose,
@@ -31,10 +31,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Progress } from "@/components/ui/progress";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { ScrollArea } from "@/components/ui/scroll-area";
+} from "@/components/ui/Dialog";
+import { Progress } from "@/components/ui/Progress";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/Resizable";
+import { ScrollArea } from "@/components/ui/ScrollArea";
 import { type ScrapeResult, useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
 
@@ -238,7 +238,6 @@ function Index() {
             {isScraping && scrapeStatus !== "stopping" && (
               <Button
                 variant="outline"
-                size="clean"
                 onClick={scrapeStatus === "paused" ? handleResumeScrape : handlePauseScrape}
                 className="h-10 rounded-lg px-5"
               >
@@ -255,7 +254,6 @@ function Index() {
             )}
             <Button
               variant={isScraping ? "destructive" : "default"}
-              size="clean"
               onClick={isScraping ? handleStopScrape : handleStartScrape}
               className="h-10 rounded-lg px-6 font-semibold shadow-sm"
             >

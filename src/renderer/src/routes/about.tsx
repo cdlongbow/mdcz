@@ -4,9 +4,9 @@ import { Bug, ExternalLink, Github } from "lucide-react";
 import { type CSSProperties, useEffect, useState } from "react";
 import AppLogo from "@/assets/images/logo.png";
 import { ipc } from "@/client/ipc";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/Button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Separator } from "@/components/ui/Separator";
 
 export const Route = createFileRoute("/about")({
   component: About,

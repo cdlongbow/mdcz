@@ -27,11 +27,12 @@ import { useForm, useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 import { ipc } from "@/client/ipc";
 import { PageHeader } from "@/components/PageHeader";
-import { Button } from "@/components/ui/button";
-import { Form, FormControl } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/Button";
+import { Form, FormControl } from "@/components/ui/Form";
+import { Input } from "@/components/ui/Input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
+import { Switch } from "@/components/ui/Switch";
+import { TabButton } from "@/components/ui/TabButton";
 import { cn } from "@/lib/utils";
 import {
   BaseField,
@@ -44,6 +45,7 @@ import {
   NumberField,
   PathFieldWrapper,
   PromptFieldWrapper,
+  SecretField,
   ShortcutField,
   TextField,
   UrlField,
@@ -418,7 +420,7 @@ function TranslateSection(_props: SectionRenderProps) {
       </BaseField>
       <EnumField name="translate.engine" label="翻译引擎" options={TRANSLATE_ENGINE_OPTIONS} />
       <TextField name="translate.llmModelName" label="LLM 模型名称" />
-      <TextField name="translate.llmApiKey" label="LLM 密钥" />
+      <SecretField name="translate.llmApiKey" label="LLM 密钥" />
       <UrlField
         name="translate.llmBaseUrl"
         label="LLM 接口地址"
@@ -779,7 +781,7 @@ export function TabbedConfigForm({
             }
           />
           {/* Sub Header / Tab Bar */}
-          <div className="px-8 pb-3">
+          <div className="px-8">
             <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
               <div className="flex items-center gap-2">
                 <div className="relative">
@@ -804,7 +806,6 @@ export function TabbedConfigForm({
                 <Button
                   type="button"
                   variant={showModifiedOnly ? "secondary" : "ghost"}
-                  size="clean"
                   className={cn(
                     "rounded-lg h-8 px-2.5 gap-1.5 text-[12px] font-medium transition-all",
                     showModifiedOnly
@@ -849,13 +850,7 @@ export function TabbedConfigForm({
                     const isActive = activeTab === tab.key;
                     const Icon = tab.icon;
                     return (
-                      <Button
-                        key={tab.key}
-                        type="button"
-                        variant={isActive ? "tabActive" : "tab"}
-                        size="clean"
-                        onClick={() => setActiveTab(tab.key)}
-                      >
+                      <TabButton key={tab.key} type="button" isActive={isActive} onClick={() => setActiveTab(tab.key)}>
                         <Icon className="h-3.5 w-3.5 mr-1.5" />
                         {tab.label}
                         {errorCount && (
@@ -863,7 +858,7 @@ export function TabbedConfigForm({
                             {errorCount}
                           </span>
                         )}
-                      </Button>
+                      </TabButton>
                     );
                   })}
                 </div>

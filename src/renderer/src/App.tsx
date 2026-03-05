@@ -5,8 +5,8 @@ import { createHashHistory, createRouter, RouterProvider } from "@tanstack/react
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { ipc } from "./client/ipc";
 import { BootFallback } from "./components/BootFallback";
-import { Toaster } from "./components/ui/sonner";
-import { TooltipProvider } from "./components/ui/tooltip";
+import { Toaster } from "./components/ui/Sonner";
+import { TooltipProvider } from "./components/ui/Tooltip";
 import { ThemeProvider } from "./contexts/ThemeProvider";
 import { ToastProvider } from "./contexts/ToastProvider";
 import { routeTree } from "./routeTree.gen";

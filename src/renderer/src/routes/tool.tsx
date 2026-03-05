@@ -23,10 +23,10 @@ import { createSymlink, listFiles, scrapeSingleFile, startScrape } from "@/clien
 import { ipc } from "@/client/ipc";
 import type { CreateSoftlinksBody, FileItem, ScrapeFileBody } from "@/client/types";
 import { PageHeader } from "@/components/PageHeader";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Checkbox } from "@/components/ui/Checkbox";
 import {
   Dialog,
   DialogContent,
@@ -34,12 +34,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+} from "@/components/ui/Dialog";
+import { Input } from "@/components/ui/Input";
+import { Label } from "@/components/ui/Label";
+import { Progress } from "@/components/ui/Progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
+import { TabButton } from "@/components/ui/TabButton";
+import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/contexts/ToastProvider";
 import { cn } from "@/lib/utils";
 import { useLogStore } from "@/store/logStore";
@@ -631,15 +632,10 @@ function ToolComponent() {
               {TOOLS_TABS.map((tab) => {
                 const Icon = tab.icon;
                 return (
-                  <Button
-                    key={tab.id}
-                    variant={activeTab === tab.id ? "tabActive" : "tab"}
-                    size="clean"
-                    onClick={() => setActiveTab(tab.id)}
-                  >
+                  <TabButton key={tab.id} isActive={activeTab === tab.id} onClick={() => setActiveTab(tab.id)}>
                     <Icon className="h-3.5 w-3.5 mr-1.5" />
                     {tab.label}
-                  </Button>
+                  </TabButton>
                 );
               })}
             </div>
