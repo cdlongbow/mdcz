@@ -91,11 +91,17 @@ export class FileScraper {
         step: "download",
       });
 
-      const assets = await this.deps.downloadManager.downloadAll(plan.outputDir, translated, configuration, {
-        onSceneProgress: (downloaded, total) => {
-          this.deps.signalService.showLogText(`[${fileInfo.number}] Scene images: ${downloaded}/${total}`);
+      const assets = await this.deps.downloadManager.downloadAll(
+        plan.outputDir,
+        translated,
+        configuration,
+        aggregationResult.imageAlternatives,
+        {
+          onSceneProgress: (downloaded, total) => {
+            this.deps.signalService.showLogText(`[${fileInfo.number}] Scene images: ${downloaded}/${total}`);
+          },
         },
-      });
+      );
       this.setProgress(progress, 75);
 
       let savedNfoPath: string | undefined;

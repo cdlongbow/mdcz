@@ -9,7 +9,13 @@ import { RateLimiter } from "./RateLimiter";
 const RETRY_STATUS_CODE = 429;
 const RETRY_AFTER_CAP_MS = 15_000;
 const RETRYABLE_STATUS_CODES = new Set([408, 500, 502, 503, 504]);
+const PROBE_FALLBACK_STATUS_CODES = new Set([403, 405, 501]);
 type ImpitResponse = Awaited<ReturnType<Impit["fetch"]>>;
+type ProbeMethod = "HEAD" | "GET";
+
+type ProbeOptions = Omit<ImpitRequestInit, "method"> & {
+  method?: ProbeMethod;
+};
 
 export interface NetworkClientOptions {
   timeoutMs?: number;
@@ -18,6 +24,18 @@ export interface NetworkClientOptions {
   getTimeoutMs?: () => number | undefined;
   getRetryCount?: () => number | undefined;
   rateLimiter?: RateLimiter;
+}
+
+export interface ProbeResult {
+  ok: boolean;
+  status: number;
+  contentLength: number | null;
+  resolvedUrl: string;
+}
+
+interface RequestBehavior {
+  allowNonOkResponse?: boolean;
+  retryLogPrefix?: string;
 }
 
 export class NetworkClient {
@@ -112,18 +130,68 @@ export class NetworkClient {
   }
 
   async head(url: string, init: Omit<ImpitRequestInit, "method"> = {}): Promise<{ status: number; ok: boolean }> {
-    const response = await this.request(url, {
+    const { status, ok } = await this.probe(url, init);
+
+    return {
+      status,
+      ok,
+    };
+  }
+
+  async probe(url: string, init: ProbeOptions = {}): Promise<ProbeResult> {
+    const method = init.method ?? "HEAD";
+    if (method === "GET") {
+      const response = await this.requestForProbe(url, {
+        ...init,
+        method: "GET",
+      });
+
+      return this.toProbeResult(url, response);
+    }
+
+    const response = await this.requestForProbe(url, {
       ...init,
       method: "HEAD",
     });
 
+    if (response.ok || !PROBE_FALLBACK_STATUS_CODES.has(response.status)) {
+      return this.toProbeResult(url, response);
+    }
+
+    const fallbackResponse = await this.requestForProbe(url, {
+      ...init,
+      method: "GET",
+      headers: this.buildProbeFallbackHeaders(init.headers),
+    });
+
+    return this.toProbeResult(url, fallbackResponse);
+  }
+
+  private toProbeResult(url: string, response: ImpitResponse): ProbeResult {
     return {
       status: response.status,
       ok: response.ok,
+      contentLength: this.parseResponseContentLength(response),
+      resolvedUrl: response.url || url,
     };
   }
 
   private async request(url: string, init: ImpitRequestInit) {
+    return this.executeRequest(url, init);
+  }
+
+  private async requestForProbe(url: string, init: ImpitRequestInit): Promise<ImpitResponse> {
+    return this.executeRequest(url, init, {
+      allowNonOkResponse: true,
+      retryLogPrefix: `probe ${url}`,
+    });
+  }
+
+  private async executeRequest(
+    url: string,
+    init: ImpitRequestInit,
+    behavior: RequestBehavior = {},
+  ): Promise<ImpitResponse> {
     return this.rateLimiter.schedule(url, async () => {
       const maxRetries = this.resolveRetryCount();
       let attempt = 0;
@@ -134,14 +202,19 @@ export class NetworkClient {
           return response;
         }
 
-        if (!this.shouldRetryResponse(response) || attempt >= maxRetries) {
+        const retryable = this.shouldRetryResponse(response);
+        if (!retryable || attempt >= maxRetries) {
+          if (behavior.allowNonOkResponse) {
+            return response;
+          }
+
           throw this.toHttpError(url, response);
         }
 
         const delayMs = this.getRetryDelayMs(response, attempt);
         attempt += 1;
         this.logger.warn(
-          `Retrying ${url} (${attempt}/${maxRetries}) after ${delayMs}ms due to HTTP ${response.status}`,
+          `Retrying ${behavior.retryLogPrefix ?? url} (${attempt}/${maxRetries}) after ${delayMs}ms due to HTTP ${response.status}`,
         );
         await sleep(delayMs);
       }
@@ -162,6 +235,36 @@ export class NetworkClient {
 
   private toHttpError(url: string, response: ImpitResponse): Error {
     return new Error(`HTTP ${response.status} ${response.statusText} for ${url}`);
+  }
+
+  private buildProbeFallbackHeaders(headersInit: ImpitRequestInit["headers"]): Headers {
+    const headers = new Headers(headersInit);
+    headers.set("range", headers.get("range") ?? "bytes=0-0");
+    return headers;
+  }
+
+  private parseContentLength(value: string | null): number | null {
+    if (!value) {
+      return null;
+    }
+
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  }
+
+  private parseResponseContentLength(response: ImpitResponse): number | null {
+    const contentRange = response.headers.get("content-range");
+    if (contentRange) {
+      const match = contentRange.match(/\/(\d+)$/u);
+      if (match) {
+        const parsed = Number.parseInt(match[1], 10);
+        if (Number.isFinite(parsed) && parsed >= 0) {
+          return parsed;
+        }
+      }
+    }
+
+    return this.parseContentLength(response.headers.get("content-length"));
   }
 
   private getRetryAfterDelayMs(response: ImpitResponse): number | null {
