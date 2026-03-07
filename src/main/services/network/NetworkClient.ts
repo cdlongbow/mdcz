@@ -12,10 +12,18 @@ const RETRYABLE_STATUS_CODES = new Set([408, 500, 502, 503, 504]);
 const PROBE_FALLBACK_STATUS_CODES = new Set([403, 405, 501]);
 type ImpitResponse = Awaited<ReturnType<Impit["fetch"]>>;
 type ProbeMethod = "HEAD" | "GET";
-
 type ProbeOptions = Omit<ImpitRequestInit, "method"> & {
   method?: ProbeMethod;
 };
+
+export interface NetworkCookieJar {
+  getCookieString(url: string): Promise<string> | string;
+  setCookie(cookie: string, url: string, cb?: unknown): Promise<void> | void;
+}
+
+export interface NetworkSession {
+  getText(url: string, init?: Omit<ImpitRequestInit, "method">): Promise<string>;
+}
 
 export interface NetworkClientOptions {
   timeoutMs?: number;
@@ -153,7 +161,6 @@ export class NetworkClient {
       ...init,
       method: "HEAD",
     });
-
     if (response.ok || !PROBE_FALLBACK_STATUS_CODES.has(response.status)) {
       return this.toProbeResult(url, response);
     }
@@ -167,6 +174,24 @@ export class NetworkClient {
     return this.toProbeResult(url, fallbackResponse);
   }
 
+  createSession(options: { cookieJar?: NetworkCookieJar } = {}): NetworkSession {
+    const client = this.createImpitClient(options.cookieJar);
+
+    return {
+      getText: async (url: string, init: Omit<ImpitRequestInit, "method"> = {}) => {
+        const response = await this.executeRequest(
+          url,
+          {
+            ...init,
+            method: "GET",
+          },
+          client,
+        );
+        return response.text();
+      },
+    };
+  }
+
   private toProbeResult(url: string, response: ImpitResponse): ProbeResult {
     return {
       status: response.status,
@@ -176,12 +201,12 @@ export class NetworkClient {
     };
   }
 
-  private async request(url: string, init: ImpitRequestInit) {
+  private async request(url: string, init: ImpitRequestInit): Promise<ImpitResponse> {
     return this.executeRequest(url, init);
   }
 
   private async requestForProbe(url: string, init: ImpitRequestInit): Promise<ImpitResponse> {
-    return this.executeRequest(url, init, {
+    return this.executeRequest(url, init, undefined, {
       allowNonOkResponse: true,
       retryLogPrefix: `probe ${url}`,
     });
@@ -190,6 +215,7 @@ export class NetworkClient {
   private async executeRequest(
     url: string,
     init: ImpitRequestInit,
+    client?: Impit,
     behavior: RequestBehavior = {},
   ): Promise<ImpitResponse> {
     return this.rateLimiter.schedule(url, async () => {
@@ -197,7 +223,7 @@ export class NetworkClient {
       let attempt = 0;
 
       while (true) {
-        const response = await this.fetchOnce(url, init);
+        const response = await this.fetchOnce(url, init, client);
         if (response.ok) {
           return response;
         }
@@ -221,12 +247,12 @@ export class NetworkClient {
     });
   }
 
-  private async fetchOnce(url: string, init: ImpitRequestInit): Promise<ImpitResponse> {
-    const client = this.createImpitClient();
+  private async fetchOnce(url: string, init: ImpitRequestInit, client?: Impit): Promise<ImpitResponse> {
+    const currentClient = client ?? this.createImpitClient();
     const headers = new Headers(init.headers);
     this.applyReferer(url, headers);
 
-    return client.fetch(url, {
+    return currentClient.fetch(url, {
       ...init,
       timeout: init.timeout ?? this.resolveTimeoutMs(),
       headers,
@@ -312,7 +338,7 @@ export class NetworkClient {
     return Math.max(0, Math.trunc(value));
   }
 
-  private createImpitClient(): Impit {
+  private createImpitClient(cookieJar?: NetworkCookieJar): Impit {
     return new Impit({
       browser: this.options.browserImpersonation,
       timeout: this.resolveTimeoutMs(),
@@ -320,6 +346,7 @@ export class NetworkClient {
       followRedirects: true,
       vanillaFallback: true,
       http3: false,
+      cookieJar,
     });
   }
 

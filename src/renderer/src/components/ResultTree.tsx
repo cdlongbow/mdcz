@@ -226,7 +226,7 @@ export function ResultTree() {
   const failedResults = results.filter((r) => r.status === "failed");
 
   return (
-    <Card className="flex flex-col h-full border-0 shadow-none rounded-none bg-transparent pt-4">
+    <Card className="flex flex-col h-full border-0 shadow-none rounded-none bg-transparent pt-4 gap-2">
       <CardHeader className="border-b shrink-0 pb-2!">
         <CardTitle className="text-sm font-bold flex justify-between items-center gap-2 tracking-tight">
           <span>处理结果列表</span>

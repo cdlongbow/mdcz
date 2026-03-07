@@ -78,6 +78,7 @@ const downloadSchema = z.object({
   downloadSceneImages: z.boolean().default(true),
   downloadTrailer: z.boolean().default(true),
   downloadNfo: z.boolean().default(true),
+  amazonJpCoverEnhance: z.boolean().default(false),
   sceneImageConcurrency: z.number().int().min(1).max(20).default(5),
   keepCover: z.boolean().default(true),
   keepPoster: z.boolean().default(true),
@@ -214,5 +215,8 @@ export const configurationSchema = z.object({
 });
 
 export type Configuration = z.infer<typeof configurationSchema>;
+
+export type DeepPartial<T> =
+  T extends Array<infer U> ? Array<DeepPartial<U>> : T extends object ? { [K in keyof T]?: DeepPartial<T[K]> } : T;
 
 export const defaultConfiguration: Configuration = configurationSchema.parse({});
