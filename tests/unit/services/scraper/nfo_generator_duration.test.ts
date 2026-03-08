@@ -15,13 +15,13 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
 });
 
 const createAssets = (): DownloadedAssets => ({
-  cover: "/tmp/out/cover.jpg",
+  thumb: "/tmp/out/thumb.jpg",
   poster: "/tmp/out/poster.jpg",
   fanart: "/tmp/out/fanart.jpg",
   trailer: "/tmp/out/trailer.mp4",
   sceneImages: ["/tmp/out/samples/scene-001.jpg"],
   downloaded: [
-    "/tmp/out/cover.jpg",
+    "/tmp/out/thumb.jpg",
     "/tmp/out/poster.jpg",
     "/tmp/out/fanart.jpg",
     "/tmp/out/trailer.mp4",
@@ -82,7 +82,7 @@ describe("NfoGenerator", () => {
     );
 
     expect(xml).toContain('<thumb aspect="poster">poster.jpg</thumb>');
-    expect(xml).toContain('<thumb aspect="thumb">cover.jpg</thumb>');
+    expect(xml).toContain('<thumb aspect="thumb">thumb.jpg</thumb>');
     expect(xml).toContain("<fanart>");
     expect(xml).toContain("<thumb>fanart.jpg</thumb>");
     expect(xml).toContain("<thumb>samples/scene-001.jpg</thumb>");
@@ -112,7 +112,7 @@ describe("NfoGenerator", () => {
     const xml = new NfoGenerator().buildXml(
       createCrawlerData({
         poster_url: "https://remote.example.com/poster.jpg",
-        cover_url: "https://remote.example.com/cover.jpg",
+        thumb_url: "https://remote.example.com/thumb.jpg",
         fanart_url: "https://remote.example.com/fanart.jpg",
         trailer_url: "https://remote.example.com/trailer.mp4",
       }),
@@ -124,7 +124,7 @@ describe("NfoGenerator", () => {
     const parsed = parseNfo(xml);
 
     expect(parsed.poster_url).toBe("poster.jpg");
-    expect(parsed.cover_url).toBe("cover.jpg");
+    expect(parsed.thumb_url).toBe("thumb.jpg");
     expect(parsed.fanart_url).toBe("fanart.jpg");
     expect(parsed.trailer_url).toBe("trailer.mp4");
     expect(parsed.sample_images).toEqual(["samples/scene-001.jpg"]);

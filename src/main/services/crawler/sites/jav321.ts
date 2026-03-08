@@ -129,8 +129,8 @@ export class Jav321Crawler extends BaseCrawler {
         .filter((name: string) => name.length > 0),
     );
 
-    const coverUrl = $("img.img-responsive").first().attr("src");
-    const coverUrlAbsolute = coverUrl ? toAbsoluteUrl(JAV321_BASE_URL, coverUrl) : undefined;
+    const thumbUrl = $("img.img-responsive").first().attr("src");
+    const thumbUrlAbsolute = thumbUrl ? toAbsoluteUrl(JAV321_BASE_URL, thumbUrl) : undefined;
 
     const sampleImages = $("a[href*='/snapshot/']")
       .toArray()
@@ -154,7 +154,7 @@ export class Jav321Crawler extends BaseCrawler {
       plot,
       release_date: releaseDate,
       rating: undefined,
-      cover_url: coverUrlAbsolute,
+      thumb_url: thumbUrlAbsolute,
       poster_url: undefined,
       fanart_url: undefined,
       sample_images: sampleImages,

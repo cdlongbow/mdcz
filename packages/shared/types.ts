@@ -40,7 +40,7 @@ export interface CrawlerData {
   release_year?: number;
   durationSeconds?: number;
   rating?: number;
-  cover_url?: string;
+  thumb_url?: string;
   poster_url?: string;
   fanart_url?: string;
   sample_images: string[];
@@ -62,7 +62,7 @@ export type ScrapeResultStatus = "pending" | "processing" | "success" | "failed"
 
 /** Structured record of all files produced by DownloadManager. */
 export interface DownloadedAssets {
-  cover?: string;
+  thumb?: string;
   poster?: string;
   fanart?: string;
   sceneImages: string[];

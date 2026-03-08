@@ -54,7 +54,7 @@ export interface DownloadCallbacks {
   onSceneProgress?: (downloaded: number, total: number) => void;
 }
 
-type PrimaryImageKey = keyof Pick<DownloadedAssets, "cover" | "poster" | "fanart">;
+type PrimaryImageKey = keyof Pick<DownloadedAssets, "thumb" | "poster" | "fanart">;
 type PrimaryImageTask = { key: PrimaryImageKey; candidates: string[]; path: string; keepExisting: boolean };
 type SceneImageTask = { key: "sceneImages"; path: string; url: string };
 type ParallelResult<K extends string> = { key: K; path: string; success: boolean };
@@ -169,28 +169,29 @@ export class DownloadManager {
       }
     }
 
-    const coverPath = assets.cover;
-    if (coverPath) {
-      if (config.download.downloadPoster && !assets.poster) {
-        const posterTargetPath = join(outputDir, "poster.jpg");
-        const posterResult = await resolveSingleAsset({
-          targetPath: posterTargetPath,
-          keepExisting: config.download.keepPoster,
-          create: () => this.copyDerivedImage(coverPath, posterTargetPath, "poster"),
+    const horizontalPath = assets.thumb ?? assets.fanart;
+    if (horizontalPath) {
+      if (config.download.downloadThumb && !assets.thumb) {
+        const thumbTargetPath = join(outputDir, "thumb.jpg");
+        const thumbResult = await resolveSingleAsset({
+          targetPath: thumbTargetPath,
+          keepExisting: config.download.keepThumb,
+          create: () => this.copyDerivedImage(horizontalPath, thumbTargetPath, "thumb"),
         });
-        if (posterResult.assetPath) {
-          assets.poster = posterResult.assetPath;
-          if (posterResult.createdPath) {
-            assets.downloaded.push(posterResult.createdPath);
+        if (thumbResult.assetPath) {
+          assets.thumb = thumbResult.assetPath;
+          if (thumbResult.createdPath) {
+            assets.downloaded.push(thumbResult.createdPath);
           }
         }
       }
+
       if (config.download.downloadFanart && !assets.fanart) {
         const fanartTargetPath = join(outputDir, "fanart.jpg");
         const fanartResult = await resolveSingleAsset({
           targetPath: fanartTargetPath,
           keepExisting: config.download.keepFanart,
-          create: () => this.copyDerivedImage(coverPath, fanartTargetPath, "fanart"),
+          create: () => this.copyDerivedImage(horizontalPath, fanartTargetPath, "fanart"),
         });
         if (fanartResult.assetPath) {
           assets.fanart = fanartResult.assetPath;
@@ -230,12 +231,12 @@ export class DownloadManager {
 
     this.addPrimaryImageTask(
       tasks,
-      "cover",
-      config.download.downloadCover,
-      config.download.keepCover,
-      data.cover_url,
-      imageAlternatives.cover_url,
-      join(outputDir, "cover.jpg"),
+      "thumb",
+      config.download.downloadThumb,
+      config.download.keepThumb,
+      data.thumb_url,
+      imageAlternatives.thumb_url,
+      join(outputDir, "thumb.jpg"),
     );
     this.addPrimaryImageTask(
       tasks,
@@ -413,7 +414,7 @@ export class DownloadManager {
       return targetPath;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`Failed to derive ${targetLabel} from cover: ${message}`);
+      this.logger.warn(`Failed to derive ${targetLabel} image: ${message}`);
       return null;
     }
   }

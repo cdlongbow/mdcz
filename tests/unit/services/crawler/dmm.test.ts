@@ -86,7 +86,7 @@ describe("DmmCrawler", () => {
     expect(data.publisher).toBe("Publisher A");
     expect(data.series).toBe("Series A");
     expect(data.director).toBe("Director A");
-    expect(data.cover_url).toBe("https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00497/ssis00497pl.jpg");
+    expect(data.thumb_url).toBe("https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00497/ssis00497pl.jpg");
     expect(data.poster_url).toBe("https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00497/ssis00497ps.jpg");
     expect(data.trailer_url).toBe("https://cdn.example.com/trailer.mp4");
     expect(data.sample_images).toEqual([
@@ -254,7 +254,7 @@ describe("DmmCrawler", () => {
 
     const data = response.result.data;
     expect(data.title).toBe("AWS Optimization Test");
-    expect(data.cover_url).toBe("https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00027/ssis00027pl.jpg");
+    expect(data.thumb_url).toBe("https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00027/ssis00027pl.jpg");
     expect(data.poster_url).toBe("https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ssis00027/ssis00027ps.jpg");
   });
 

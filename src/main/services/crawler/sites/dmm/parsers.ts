@@ -91,7 +91,7 @@ export const parseMonoLikeDetail = ($: CheerioAPI): Partial<CrawlerData> | null 
 
   const thumb =
     extractAttr($, "meta[property='og:image']", "content") ?? extractAttr($, "a[name='package-image'] img", "src");
-  const coverUrl = thumb?.replace("ps.jpg", "pl.jpg");
+  const thumbUrl = thumb?.replace("ps.jpg", "pl.jpg");
 
   const sampleImages = uniqueStrings([
     ...$("#sample-image-block a")
@@ -121,8 +121,8 @@ export const parseMonoLikeDetail = ($: CheerioAPI): Partial<CrawlerData> | null 
     plot,
     release_date: release,
     rating: Number.isFinite(rating) ? rating : undefined,
-    cover_url: coverUrl,
-    poster_url: coverUrl?.replace("pl.jpg", "ps.jpg"),
+    thumb_url: thumbUrl,
+    poster_url: thumbUrl?.replace("pl.jpg", "ps.jpg"),
     sample_images: sampleImages,
   };
 };
@@ -142,10 +142,10 @@ export const parseDigitalDetail = ($: CheerioAPI): Partial<CrawlerData> | null =
   const trailerFromJson = jsonLd?.subjectOf?.contentUrl;
   const ratingFromJson = jsonLd?.aggregateRating?.ratingValue;
 
-  const coverFromJson = images[0];
-  const coverUrl = coverFromJson ?? base?.cover_url;
+  const thumbFromJson = images[0];
+  const thumbUrl = thumbFromJson ?? base?.thumb_url;
 
-  // Merge sample images from JSON-LD (skip first image = cover) and HTML sources
+  // Merge sample images from JSON-LD (skip first image = thumb) and HTML sources
   const jsonLdSamples = images.length > 1 ? images.slice(1) : [];
   const htmlSamples = base?.sample_images ?? [];
   const mergedSamples = uniqueStrings([...jsonLdSamples, ...htmlSamples]);
@@ -159,8 +159,8 @@ export const parseDigitalDetail = ($: CheerioAPI): Partial<CrawlerData> | null =
     studio: jsonLd?.brand?.name ?? base?.studio,
     release_date: releaseFromJson ?? base?.release_date,
     rating: Number.isFinite(ratingFromJson) ? ratingFromJson : base?.rating,
-    cover_url: coverUrl,
-    poster_url: coverUrl?.replace("pl.jpg", "ps.jpg") ?? base?.poster_url,
+    thumb_url: thumbUrl,
+    poster_url: thumbUrl?.replace("pl.jpg", "ps.jpg") ?? base?.poster_url,
     sample_images: mergedSamples.length > 0 ? mergedSamples : base?.sample_images,
     trailer_url: trailerFromJson ?? base?.trailer_url,
   };

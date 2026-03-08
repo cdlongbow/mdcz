@@ -106,7 +106,7 @@ describe("DownloadManager keep flags", () => {
 
   it("reuses existing sidecar assets when keep flags are enabled", async () => {
     const { root, manager, networkClient } = await createDownloadSubject({
-      "cover.jpg": "cover",
+      "thumb.jpg": "thumb",
       "poster.jpg": "poster",
       "fanart.jpg": "fanart",
       "trailer.mp4": "trailer",
@@ -115,7 +115,7 @@ describe("DownloadManager keep flags", () => {
     const assets = await manager.downloadAll(
       root,
       createCrawlerData({
-        cover_url: "https://example.com/cover.jpg",
+        thumb_url: "https://example.com/thumb.jpg",
         poster_url: "https://example.com/poster.jpg",
         fanart_url: "https://example.com/fanart.jpg",
         trailer_url: "https://example.com/trailer.mp4",
@@ -124,7 +124,7 @@ describe("DownloadManager keep flags", () => {
       createConfig(),
     );
 
-    expect(assets.cover).toBe(join(root, "cover.jpg"));
+    expect(assets.thumb).toBe(join(root, "thumb.jpg"));
     expect(assets.poster).toBe(join(root, "poster.jpg"));
     expect(assets.fanart).toBe(join(root, "fanart.jpg"));
     expect(assets.trailer).toBe(join(root, "trailer.mp4"));
@@ -134,9 +134,9 @@ describe("DownloadManager keep flags", () => {
     expect(networkClient.download).not.toHaveBeenCalled();
   });
 
-  it("creates missing poster and fanart from an existing kept cover", async () => {
+  it("creates missing fanart from an existing kept thumb", async () => {
     const { root, manager, networkClient } = await createDownloadSubject({
-      "cover.jpg": "cover",
+      "thumb.jpg": "thumb",
     });
     const assets = await manager.downloadAll(
       root,
@@ -147,28 +147,27 @@ describe("DownloadManager keep flags", () => {
       }),
     );
 
-    expect(assets.cover).toBe(join(root, "cover.jpg"));
-    expect(assets.poster).toBe(join(root, "poster.jpg"));
+    expect(assets.thumb).toBe(join(root, "thumb.jpg"));
+    expect(assets.poster).toBeUndefined();
     expect(assets.fanart).toBe(join(root, "fanart.jpg"));
-    expect(assets.downloaded).toEqual([join(root, "poster.jpg"), join(root, "fanart.jpg")]);
-    await expect(readFile(join(root, "poster.jpg"), "utf8")).resolves.toBe("cover");
-    await expect(readFile(join(root, "fanart.jpg"), "utf8")).resolves.toBe("cover");
+    expect(assets.downloaded).toEqual([join(root, "fanart.jpg")]);
+    await expect(readFile(join(root, "fanart.jpg"), "utf8")).resolves.toBe("thumb");
     expect(networkClient.probe).not.toHaveBeenCalled();
     expect(networkClient.download).not.toHaveBeenCalled();
   });
 
   it("refreshes existing assets when keep flags are disabled", async () => {
     const { root, manager, networkClient } = await createDownloadSubject({
-      "cover.jpg": "old-cover",
+      "thumb.jpg": "old-thumb",
     });
     mockImageValidation(true);
     const assets = await manager.downloadAll(
       root,
       createCrawlerData({
-        cover_url: "https://example.com/cover-new.jpg",
+        thumb_url: "https://example.com/thumb-new.jpg",
       }),
       createDownloadConfig({
-        keepCover: false,
+        keepThumb: false,
         downloadPoster: false,
         downloadFanart: false,
         downloadSceneImages: false,
@@ -176,10 +175,10 @@ describe("DownloadManager keep flags", () => {
       }),
     );
 
-    expect(assets.cover).toBe(join(root, "cover.jpg"));
-    expect(assets.downloaded).toEqual([join(root, "cover.jpg")]);
-    await expect(readFile(join(root, "cover.jpg"), "utf8")).resolves.toBe(
-      "downloaded:https://example.com/cover-new.jpg",
+    expect(assets.thumb).toBe(join(root, "thumb.jpg"));
+    expect(assets.downloaded).toEqual([join(root, "thumb.jpg")]);
+    await expect(readFile(join(root, "thumb.jpg"), "utf8")).resolves.toBe(
+      "downloaded:https://example.com/thumb-new.jpg",
     );
     expect(networkClient.probe).toHaveBeenCalledTimes(1);
     expect(networkClient.download).toHaveBeenCalledTimes(1);
@@ -187,16 +186,16 @@ describe("DownloadManager keep flags", () => {
 
   it("keeps the previous image when a refreshed download fails validation", async () => {
     const { root, manager } = await createDownloadSubject({
-      "cover.jpg": "old-cover",
+      "thumb.jpg": "old-thumb",
     });
     mockImageValidation(false);
     const assets = await manager.downloadAll(
       root,
       createCrawlerData({
-        cover_url: "https://example.com/cover-bad.jpg",
+        thumb_url: "https://example.com/thumb-bad.jpg",
       }),
       createDownloadConfig({
-        keepCover: false,
+        keepThumb: false,
         downloadPoster: false,
         downloadFanart: false,
         downloadSceneImages: false,
@@ -204,9 +203,9 @@ describe("DownloadManager keep flags", () => {
       }),
     );
 
-    expect(assets.cover).toBe(join(root, "cover.jpg"));
+    expect(assets.thumb).toBe(join(root, "thumb.jpg"));
     expect(assets.downloaded).toEqual([]);
-    await expect(readFile(join(root, "cover.jpg"), "utf8")).resolves.toBe("old-cover");
+    await expect(readFile(join(root, "thumb.jpg"), "utf8")).resolves.toBe("old-thumb");
   });
 
   it("replaces the scene image set when keepSceneImages is disabled", async () => {
@@ -221,7 +220,7 @@ describe("DownloadManager keep flags", () => {
         sample_images: ["https://example.com/scene-new-1.jpg"],
       }),
       createDownloadConfig({
-        downloadCover: false,
+        downloadThumb: false,
         downloadPoster: false,
         downloadFanart: false,
         downloadTrailer: false,
@@ -247,7 +246,7 @@ describe("DownloadManager keep flags", () => {
         sample_images: [],
       }),
       createDownloadConfig({
-        downloadCover: false,
+        downloadThumb: false,
         downloadPoster: false,
         downloadFanart: false,
         downloadTrailer: false,
@@ -271,7 +270,7 @@ describe("DownloadManager keep flags", () => {
         sample_images: ["https://example.com/scene-bad-1.jpg"],
       }),
       createDownloadConfig({
-        downloadCover: false,
+        downloadThumb: false,
         downloadPoster: false,
         downloadFanart: false,
         downloadTrailer: false,

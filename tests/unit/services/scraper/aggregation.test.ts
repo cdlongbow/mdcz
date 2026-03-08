@@ -126,34 +126,34 @@ describe("FieldAggregator", () => {
   });
 
   describe("highest_quality strategy", () => {
-    it("prefers AWS DMM URLs for cover", () => {
+    it("prefers AWS DMM URLs for thumb", () => {
       const aggregator = new FieldAggregator({
-        cover_url: [Website.JAVDB, Website.DMM],
+        thumb_url: [Website.JAVDB, Website.DMM],
       });
 
       const results = new Map<Website, CrawlerData>([
-        [Website.DMM, makeCrawlerData({ cover_url: "https://awsimgsrc.dmm.co.jp/cover.jpg", website: Website.DMM })],
-        [Website.JAVDB, makeCrawlerData({ cover_url: "https://javdb.com/cover.jpg", website: Website.JAVDB })],
+        [Website.DMM, makeCrawlerData({ thumb_url: "https://awsimgsrc.dmm.co.jp/thumb.jpg", website: Website.DMM })],
+        [Website.JAVDB, makeCrawlerData({ thumb_url: "https://javdb.com/thumb.jpg", website: Website.JAVDB })],
       ]);
 
       const { data, sources } = aggregator.aggregate(results);
-      expect(data.cover_url).toBe("https://awsimgsrc.dmm.co.jp/cover.jpg");
-      expect(sources.cover_url).toBe(Website.DMM);
+      expect(data.thumb_url).toBe("https://awsimgsrc.dmm.co.jp/thumb.jpg");
+      expect(sources.thumb_url).toBe(Website.DMM);
     });
 
     it("falls back to first_non_null when no AWS URL available", () => {
       const aggregator = new FieldAggregator({
-        cover_url: [Website.JAVDB, Website.DMM],
+        thumb_url: [Website.JAVDB, Website.DMM],
       });
 
       const results = new Map<Website, CrawlerData>([
-        [Website.DMM, makeCrawlerData({ cover_url: "https://dmm.co.jp/cover.jpg", website: Website.DMM })],
-        [Website.JAVDB, makeCrawlerData({ cover_url: "https://javdb.com/cover.jpg", website: Website.JAVDB })],
+        [Website.DMM, makeCrawlerData({ thumb_url: "https://dmm.co.jp/thumb.jpg", website: Website.DMM })],
+        [Website.JAVDB, makeCrawlerData({ thumb_url: "https://javdb.com/thumb.jpg", website: Website.JAVDB })],
       ]);
 
       const { data } = aggregator.aggregate(results);
       // JAVDB has higher priority, so it should win
-      expect(data.cover_url).toBe("https://javdb.com/cover.jpg");
+      expect(data.thumb_url).toBe("https://javdb.com/thumb.jpg");
     });
   });
 
@@ -219,7 +219,7 @@ describe("AggregationService", () => {
         makeCrawlerData({
           title: "DMM Title",
           plot: "Short DMM plot",
-          cover_url: "https://awsimgsrc.dmm.co.jp/cover.jpg",
+          thumb_url: "https://awsimgsrc.dmm.co.jp/thumb.jpg",
           website: Website.DMM,
         }),
       ],
@@ -245,7 +245,7 @@ describe("AggregationService", () => {
     expect(result?.data.title).toBeDefined();
     expect(result?.data.number).toBe("ABF-075");
     expect(result?.data.plot).toBe("Longer JAVDB plot description here");
-    expect(result?.data.cover_url).toBe("https://awsimgsrc.dmm.co.jp/cover.jpg");
+    expect(result?.data.thumb_url).toBe("https://awsimgsrc.dmm.co.jp/thumb.jpg");
     expect(result?.stats.successCount).toBe(2);
     expect(result?.stats.failedCount).toBe(1); // JAVBUS has no data
   });
@@ -259,13 +259,13 @@ describe("AggregationService", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null when minimum threshold not met (missing cover and poster)", async () => {
+  it("returns null when minimum threshold not met (missing thumb and poster)", async () => {
     const siteResults = new Map<Website, CrawlerData>([
       [
         Website.DMM,
         makeCrawlerData({
           title: "Has title",
-          cover_url: undefined,
+          thumb_url: undefined,
           poster_url: undefined,
           website: Website.DMM,
         }),
@@ -285,7 +285,7 @@ describe("AggregationService", () => {
       [
         Website.DMM,
         makeCrawlerData({
-          cover_url: "https://example.com/cover.jpg",
+          thumb_url: "https://example.com/thumb.jpg",
           website: Website.DMM,
         }),
       ],
@@ -308,7 +308,7 @@ describe("AggregationService", () => {
 
   it("attempts all enabled sites", async () => {
     const siteResults = new Map<Website, CrawlerData>([
-      [Website.DMM, makeCrawlerData({ cover_url: "https://cover.jpg", website: Website.DMM })],
+      [Website.DMM, makeCrawlerData({ thumb_url: "https://thumb.jpg", website: Website.DMM })],
     ]);
 
     const provider = new MultiResultCrawlerProvider(siteResults);
@@ -322,7 +322,7 @@ describe("AggregationService", () => {
 
   it("clears cache when clearCache is called", async () => {
     const siteResults = new Map<Website, CrawlerData>([
-      [Website.DMM, makeCrawlerData({ cover_url: "https://cover.jpg", website: Website.DMM })],
+      [Website.DMM, makeCrawlerData({ thumb_url: "https://thumb.jpg", website: Website.DMM })],
     ]);
 
     const provider = new MultiResultCrawlerProvider(siteResults);
@@ -345,7 +345,7 @@ describe("AggregationService", () => {
         makeCrawlerData({
           title: "FC2 Title",
           number: "FC2-4775286",
-          cover_url: "https://fc2.example/cover.jpg",
+          thumb_url: "https://fc2.example/thumb.jpg",
           website: Website.FC2,
         }),
       ],

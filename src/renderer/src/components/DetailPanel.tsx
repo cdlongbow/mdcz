@@ -36,7 +36,7 @@ export function DetailPanel() {
   const [nfoLoading, setNfoLoading] = useState(false);
   const [nfoSaving, setNfoSaving] = useState(false);
   const [posterSrc, setPosterSrc] = useState("");
-  const [coverSrc, setCoverSrc] = useState("");
+  const [fanartSrc, setFanartSrc] = useState("");
 
   const selectedItem = results.find((r) => r.id === selectedResultId);
   const posterCandidates = buildImageSourceCandidates({
@@ -45,17 +45,17 @@ export function DetailPanel() {
     outputPath: selectedItem?.output_path,
     fileName: "poster.jpg",
   });
-  const coverCandidates = buildImageSourceCandidates({
-    remotePath: selectedItem?.cover_url,
+  const fanartCandidates = buildImageSourceCandidates({
+    remotePath: selectedItem?.fanart_url ?? selectedItem?.thumb_url,
     filePath: selectedItem?.path,
     outputPath: selectedItem?.output_path,
-    fileName: "cover.jpg",
+    fileName: "fanart.jpg",
   });
 
   useEffect(() => {
     setPosterSrc(toRenderableSrc(posterCandidates.primary));
-    setCoverSrc(toRenderableSrc(coverCandidates.primary));
-  }, [coverCandidates.primary, posterCandidates.primary]);
+    setFanartSrc(toRenderableSrc(fanartCandidates.primary));
+  }, [fanartCandidates.primary, posterCandidates.primary]);
 
   const handlePlay = () => {
     if (!selectedItem?.path) {
@@ -124,10 +124,10 @@ export function DetailPanel() {
     }
   };
 
-  const handleCoverError = () => {
-    const localCover = toRenderableSrc(coverCandidates.fallback);
-    if (localCover && localCover !== coverSrc) {
-      setCoverSrc(localCover);
+  const handleFanartError = () => {
+    const localFanart = toRenderableSrc(fanartCandidates.fallback);
+    if (localFanart && localFanart !== fanartSrc) {
+      setFanartSrc(localFanart);
     }
   };
 
@@ -291,15 +291,15 @@ export function DetailPanel() {
 
           <Separator />
 
-          {/* Cover / Primary Image */}
-          {coverSrc && (
+          {/* Fanart / Backdrop */}
+          {fanartSrc && (
             <div className="bg-black/5 rounded-xl overflow-hidden border">
               <div className="flex max-h-[28rem] items-center justify-center bg-muted/10 p-3">
                 <img
-                  src={coverSrc}
-                  alt="Cover"
+                  src={fanartSrc}
+                  alt="Fanart"
                   className="max-h-[25rem] max-w-full object-contain"
-                  onError={handleCoverError}
+                  onError={handleFanartError}
                 />
               </div>
             </div>

@@ -89,10 +89,10 @@ export class AggregationService {
     const aggregator = new FieldAggregator(config.aggregation.fieldPriorities, config.aggregation.behavior);
     const { data, sources, imageAlternatives } = aggregator.aggregate(successes);
 
-    // Validate minimum threshold: number + title + (cover_url OR poster_url)
-    if (!data.number || !data.title || (!data.cover_url && !data.poster_url)) {
+    // Validate minimum threshold: number + title + (thumb_url OR poster_url)
+    if (!data.number || !data.title || (!data.thumb_url && !data.poster_url)) {
       this.logger.warn(
-        `Aggregated data for ${number} does not meet minimum threshold (number=${!!data.number}, title=${!!data.title}, cover=${!!data.cover_url}, poster=${!!data.poster_url})`,
+        `Aggregated data for ${number} does not meet minimum threshold (number=${!!data.number}, title=${!!data.title}, thumb=${!!data.thumb_url}, poster=${!!data.poster_url})`,
       );
       return null;
     }

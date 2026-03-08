@@ -149,8 +149,10 @@ export const parseNfo = (xml: string): CrawlerData => {
 
   const thumbs = parseThumbEntries(movieNode.thumb);
   const posterUrl = pickThumbByAspect(thumbs, ["poster"]);
-  const coverUrl =
-    pickThumbByAspect(thumbs, ["thumb", "cover"]) ?? thumbs.find((entry) => !entry.aspect)?.value ?? thumbs[0]?.value;
+  const thumbUrl =
+    pickThumbByAspect(thumbs, ["thumb", "landscape"]) ??
+    thumbs.find((entry) => !entry.aspect)?.value ??
+    thumbs[0]?.value;
 
   const fanartThumbs =
     movieNode.fanart && typeof movieNode.fanart === "object"
@@ -189,7 +191,7 @@ export const parseNfo = (xml: string): CrawlerData => {
     release_date: premiered ?? releasedate,
     release_year: Number.isFinite(releaseYear) ? releaseYear : undefined,
     rating: Number.isFinite(rating) ? rating : undefined,
-    cover_url: coverUrl,
+    thumb_url: thumbUrl,
     poster_url: posterUrl,
     fanart_url: fanartUrl,
     sample_images: sampleImages,

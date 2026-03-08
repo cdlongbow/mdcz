@@ -151,9 +151,9 @@ export class JavdbCrawler extends BaseCrawler {
     const director = findStrongRow($, ["導演:", "Director:"])?.trim() || undefined;
     const release = parseDate(findStrongRow($, ["日期:", "Released Date:"])) ?? undefined;
 
-    const coverUrl = extractAttr($, "img.video-cover", "src");
-    const coverUrlAbsolute = toAbsoluteUrl(JAVDB_BASE_URL, coverUrl);
-    const posterUrl = coverUrlAbsolute?.replace("/covers/", "/thumbs/");
+    const thumbUrl = extractAttr($, "img.video-cover", "src");
+    const thumbUrlAbsolute = toAbsoluteUrl(JAVDB_BASE_URL, thumbUrl);
+    const posterUrl = thumbUrlAbsolute?.replace("/covers/", "/thumbs/");
 
     const trailerUrl = extractAttr($, "video#preview-video source", "src") ?? undefined;
     const trailerUrlAbsolute = toAbsoluteUrl(JAVDB_BASE_URL, trailerUrl);
@@ -177,7 +177,7 @@ export class JavdbCrawler extends BaseCrawler {
       plot: undefined,
       release_date: release,
       rating: undefined,
-      cover_url: coverUrlAbsolute,
+      thumb_url: thumbUrlAbsolute,
       poster_url: posterUrl,
       fanart_url: undefined,
       sample_images: sampleImageUrls,

@@ -79,7 +79,7 @@ export class PrestigeCrawler extends BaseCrawler {
       plot: data.body,
       release_date: data.sku?.[0]?.salesStartAt?.slice(0, 10),
       rating: undefined,
-      cover_url: toMedia(data.packageImage?.path),
+      thumb_url: toMedia(data.packageImage?.path),
       poster_url: toMedia(data.thumbnail?.path),
       fanart_url: undefined,
       sample_images: (data.media ?? [])

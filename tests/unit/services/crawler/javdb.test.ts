@@ -104,7 +104,7 @@ describe("JavdbCrawler", () => {
     expect(data.series).toBe("SeriesA");
     expect(data.director).toBe("DirectorA");
     expect(data.release_date).toBe("2021-02-03");
-    expect(data.cover_url).toBe("https://javdb.com/covers/cover1.jpg");
+    expect(data.thumb_url).toBe("https://javdb.com/covers/cover1.jpg");
     expect(data.poster_url).toBe("https://javdb.com/thumbs/cover1.jpg");
     expect(data.trailer_url).toBe("https://cdn.example.com/trailer.mp4");
     expect(data.sample_images).toEqual(["https://javdb.com/images/1.jpg", "https://javdb.com/images/2.jpg"]);

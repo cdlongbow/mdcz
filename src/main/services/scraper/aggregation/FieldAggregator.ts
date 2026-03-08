@@ -29,13 +29,13 @@ type SourceEntry = { site: Website; data: CrawlerData };
 type ResolvedField = { value: unknown; source?: Website; alternatives?: string[] };
 
 const EMPTY_IMAGE_ALTERNATIVES: ImageAlternatives = {
-  cover_url: [],
+  thumb_url: [],
   poster_url: [],
   fanart_url: [],
 };
 
 function isImageField(field: keyof CrawlerData): field is keyof ImageAlternatives {
-  return field === "cover_url" || field === "poster_url" || field === "fanart_url";
+  return field === "thumb_url" || field === "poster_url" || field === "fanart_url";
 }
 
 /** Selects the best value for each CrawlerData field from multiple sources. */
@@ -100,7 +100,7 @@ export class FieldAggregator {
       release_year: resolve("release_year"),
       durationSeconds: resolve("durationSeconds"),
       rating: resolve("rating"),
-      cover_url: resolve("cover_url"),
+      thumb_url: resolve("thumb_url"),
       poster_url: resolve("poster_url"),
       fanart_url: resolve("fanart_url"),
       sample_images: resolve("sample_images") ?? [],

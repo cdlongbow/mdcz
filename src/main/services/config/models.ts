@@ -73,14 +73,14 @@ const translateSchema = z.object({
 });
 
 const downloadSchema = z.object({
-  downloadCover: z.boolean().default(true),
+  downloadThumb: z.boolean().default(true),
   downloadPoster: z.boolean().default(true),
   downloadFanart: z.boolean().default(true),
   downloadSceneImages: z.boolean().default(true),
   downloadTrailer: z.boolean().default(true),
   downloadNfo: z.boolean().default(true),
   sceneImageConcurrency: z.number().int().min(1).max(20).default(5),
-  keepCover: z.boolean().default(true),
+  keepThumb: z.boolean().default(true),
   keepPoster: z.boolean().default(true),
   keepFanart: z.boolean().default(true),
   keepSceneImages: z.boolean().default(true),
@@ -157,7 +157,7 @@ const fieldPrioritiesSchema = z.object({
   genres: z
     .array(z.enum(Website))
     .default([Website.JAVDB, Website.FC2, Website.DMM, Website.JAVBUS, Website.KM_PRODUCE]),
-  cover_url: z
+  thumb_url: z
     .array(z.enum(Website))
     .default([Website.DMM, Website.FC2, Website.JAVDB, Website.JAVBUS, Website.KM_PRODUCE]),
   poster_url: z

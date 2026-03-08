@@ -111,15 +111,15 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "network.javdbCookie", label: "JavDB 凭证", section: "network" },
   { key: "network.javbusCookie", label: "JavBus 凭证", section: "network" },
   // download
-  { key: "download.downloadCover", label: "下载封面图", section: "download" },
+  { key: "download.downloadThumb", label: "下载横版缩略图", section: "download" },
   { key: "download.downloadPoster", label: "下载海报", section: "download" },
-  { key: "download.downloadFanart", label: "下载同人画", section: "download" },
+  { key: "download.downloadFanart", label: "下载背景图", section: "download" },
   { key: "download.downloadSceneImages", label: "下载剧照", section: "download" },
   { key: "download.downloadTrailer", label: "下载预告片", section: "download" },
   { key: "download.downloadNfo", label: "下载 NFO", section: "download" },
-  { key: "download.keepCover", label: "保留已有封面图", section: "download" },
+  { key: "download.keepThumb", label: "保留已有横版缩略图", section: "download" },
   { key: "download.keepPoster", label: "保留已有海报", section: "download" },
-  { key: "download.keepFanart", label: "保留已有同人画", section: "download" },
+  { key: "download.keepFanart", label: "保留已有背景图", section: "download" },
   { key: "download.keepSceneImages", label: "保留已有剧照", section: "download" },
   { key: "download.keepTrailer", label: "保留已有预告片", section: "download" },
   { key: "download.keepNfo", label: "保留已有 NFO", section: "download" },
@@ -331,9 +331,9 @@ function NetworkSection(_props: SectionRenderProps) {
 
 function DownloadSection(_props: SectionRenderProps) {
   const form = useFormContext<FieldValues>();
-  const [downloadCover, downloadPoster, downloadFanart, downloadSceneImages, downloadTrailer, downloadNfo] = form.watch(
+  const [downloadThumb, downloadPoster, downloadFanart, downloadSceneImages, downloadTrailer, downloadNfo] = form.watch(
     [
-      "download.downloadCover",
+      "download.downloadThumb",
       "download.downloadPoster",
       "download.downloadFanart",
       "download.downloadSceneImages",
@@ -351,15 +351,15 @@ function DownloadSection(_props: SectionRenderProps) {
 
   return (
     <>
-      <BoolField name="download.downloadCover" label="下载封面图" />
+      <BoolField name="download.downloadThumb" label="下载横版缩略图" />
       <BoolField name="download.downloadPoster" label="下载海报" />
-      <BoolField name="download.downloadFanart" label="下载同人画" />
+      <BoolField name="download.downloadFanart" label="下载背景图" />
       <BoolField name="download.downloadSceneImages" label="下载剧照" />
       <BoolField name="download.downloadTrailer" label="下载预告片" />
       <BoolField name="download.downloadNfo" label="下载 NFO" />
-      {downloadCover && <BoolField name="download.keepCover" label="保留已有封面图" />}
+      {downloadThumb && <BoolField name="download.keepThumb" label="保留已有横版缩略图" />}
       {downloadPoster && <BoolField name="download.keepPoster" label="保留已有海报" />}
-      {downloadFanart && <BoolField name="download.keepFanart" label="保留已有同人画" />}
+      {downloadFanart && <BoolField name="download.keepFanart" label="保留已有背景图" />}
       {downloadSceneImages && <BoolField name="download.keepSceneImages" label="保留已有剧照" />}
       {downloadTrailer && <BoolField name="download.keepTrailer" label="保留已有预告片" />}
       {downloadNfo && <BoolField name="download.keepNfo" label="保留已有 NFO" />}

@@ -175,8 +175,8 @@ describe("AmazonPosterToolService", () => {
     const posterPath = join(root, "poster.jpg");
     const enhance = vi.fn(async () => ({
       upgraded: true,
-      reason: "已升级为Amazon商品封面",
-      cover_url: "https://m.media-amazon.com/images/I/81test._AC_SL1500_.jpg",
+      reason: "已升级为Amazon商品海报",
+      poster_url: "https://m.media-amazon.com/images/I/81test._AC_SL1500_.jpg",
     }));
     const { service } = createService({ enhance });
 
@@ -187,7 +187,7 @@ describe("AmazonPosterToolService", () => {
     const firstCall = enhance.mock.calls.at(0) as unknown[] | undefined;
     expect(firstCall?.[0] as Record<string, unknown> | undefined).toMatchObject({
       title: "Lookup Title",
-      cover_url: "lookup",
+      poster_url: "lookup",
     });
     expect(firstCall).toHaveLength(1);
     await expect(stat(posterPath)).rejects.toThrow();

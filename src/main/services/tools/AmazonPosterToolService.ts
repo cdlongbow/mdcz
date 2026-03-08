@@ -94,14 +94,14 @@ export class AmazonPosterToolService {
       genres: [],
       sample_images: [],
       website: Website.JAVDB,
-      cover_url: "lookup",
+      poster_url: "lookup",
     };
 
     try {
       const result = await this.amazonJpImageService.enhance(lookupData);
       return {
         nfoPath: normalizedNfoPath,
-        amazonPosterUrl: result.cover_url ?? null,
+        amazonPosterUrl: result.poster_url ?? null,
         reason: result.reason,
         elapsedMs: Date.now() - startedAt,
       };

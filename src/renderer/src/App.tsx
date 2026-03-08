@@ -49,8 +49,9 @@ const formatBitrate = (bitrateBps: number | undefined): string | undefined => {
 const normalizeResultItem = (payload: BackendScrapeResult): ScrapeResult => {
   const data = payload.crawlerData;
   const assets = payload.assets;
-  const remotePoster = data?.poster_url ?? data?.cover_url;
-  const remoteCover = data?.cover_url ?? data?.poster_url;
+  const remotePoster = data?.poster_url;
+  const remoteThumb = data?.thumb_url ?? data?.fanart_url;
+  const remoteFanart = data?.fanart_url ?? data?.thumb_url;
 
   return {
     id: crypto.randomUUID(),
@@ -75,7 +76,8 @@ const normalizeResultItem = (payload: BackendScrapeResult): ScrapeResult => {
     publisher: data?.publisher,
     score: typeof data?.rating === "number" ? String(data.rating) : undefined,
     poster_url: assets?.poster ?? remotePoster,
-    cover_url: assets?.cover ?? remoteCover,
+    thumb_url: assets?.thumb ?? assets?.fanart ?? remoteThumb,
+    fanart_url: assets?.fanart ?? assets?.thumb ?? remoteFanart,
     output_path: payload.outputPath,
     scene_images: assets?.sceneImages,
     sources: payload.sources as Record<string, string> | undefined,

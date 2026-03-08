@@ -75,13 +75,13 @@ export abstract class BaseDmmCrawler extends BaseCrawler {
     number00?: string,
     numberNo00?: string,
   ): Promise<Partial<CrawlerData>> {
-    const coverUrl = data.cover_url;
-    if (!coverUrl || !coverUrl.includes("pics.dmm.co.jp")) {
+    const thumbUrl = data.thumb_url;
+    if (!thumbUrl || !thumbUrl.includes("pics.dmm.co.jp")) {
       return data;
     }
 
     const awsCandidates = [
-      coverUrl.replace("pics.dmm.co.jp", "awsimgsrc.dmm.co.jp/pics_dig").replace("/adult/", "/"),
+      thumbUrl.replace("pics.dmm.co.jp", "awsimgsrc.dmm.co.jp/pics_dig").replace("/adult/", "/"),
       number00 ? `https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/${number00}/${number00}pl.jpg` : null,
       numberNo00 ? `https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/${numberNo00}/${numberNo00}pl.jpg` : null,
     ].filter((url): url is string => Boolean(url));
@@ -101,7 +101,7 @@ export abstract class BaseDmmCrawler extends BaseCrawler {
       this.logger.debug(`Using AWS high-quality image: ${validUrl}`);
       return {
         ...data,
-        cover_url: validUrl,
+        thumb_url: validUrl,
         poster_url: validUrl.replace("pl.jpg", "ps.jpg"),
       };
     }

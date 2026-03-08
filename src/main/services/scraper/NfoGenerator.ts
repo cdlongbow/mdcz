@@ -132,10 +132,10 @@ export class NfoGenerator {
     } else if (data.poster_url) {
       thumbs.push({ "@_aspect": "poster", "#text": data.poster_url });
     }
-    if (assets?.cover) {
-      thumbs.push({ "@_aspect": "thumb", "#text": basename(assets.cover) });
-    } else if (data.cover_url) {
-      thumbs.push({ "@_aspect": "thumb", "#text": data.cover_url });
+    if (assets?.thumb) {
+      thumbs.push({ "@_aspect": "thumb", "#text": basename(assets.thumb) });
+    } else if (data.thumb_url) {
+      thumbs.push({ "@_aspect": "thumb", "#text": data.thumb_url });
     }
 
     if (thumbs.length > 0) {
@@ -152,9 +152,10 @@ export class NfoGenerator {
 
     if (assets?.sceneImages && assets.sceneImages.length > 0) {
       // Use relative paths: samples/scene-001.jpg
+      const referenceAssetPath = assets.fanart ?? assets.thumb ?? assets.poster;
       for (const imagePath of assets.sceneImages) {
-        const relativePath = assets.cover
-          ? relative(dirname(assets.cover), imagePath).replaceAll("\\", "/")
+        const relativePath = referenceAssetPath
+          ? relative(dirname(referenceAssetPath), imagePath).replaceAll("\\", "/")
           : imagePath.split("/").slice(-2).join("/");
         fanartThumbs.push({ "#text": relativePath });
       }
@@ -185,7 +186,7 @@ function buildSourceComment(data: CrawlerData, sources: SourceMap): string {
     { key: "title", label: "title" },
     { key: "plot", label: "plot", detail: () => `${data.plot?.length ?? 0} chars` },
     { key: "actors", label: "actors", detail: () => `${data.actors.length} actors` },
-    { key: "cover_url", label: "cover_url" },
+    { key: "thumb_url", label: "thumb_url" },
     { key: "sample_images", label: "sample_images", detail: () => `${data.sample_images.length} images` },
     { key: "studio", label: "studio" },
     { key: "genres", label: "genres", detail: () => `${data.genres.length} genres` },

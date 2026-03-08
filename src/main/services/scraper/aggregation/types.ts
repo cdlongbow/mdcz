@@ -5,7 +5,7 @@ import type { CrawlerData } from "@shared/types";
 export type SourceMap = Partial<Record<keyof CrawlerData, Website>>;
 
 export interface ImageAlternatives {
-  cover_url: string[];
+  thumb_url: string[];
   poster_url: string[];
   fanart_url: string[];
 }
@@ -52,7 +52,7 @@ export const FIELD_STRATEGIES: Partial<Record<keyof CrawlerData, AggregationStra
   release_year: "first_non_null",
   durationSeconds: "first_non_null",
   rating: "first_non_null",
-  cover_url: "highest_quality",
+  thumb_url: "highest_quality",
   poster_url: "highest_quality",
   fanart_url: "highest_quality",
   trailer_url: "first_non_null",
