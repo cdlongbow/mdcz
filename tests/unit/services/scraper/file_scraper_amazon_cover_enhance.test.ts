@@ -64,7 +64,7 @@ describe("FileScraper Amazon cover enhance", () => {
       } as unknown as DownloadManager,
       fileOrganizer: {
         plan: vi.fn().mockReturnValue(plan),
-        ensureOutputReady: vi.fn().mockResolvedValue(undefined),
+        ensureOutputReady: vi.fn().mockResolvedValue(plan),
         organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
         cleanupUnwantedFiles: vi.fn().mockResolvedValue(undefined),
       } as unknown as FileOrganizer,
@@ -107,7 +107,7 @@ describe("FileScraper Amazon cover enhance", () => {
       } as unknown as DownloadManager,
       fileOrganizer: {
         plan: vi.fn().mockReturnValue(plan),
-        ensureOutputReady: vi.fn().mockResolvedValue(undefined),
+        ensureOutputReady: vi.fn().mockResolvedValue(plan),
         organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
         cleanupUnwantedFiles: vi.fn().mockResolvedValue(undefined),
       } as unknown as FileOrganizer,
@@ -148,7 +148,7 @@ describe("FileScraper Amazon cover enhance", () => {
       } as unknown as DownloadManager,
       fileOrganizer: {
         plan: vi.fn().mockReturnValue(plan),
-        ensureOutputReady: vi.fn().mockResolvedValue(undefined),
+        ensureOutputReady: vi.fn().mockResolvedValue(plan),
         organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
         cleanupUnwantedFiles: vi.fn().mockResolvedValue(undefined),
       } as unknown as FileOrganizer,
@@ -196,7 +196,7 @@ describe("FileScraper Amazon cover enhance", () => {
       } as unknown as DownloadManager,
       fileOrganizer: {
         plan: vi.fn().mockReturnValue(plan),
-        ensureOutputReady: vi.fn().mockResolvedValue(undefined),
+        ensureOutputReady: vi.fn().mockResolvedValue(plan),
         organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
         cleanupUnwantedFiles: vi.fn().mockResolvedValue(undefined),
       } as unknown as FileOrganizer,
@@ -240,7 +240,7 @@ describe("FileScraper Amazon cover enhance", () => {
       } as unknown as DownloadManager,
       fileOrganizer: {
         plan: vi.fn().mockReturnValue(plan),
-        ensureOutputReady: vi.fn().mockResolvedValue(undefined),
+        ensureOutputReady: vi.fn().mockResolvedValue(plan),
         organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
         cleanupUnwantedFiles: vi.fn().mockResolvedValue(undefined),
       } as unknown as FileOrganizer,
@@ -299,7 +299,7 @@ describe("FileScraper Amazon cover enhance", () => {
       } as unknown as DownloadManager,
       fileOrganizer: {
         plan: vi.fn().mockReturnValue(plan),
-        ensureOutputReady: vi.fn().mockResolvedValue(undefined),
+        ensureOutputReady: vi.fn().mockResolvedValue(plan),
         organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
         cleanupUnwantedFiles: vi.fn().mockResolvedValue(undefined),
       } as unknown as FileOrganizer,

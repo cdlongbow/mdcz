@@ -1,9 +1,19 @@
-import { parse } from "node:path";
-import { configurationSchema } from "@main/services/config";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, parse } from "node:path";
+import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { FileOrganizer } from "@main/services/scraper/FileOrganizer";
 import { Website } from "@shared/enums";
 import type { CrawlerData, FileInfo } from "@shared/types";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+
+const tempDirs: string[] = [];
+
+const createTempDir = async (): Promise<string> => {
+  const dirPath = await mkdtemp(join(tmpdir(), "mdcz-file-organizer-"));
+  tempDirs.push(dirPath);
+  return dirPath;
+};
 
 const createFileInfo = (overrides: Partial<FileInfo> = {}): FileInfo => {
   return {
@@ -28,16 +38,54 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
   };
 };
 
+interface ConfigOverrides {
+  paths?: Partial<typeof defaultConfiguration.paths>;
+  naming?: Partial<typeof defaultConfiguration.naming>;
+  behavior?: Partial<typeof defaultConfiguration.behavior>;
+  download?: Partial<typeof defaultConfiguration.download>;
+}
+
+const createConfig = (overrides: ConfigOverrides = {}) => {
+  return configurationSchema.parse({
+    ...defaultConfiguration,
+    paths: {
+      ...defaultConfiguration.paths,
+      mediaPath: "/media",
+      successOutputFolder: "output",
+      ...overrides.paths,
+    },
+    naming: {
+      ...defaultConfiguration.naming,
+      censoredStyle: "-CEN",
+      ...overrides.naming,
+    },
+    behavior: {
+      ...defaultConfiguration.behavior,
+      ...overrides.behavior,
+    },
+    download: {
+      ...defaultConfiguration.download,
+      ...overrides.download,
+    },
+  });
+};
+
+const expectPathExists = async (path: string): Promise<void> => {
+  await expect(access(path)).resolves.toBeUndefined();
+};
+
 describe("FileOrganizer naming settings", () => {
+  afterEach(async () => {
+    await Promise.all(
+      tempDirs.splice(0, tempDirs.length).map(async (dirPath) => {
+        await rm(dirPath, { recursive: true, force: true });
+      }),
+    );
+  });
+
   it("applies subtitle/umr/leak/uncensored markers to the rendered number", () => {
-    const config = configurationSchema.parse({
-      paths: {
-        mediaPath: "/media",
-        successOutputFolder: "output",
-      },
+    const config = createConfig({
       naming: {
-        folderTemplate: "{number}",
-        fileTemplate: "{number}",
         cnwordStyle: "-SUB",
         umrStyle: "-UMR",
         leakStyle: "-LEAK",
@@ -63,11 +111,7 @@ describe("FileOrganizer naming settings", () => {
   });
 
   it("applies release date formatting and max length limits", () => {
-    const config = configurationSchema.parse({
-      paths: {
-        mediaPath: "/media",
-        successOutputFolder: "output",
-      },
+    const config = createConfig({
       naming: {
         folderTemplate: "{date}-{number}",
         fileTemplate: "{date}-{number}",
@@ -93,5 +137,159 @@ describe("FileOrganizer naming settings", () => {
     expect(renderedFileName.startsWith("2024.01.02")).toBe(true);
     expect(folderName.length).toBeLessThanOrEqual(12);
     expect(renderedFileName.length).toBeLessThanOrEqual(12);
+  });
+
+  it("keeps NFO aligned with the final video basename when rename is disabled", () => {
+    const config = createConfig({
+      naming: {
+        folderTemplate: "{number}",
+        fileTemplate: "{number}",
+      },
+      behavior: {
+        successFileMove: true,
+        successFileRename: false,
+      },
+    });
+
+    const organizer = new FileOrganizer();
+    const plan = organizer.plan(
+      createFileInfo({
+        filePath: "/input/raw-source.mp4",
+        fileName: "raw-source",
+      }),
+      createCrawlerData({
+        number: "XYZ-999",
+      }),
+      config,
+    );
+
+    expect(parse(plan.targetVideoPath).base).toBe("raw-source.mp4");
+    expect(parse(plan.nfoPath).base).toBe("raw-source.nfo");
+  });
+
+  it("keeps local metadata beside the source video when move is disabled", () => {
+    const config = createConfig({
+      naming: {
+        folderTemplate: "{number}",
+        fileTemplate: "{number}",
+      },
+      behavior: {
+        successFileMove: false,
+        successFileRename: false,
+      },
+    });
+
+    const organizer = new FileOrganizer();
+    const plan = organizer.plan(
+      createFileInfo({
+        filePath: "/input/original-name.mp4",
+        fileName: "original-name",
+      }),
+      createCrawlerData({
+        number: "XYZ-999",
+      }),
+      config,
+    );
+
+    expect(plan.outputDir).toBe("/input");
+    expect(plan.targetVideoPath).toBe("/input/original-name.mp4");
+    expect(plan.nfoPath).toBe("/input/original-name.nfo");
+  });
+
+  it("supports renaming in place when move is disabled", () => {
+    const config = createConfig({
+      naming: {
+        folderTemplate: "{number}",
+        fileTemplate: "{number}",
+      },
+      behavior: {
+        successFileMove: false,
+        successFileRename: true,
+      },
+    });
+
+    const organizer = new FileOrganizer();
+    const plan = organizer.plan(
+      createFileInfo({
+        filePath: "/input/original-name.mp4",
+        fileName: "original-name",
+      }),
+      createCrawlerData({
+        number: "XYZ-999",
+      }),
+      config,
+    );
+
+    expect(plan.outputDir).toBe("/input");
+    expect(plan.targetVideoPath).toBe("/input/XYZ-999-CEN.mp4");
+    expect(plan.nfoPath).toBe("/input/XYZ-999-CEN.nfo");
+  });
+
+  it("resolves target collisions before writing NFO so basenames stay aligned", async () => {
+    const root = await createTempDir();
+    const sourcePath = join(root, "source.mp4");
+    const existingTargetPath = join(root, "XYZ-999-CEN.mp4");
+    await writeFile(sourcePath, "video", "utf8");
+    await writeFile(existingTargetPath, "existing", "utf8");
+
+    const organizer = new FileOrganizer();
+    const config = createConfig({
+      naming: {
+        fileTemplate: "{number}",
+      },
+      behavior: {
+        successFileMove: false,
+        successFileRename: true,
+      },
+    });
+
+    const plan = organizer.plan(
+      createFileInfo({
+        filePath: sourcePath,
+        fileName: "source",
+      }),
+      createCrawlerData({
+        number: "XYZ-999",
+      }),
+      config,
+    );
+    const prepared = await organizer.ensureOutputReady(plan, sourcePath);
+
+    expect(prepared.targetVideoPath).toBe(join(root, "XYZ-999-CEN (1).mp4"));
+    expect(prepared.nfoPath).toBe(join(root, "XYZ-999-CEN (1).nfo"));
+  });
+
+  it("renames in place when move is disabled but rename is enabled", async () => {
+    const root = await createTempDir();
+    const sourcePath = join(root, "source.mp4");
+    await writeFile(sourcePath, "video", "utf8");
+
+    const organizer = new FileOrganizer();
+    const config = createConfig({
+      naming: {
+        fileTemplate: "{number}",
+      },
+      behavior: {
+        successFileMove: false,
+        successFileRename: true,
+      },
+    });
+
+    const fileInfo = createFileInfo({
+      filePath: sourcePath,
+      fileName: "source",
+    });
+    const plan = organizer.plan(
+      fileInfo,
+      createCrawlerData({
+        number: "XYZ-999",
+      }),
+      config,
+    );
+    const prepared = await organizer.ensureOutputReady(plan, sourcePath);
+    const resultPath = await organizer.organizeVideo(fileInfo, prepared, config);
+
+    expect(resultPath).toBe(join(root, "XYZ-999-CEN.mp4"));
+    await expectPathExists(resultPath);
   });
 });

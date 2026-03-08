@@ -3,7 +3,7 @@ import { dirname, join, normalize, parse, resolve } from "node:path";
 
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
-import { ensureParentDirectory, hasEnoughDiskSpace, moveFileSafely } from "@main/utils/file";
+import { ensureParentDirectory, hasEnoughDiskSpace, moveFileSafely, resolveAvailablePath } from "@main/utils/file";
 import { buildSafePath, sanitizePathSegment } from "@main/utils/path";
 import type { CrawlerData, DownloadedAssets, FileInfo } from "@shared/types";
 
@@ -145,19 +145,23 @@ export class FileOrganizer {
       studio: data.studio,
     };
 
-    const relativeOutput = truncatePathSegments(
-      buildSafePath(config.naming.folderTemplate, templateData),
-      config.naming.folderNameMax,
-    );
-    const baseOutput = this.resolveBaseOutput(fileInfo, config);
-    const outputDir = join(baseOutput, relativeOutput);
+    const sourceVideo = parse(fileInfo.filePath);
+    const outputDir = config.behavior.successFileMove
+      ? join(
+          this.resolveBaseOutput(fileInfo, config),
+          truncatePathSegments(buildSafePath(config.naming.folderTemplate, templateData), config.naming.folderNameMax),
+        )
+      : sourceVideo.dir;
 
     const fileBaseName = truncateSegment(
       sanitizePathSegment(buildSafePath(config.naming.fileTemplate, templateData)) || styledNumber,
       config.naming.fileNameMax,
     );
-    const targetVideoPath = join(outputDir, `${fileBaseName}${fileInfo.extension}`);
-    const nfoPath = join(outputDir, `${fileBaseName}.nfo`);
+    const targetVideoFileName = config.behavior.successFileRename
+      ? `${fileBaseName}${fileInfo.extension}`
+      : sourceVideo.base;
+    const targetVideoPath = join(outputDir, targetVideoFileName);
+    const nfoPath = join(outputDir, `${parse(targetVideoPath).name}.nfo`);
 
     return {
       outputDir,
@@ -166,7 +170,7 @@ export class FileOrganizer {
     };
   }
 
-  async ensureOutputReady(plan: OrganizePlan, sourceFilePath: string): Promise<void> {
+  async ensureOutputReady(plan: OrganizePlan, sourceFilePath: string): Promise<OrganizePlan> {
     await ensureParentDirectory(plan.targetVideoPath);
     const stats = await stat(sourceFilePath);
 
@@ -175,24 +179,30 @@ export class FileOrganizer {
     if (!ok) {
       throw new Error(`Not enough disk space to move file to ${outputRoot}`);
     }
+
+    const targetVideoPath = await resolveAvailablePath(plan.targetVideoPath, sourceFilePath);
+    const outputDir = dirname(targetVideoPath);
+    const nfoPath = join(outputDir, `${parse(targetVideoPath).name}.nfo`);
+
+    return {
+      outputDir,
+      targetVideoPath,
+      nfoPath,
+    };
   }
 
   async organizeVideo(fileInfo: FileInfo, plan: OrganizePlan, config: Configuration): Promise<string> {
     if (!config.behavior.successFileMove) {
-      this.logger.info(`successFileMove disabled; leaving file at ${fileInfo.filePath}`);
-      return fileInfo.filePath;
+      if (!config.behavior.successFileRename) {
+        this.logger.info(`successFileMove disabled; leaving file at ${fileInfo.filePath}`);
+        return fileInfo.filePath;
+      }
+
+      return moveFileSafely(fileInfo.filePath, plan.targetVideoPath);
     }
 
     const sourceDir = dirname(fileInfo.filePath);
-    let result: string;
-
-    if (!config.behavior.successFileRename) {
-      const parsed = parse(fileInfo.filePath);
-      const targetPath = join(plan.outputDir, `${parsed.base}`);
-      result = await moveFileSafely(fileInfo.filePath, targetPath);
-    } else {
-      result = await moveFileSafely(fileInfo.filePath, plan.targetVideoPath);
-    }
+    const result = await moveFileSafely(fileInfo.filePath, plan.targetVideoPath);
 
     if (config.behavior.deleteEmptyFolder) {
       const mediaRoot = resolve(config.paths.mediaPath.trim() || dirname(fileInfo.filePath));

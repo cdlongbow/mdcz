@@ -1,5 +1,5 @@
 import { mkdir, readdir, realpath, rename, stat, statfs } from "node:fs/promises";
-import { dirname, extname, join, parse } from "node:path";
+import { dirname, extname, join, parse, resolve } from "node:path";
 
 const DEFAULT_VIDEO_EXTENSIONS = new Set([
   ".mp4",
@@ -93,17 +93,27 @@ export const ensureParentDirectory = async (targetPath: string): Promise<void> =
   await mkdir(dirname(targetPath), { recursive: true });
 };
 
-export const moveFileSafely = async (sourcePath: string, targetPath: string): Promise<string> => {
-  await ensureParentDirectory(targetPath);
-
+export const resolveAvailablePath = async (targetPath: string, ignoreExistingPath?: string): Promise<string> => {
   const parsed = parse(targetPath);
-  let resolved = targetPath;
+  const ignored = ignoreExistingPath ? resolve(ignoreExistingPath) : null;
+  let resolvedPath = targetPath;
   let suffix = 1;
 
-  while (await exists(resolved)) {
-    resolved = join(parsed.dir, `${parsed.name} (${suffix})${parsed.ext}`);
+  while (await exists(resolvedPath)) {
+    if (ignored && resolve(resolvedPath) === ignored) {
+      return resolvedPath;
+    }
+
+    resolvedPath = join(parsed.dir, `${parsed.name} (${suffix})${parsed.ext}`);
     suffix += 1;
   }
+
+  return resolvedPath;
+};
+
+export const moveFileSafely = async (sourcePath: string, targetPath: string): Promise<string> => {
+  await ensureParentDirectory(targetPath);
+  const resolved = await resolveAvailablePath(targetPath, sourcePath);
 
   await rename(sourcePath, resolved);
   return resolved;

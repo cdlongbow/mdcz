@@ -95,6 +95,7 @@ export class NfoGenerator {
     movie.originaltitle = data.title;
     movie.plot = plot && plot.length > 0 ? plot : undefined;
     movie.premiered = data.release_date;
+    movie.releasedate = data.release_date;
     movie.year = data.release_year ?? parseReleaseYear(data.release_date);
     movie.runtime = runtimeMinutes;
     movie.rating = data.rating;

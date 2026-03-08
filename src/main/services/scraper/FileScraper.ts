@@ -82,8 +82,8 @@ export class FileScraper {
       }
 
       this.setProgress(progress, 30);
-      const plan = this.deps.fileOrganizer.plan(fileInfo, crawlerData, configuration);
-      await this.deps.fileOrganizer.ensureOutputReady(plan, fileInfo.filePath);
+      let plan = this.deps.fileOrganizer.plan(fileInfo, crawlerData, configuration);
+      plan = await this.deps.fileOrganizer.ensureOutputReady(plan, fileInfo.filePath);
 
       if (configuration.download.amazonJpCoverEnhance) {
         crawlerData = await this.maybeEnhanceAmazonCover(

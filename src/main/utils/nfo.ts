@@ -44,6 +44,7 @@ export const parseNfo = (xml: string): CrawlerData => {
   const originaltitle = toStringValue(movieNode.originaltitle);
   const plot = toStringValue(movieNode.plot);
   const premiered = toStringValue(movieNode.premiered);
+  const releasedate = toStringValue(movieNode.releasedate);
   const yearText = toStringValue(movieNode.year);
   const ratingText = toStringValue(movieNode.rating);
 
@@ -131,10 +132,10 @@ export const parseNfo = (xml: string): CrawlerData => {
     studio: toStringValue(movieNode.studio),
     director: toStringValue(movieNode.director),
     publisher: toStringValue(movieNode.publisher),
-    series: toStringValue(movieNode.series),
+    series: toStringValue(movieNode.set) ?? toStringValue(movieNode.series),
     plot,
     plot_zh: plot,
-    release_date: premiered,
+    release_date: premiered ?? releasedate,
     release_year: Number.isFinite(releaseYear) ? releaseYear : undefined,
     rating: Number.isFinite(rating) ? rating : undefined,
     cover_url: coverUrl,
