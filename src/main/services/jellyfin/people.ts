@@ -1,14 +1,11 @@
-import { readFile } from "node:fs/promises";
-import { dirname, extname, isAbsolute, join } from "node:path";
-
+import type { ActorSourceProvider } from "@main/services/actorSource";
+import { logActorSourceWarnings } from "@main/services/actorSource/logging";
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
+import { hasMissingActorInfo, type PlannedPersonSyncState, planPersonSync } from "@main/services/personSync/planner";
 import type { SignalService } from "@main/services/SignalService";
-import { listFiles, pathExists } from "@main/utils/file";
-import { parseNfo } from "@main/utils/nfo";
-import type { ActorProfile } from "@shared/types";
-import { buildJellyfinHeaders, buildJellyfinUrl, isUuid, type JellyfinMode, normalizeActorName } from "./auth";
+import { buildJellyfinHeaders, buildJellyfinUrl, isUuid, type JellyfinMode } from "./auth";
 import { JellyfinServiceError, toJellyfinServiceError } from "./errors";
 
 interface JellyfinPersonsResponse {
@@ -29,19 +26,11 @@ export interface JellyfinPerson {
   ImageTags?: Record<string, string>;
 }
 
-export interface ActorSource {
-  name: string;
-  aliases: string[];
-  description?: string;
-  coverUrl?: string;
-}
-
 export interface JellyfinActorInfoDependencies {
   signalService: SignalService;
   networkClient: NetworkClient;
+  actorSourceProvider: ActorSourceProvider;
 }
-
-type BiographySource = "local";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -72,72 +61,20 @@ const toStringRecord = (value: unknown): Record<string, string> => {
   return output;
 };
 
-const toNumberValue = (value: unknown): number | undefined => {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-};
-
-const hasOverview = (value: unknown): value is string => {
-  return typeof value === "string" && value.trim().length > 0;
-};
-
-const isRemoteUrl = (value: string): boolean => /^https?:\/\//iu.test(value);
-
-const mergeActorSource = (existing: ActorSource | undefined, incoming: ActorSource): ActorSource => {
-  const aliasSet = new Set<string>();
-
-  for (const alias of existing?.aliases ?? []) {
-    aliasSet.add(alias);
-  }
-  for (const alias of incoming.aliases) {
-    aliasSet.add(alias);
-  }
-
-  const nextCoverUrl = (() => {
-    if (!existing?.coverUrl) {
-      return incoming.coverUrl;
-    }
-    if (!incoming.coverUrl) {
-      return existing.coverUrl;
-    }
-    if (isRemoteUrl(existing.coverUrl) && !isRemoteUrl(incoming.coverUrl)) {
-      return incoming.coverUrl;
-    }
-    return existing.coverUrl;
-  })();
-
-  return {
-    name: existing?.name ?? incoming.name,
-    aliases: Array.from(aliasSet),
-    description: existing?.description ?? incoming.description,
-    coverUrl: nextCoverUrl,
-  };
-};
-
-const buildActorSourceVariants = (source: ActorSource): string[] => {
-  return [source.name, ...source.aliases].map((item) => item.trim()).filter((item) => item.length > 0);
-};
-
-const resolveActorCoverUrl = async (nfoPath: string, profile: ActorProfile): Promise<string | undefined> => {
-  if (!profile.cover_url) {
-    return undefined;
-  }
-  if (isRemoteUrl(profile.cover_url)) {
-    return profile.cover_url;
-  }
-
-  const absolutePath = isAbsolute(profile.cover_url) ? profile.cover_url : join(dirname(nfoPath), profile.cover_url);
-  return (await pathExists(absolutePath)) ? absolutePath : undefined;
+const toBooleanValue = (value: unknown): boolean | undefined => {
+  return typeof value === "boolean" ? value : undefined;
 };
 
 const buildPersonUpdatePayload = (
   person: JellyfinPerson,
   detail: ItemDetail,
-  overview: string,
+  synced: PlannedPersonSyncState,
+  lockOverview: boolean,
 ): Record<string, unknown> => {
   const payload: Record<string, unknown> = {
     Id: person.Id,
     Name: toStringValue(detail.Name) ?? person.Name,
-    Overview: overview,
+    Overview: synced.overview ?? "",
   };
 
   const serverId = toStringValue(detail.ServerId);
@@ -150,9 +87,8 @@ const buildPersonUpdatePayload = (
     payload.Genres = genres;
   }
 
-  const tags = toStringArray(detail.Tags);
-  if (tags.length > 0) {
-    payload.Tags = tags;
+  if (synced.tags.length > 0) {
+    payload.Tags = synced.tags;
   }
 
   const providerIds = toStringRecord(detail.ProviderIds);
@@ -160,75 +96,26 @@ const buildPersonUpdatePayload = (
     payload.ProviderIds = providerIds;
   }
 
-  const productionLocations = toStringArray(detail.ProductionLocations);
-  if (productionLocations.length > 0) {
-    payload.ProductionLocations = productionLocations;
+  if (synced.taglines.length > 0) {
+    payload.Taglines = synced.taglines;
   }
 
-  const premiereDate = toStringValue(detail.PremiereDate);
-  if (premiereDate) {
-    payload.PremiereDate = premiereDate;
+  const lockedFields = Array.from(new Set(toStringArray(detail.LockedFields)));
+  if (lockOverview && !lockedFields.includes("Overview")) {
+    lockedFields.push("Overview");
+  }
+  if (lockedFields.length > 0) {
+    payload.LockedFields = lockedFields;
   }
 
-  const productionYear = toNumberValue(detail.ProductionYear);
-  if (productionYear !== undefined) {
-    payload.ProductionYear = productionYear;
-  }
-
-  const taglines = toStringArray(detail.Taglines);
-  if (taglines.length > 0) {
-    payload.Taglines = taglines;
+  const lockData = toBooleanValue(detail.LockData);
+  if (lockOverview) {
+    payload.LockData = true;
+  } else if (lockData !== undefined) {
+    payload.LockData = lockData;
   }
 
   return payload;
-};
-
-export const buildActorSourceIndex = async (configuration: Configuration): Promise<Map<string, ActorSource>> => {
-  const mediaPath = configuration.paths.mediaPath.trim();
-  if (!mediaPath) {
-    return new Map<string, ActorSource>();
-  }
-
-  let files: string[];
-  try {
-    files = await listFiles(mediaPath, true);
-  } catch {
-    return new Map<string, ActorSource>();
-  }
-
-  const nfoFiles = files.filter((filePath) => extname(filePath).toLowerCase() === ".nfo");
-  const sources = new Map<string, ActorSource>();
-
-  for (const nfoPath of nfoFiles) {
-    try {
-      const xml = await readFile(nfoPath, "utf8");
-      const parsed = parseNfo(xml);
-
-      for (const profile of parsed.actor_profiles ?? []) {
-        const name = profile.name.trim();
-        if (!name) {
-          continue;
-        }
-
-        const nextSource: ActorSource = {
-          name,
-          aliases: profile.aliases ?? [],
-          description: profile.description,
-          coverUrl: await resolveActorCoverUrl(nfoPath, profile),
-        };
-
-        const existing = sources.get(normalizeActorName(name));
-        const merged = mergeActorSource(existing, nextSource);
-        for (const variant of buildActorSourceVariants(merged)) {
-          sources.set(normalizeActorName(variant), merged);
-        }
-      }
-    } catch {
-      // Ignore unrelated or invalid NFO files when building local actor sources.
-    }
-  }
-
-  return sources;
 };
 
 export const fetchPersons = async (
@@ -389,14 +276,17 @@ export const refreshPerson = async (
   }
 };
 
-export const updatePersonOverview = async (
+export const updatePersonInfo = async (
   networkClient: NetworkClient,
   configuration: Configuration,
   person: JellyfinPerson,
   detail: ItemDetail,
-  overview: string,
+  synced: PlannedPersonSyncState,
+  options: {
+    lockOverview?: boolean;
+  } = {},
 ): Promise<void> => {
-  const payload = buildPersonUpdatePayload(person, detail, overview);
+  const payload = buildPersonUpdatePayload(person, detail, synced, options.lockOverview ?? false);
   const url = buildJellyfinUrl(configuration, `/Items/${encodeURIComponent(person.Id)}`);
 
   try {
@@ -422,24 +312,6 @@ export const updatePersonOverview = async (
   }
 };
 
-const resolvePersonOverview = async (
-  configuration: Configuration,
-  _personName: string,
-  source: ActorSource | undefined,
-): Promise<string | undefined> => {
-  for (const provider of configuration.server.personOverviewSources as BiographySource[]) {
-    switch (provider) {
-      case "local":
-        if (source?.description) {
-          return source.description;
-        }
-        break;
-    }
-  }
-
-  return undefined;
-};
-
 export class JellyfinActorInfoService {
   private readonly logger = loggerService.getLogger("JellyfinActorInfo");
 
@@ -453,7 +325,6 @@ export class JellyfinActorInfoService {
     const persons = await fetchPersons(this.networkClient, configuration, {
       fields: ["Overview"],
     });
-    const sources = await buildActorSourceIndex(configuration);
     const total = persons.length;
 
     if (total === 0) {
@@ -471,33 +342,42 @@ export class JellyfinActorInfoService {
       current += 1;
       this.deps.signalService.setProgress(Math.round((current / total) * 100), current, total);
 
-      if (mode === "missing" && hasOverview(person.Overview)) {
-        continue;
-      }
-
       try {
-        const source = sources.get(normalizeActorName(person.Name));
-        const nextOverview = await resolvePersonOverview(configuration, person.Name, source);
-        if (!nextOverview || nextOverview === person.Overview) {
+        const detail = await fetchPersonDetail(this.networkClient, configuration, person);
+        const existing = {
+          overview: toStringValue(detail.Overview) ?? person.Overview,
+          tags: toStringArray(detail.Tags),
+          taglines: toStringArray(detail.Taglines),
+        };
+
+        if (mode === "missing" && !hasMissingActorInfo(existing)) {
           continue;
         }
 
-        const detail = await fetchPersonDetail(this.networkClient, configuration, person);
-        await updatePersonOverview(this.networkClient, configuration, person, detail, nextOverview);
+        const source = await this.deps.actorSourceProvider.lookup(configuration, person.Name);
+        logActorSourceWarnings(this.logger, person.Name, source.warnings);
+        const synced = planPersonSync(source.profile, existing, mode);
+        if (!synced.shouldUpdate) {
+          continue;
+        }
+
+        await updatePersonInfo(this.networkClient, configuration, person, detail, synced, {
+          lockOverview: configuration.server.lockOverviewAfterSync,
+        });
         if (configuration.server.refreshPersonAfterSync) {
           try {
             await refreshPerson(this.networkClient, configuration, person.Id);
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            this.logger.warn(`Failed to refresh Jellyfin actor ${person.Name} after overview sync: ${message}`);
+            this.logger.warn(`Failed to refresh Jellyfin actor ${person.Name} after info sync: ${message}`);
           }
         }
         processedCount += 1;
-        this.deps.signalService.showLogText(`Updated Jellyfin actor overview: ${person.Name}`);
+        this.deps.signalService.showLogText(`Updated Jellyfin actor info: ${person.Name}`);
       } catch (error) {
         failedCount += 1;
         const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(`Failed to update Jellyfin actor overview for ${person.Name}: ${message}`);
+        this.logger.warn(`Failed to update Jellyfin actor info for ${person.Name}: ${message}`);
       }
     }
 

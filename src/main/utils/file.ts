@@ -25,6 +25,17 @@ export const pathExists = async (path: string): Promise<boolean> => {
   }
 };
 
+export const imageContentTypeFromPath = (path: string): string => {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".png")) {
+    return "image/png";
+  }
+  if (lower.endsWith(".webp")) {
+    return "image/webp";
+  }
+  return "image/jpeg";
+};
+
 const resolveDirectoryKey = async (dirPath: string): Promise<string> => {
   try {
     return await realpath(dirPath);

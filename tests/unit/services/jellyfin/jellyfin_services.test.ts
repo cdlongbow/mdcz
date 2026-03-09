@@ -1,9 +1,14 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import {
+  ActorSourceProvider,
+  ActorSourceRegistry,
+  GfriendsActorSource,
+  LocalActorSource,
+} from "@main/services/actorSource";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { checkConnection, JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/jellyfin";
-import { buildActorSourceIndex } from "@main/services/jellyfin/people";
 import type { NetworkClient } from "@main/services/network";
 import { SignalService } from "@main/services/SignalService";
 import { NfoGenerator } from "@main/services/scraper/NfoGenerator";
@@ -32,6 +37,20 @@ class FakeNetworkClient {
   readonly postText = vi.fn(async (_url: string, _body: string) => "");
 }
 
+const createActorSourceProvider = (
+  networkClient: FakeNetworkClient,
+  actorMapUrl = "https://example.com/empty-map.json",
+) =>
+  new ActorSourceProvider({
+    registry: new ActorSourceRegistry([
+      new LocalActorSource(),
+      new GfriendsActorSource({
+        networkClient: networkClient as unknown as NetworkClient,
+        actorMapUrl,
+      }),
+    ]),
+  });
+
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Sample",
   number: "ABC-123",
@@ -40,8 +59,16 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
     {
       name: "Actor A",
       aliases: ["Alias A"],
+      birth_date: "2001-02-03",
+      birth_place: "東京都",
+      blood_type: "A",
       description: "Actor biography",
-      cover_url: "thumbs/actor-a.jpg",
+      height_cm: 160,
+      bust_cm: 90,
+      waist_cm: 58,
+      hip_cm: 88,
+      cup_size: "G",
+      photo_url: "thumbs/actor-a.jpg",
     },
   ],
   genres: [],
@@ -49,6 +76,39 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
   website: Website.DMM,
   ...overrides,
 });
+
+const writeActorNfo = async (root: string): Promise<void> => {
+  const movieDir = join(root, "Actor A", "ABC-123");
+  await mkdir(movieDir, { recursive: true });
+  await writeFile(join(movieDir, "ABC-123.nfo"), new NfoGenerator().buildXml(createCrawlerData()), "utf8");
+};
+
+const readPostedPayload = (networkClient: FakeNetworkClient, index = 0): Record<string, unknown> => {
+  const body = networkClient.postText.mock.calls[index]?.[1];
+  return JSON.parse(typeof body === "string" ? body : "{}");
+};
+
+const expectManagedActorPayload = (payload: Record<string, unknown>, overview: string): void => {
+  expect(payload).toMatchObject({
+    Overview: overview,
+    Taglines: ["MDCz: 2001-02-03 / 東京都 / A型 / 160cm / B90 W58 H88 / Gカップ"],
+  });
+  expect(payload.Tags).toEqual(
+    expect.arrayContaining([
+      "mdcz:birth_date:2001-02-03",
+      "mdcz:birth_place:東京都",
+      "mdcz:blood_type:A",
+      "mdcz:height_cm:160",
+      "mdcz:bust_cm:90",
+      "mdcz:waist_cm:58",
+      "mdcz:hip_cm:88",
+      "mdcz:cup_size:G",
+    ]),
+  );
+  expect(payload).not.toHaveProperty("PremiereDate");
+  expect(payload).not.toHaveProperty("ProductionYear");
+  expect(payload).not.toHaveProperty("ProductionLocations");
+};
 
 describe("Jellyfin services", () => {
   afterEach(async () => {
@@ -165,65 +225,9 @@ describe("Jellyfin services", () => {
     });
   });
 
-  it("builds local actor sources from NFO aliases, biography, and relative thumbs", async () => {
+  it("uses local actor overview sources, can lock Overview, and refreshes the person after a successful update", async () => {
     const root = await createTempDir();
-    const movieDir = join(root, "Actor A", "ABC-123");
-    const thumbPath = join(movieDir, "thumbs", "actor-a.jpg");
-    await mkdir(dirname(thumbPath), { recursive: true });
-    await writeFile(thumbPath, "thumb", "utf8");
-
-    const xml = new NfoGenerator().buildXml(createCrawlerData());
-    await writeFile(join(movieDir, "ABC-123.nfo"), xml, "utf8");
-
-    const sources = await buildActorSourceIndex(
-      createConfig({
-        paths: {
-          ...defaultConfiguration.paths,
-          mediaPath: root,
-        },
-      }),
-    );
-
-    expect(sources.get("actora")).toMatchObject({
-      name: "Actor A",
-      aliases: ["Alias A"],
-      description: "Actor biography",
-      coverUrl: thumbPath,
-    });
-    expect(sources.get("aliasa")).toMatchObject({
-      name: "Actor A",
-      description: "Actor biography",
-    });
-  });
-
-  it("drops missing relative actor thumbs instead of treating them as remote URLs", async () => {
-    const root = await createTempDir();
-    const movieDir = join(root, "Actor A", "ABC-123");
-    await mkdir(movieDir, { recursive: true });
-
-    const xml = new NfoGenerator().buildXml(createCrawlerData());
-    await writeFile(join(movieDir, "ABC-123.nfo"), xml, "utf8");
-
-    const sources = await buildActorSourceIndex(
-      createConfig({
-        paths: {
-          ...defaultConfiguration.paths,
-          mediaPath: root,
-        },
-      }),
-    );
-
-    expect(sources.get("actora")).toMatchObject({
-      name: "Actor A",
-      coverUrl: undefined,
-    });
-  });
-
-  it("uses local actor overview sources and refreshes the person after a successful update", async () => {
-    const root = await createTempDir();
-    const movieDir = join(root, "Actor A", "ABC-123");
-    await mkdir(movieDir, { recursive: true });
-    await writeFile(join(movieDir, "ABC-123.nfo"), new NfoGenerator().buildXml(createCrawlerData()), "utf8");
+    await writeActorNfo(root);
 
     const networkClient = new FakeNetworkClient();
     networkClient.getJson.mockImplementation(async (url: string) => {
@@ -232,7 +236,7 @@ describe("Jellyfin services", () => {
         return { Items: [{ Id: "person-1", Name: "Actor A", Overview: "" }] };
       }
       if (parsed.pathname === "/Items/person-1") {
-        return { Id: "person-1", Name: "Actor A" };
+        return { Id: "person-1", Name: "Actor A", LockedFields: [], LockData: false };
       }
       throw new Error(`Unexpected URL ${url}`);
     });
@@ -240,6 +244,7 @@ describe("Jellyfin services", () => {
     const service = new JellyfinActorInfoService({
       signalService: new SignalService(null),
       networkClient: networkClient as unknown as NetworkClient,
+      actorSourceProvider: createActorSourceProvider(networkClient),
     });
 
     const result = await service.run(
@@ -254,6 +259,7 @@ describe("Jellyfin services", () => {
           apiKey: "token",
           personOverviewSources: ["local"],
           refreshPersonAfterSync: true,
+          lockOverviewAfterSync: true,
         },
       }),
       "all",
@@ -262,8 +268,64 @@ describe("Jellyfin services", () => {
     expect(result).toEqual({ processedCount: 1, failedCount: 0 });
     expect(networkClient.postText).toHaveBeenCalledTimes(2);
     expect(networkClient.postText.mock.calls[0]?.[0]).toContain("/Items/person-1?");
-    expect(networkClient.postText.mock.calls[0]?.[1]).toContain("Actor biography");
+    expectManagedActorPayload(readPostedPayload(networkClient), "Actor biography");
+    expect(readPostedPayload(networkClient)).toMatchObject({
+      LockedFields: ["Overview"],
+      LockData: true,
+    });
     expect(networkClient.postText.mock.calls[1]?.[0]).toContain("/Items/person-1/Refresh");
+  });
+
+  it("fills missing actor tags and summary without overwriting an existing Jellyfin overview", async () => {
+    const root = await createTempDir();
+    await writeActorNfo(root);
+
+    const networkClient = new FakeNetworkClient();
+    networkClient.getJson.mockImplementation(async (url: string) => {
+      const parsed = new URL(url);
+      if (parsed.pathname === "/Persons") {
+        return { Items: [{ Id: "person-1", Name: "Actor A", Overview: "已有简介" }] };
+      }
+      if (parsed.pathname === "/Items/person-1") {
+        return {
+          Id: "person-1",
+          Name: "Actor A",
+          Overview: "已有简介",
+          Tags: ["favorite"],
+          Taglines: [],
+          LockedFields: [],
+          LockData: false,
+        };
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+
+    const service = new JellyfinActorInfoService({
+      signalService: new SignalService(null),
+      networkClient: networkClient as unknown as NetworkClient,
+      actorSourceProvider: createActorSourceProvider(networkClient),
+    });
+
+    const result = await service.run(
+      createConfig({
+        paths: {
+          ...defaultConfiguration.paths,
+          mediaPath: root,
+        },
+        server: {
+          ...defaultConfiguration.server,
+          url: "http://127.0.0.1:8096",
+          apiKey: "token",
+          personOverviewSources: ["local"],
+          refreshPersonAfterSync: false,
+        },
+      }),
+      "missing",
+    );
+
+    expect(result).toEqual({ processedCount: 1, failedCount: 0 });
+    expect(networkClient.postText).toHaveBeenCalledTimes(1);
+    expectManagedActorPayload(readPostedPayload(networkClient), "已有简介");
   });
 
   it("uploads actor photos as raw bytes and falls back to the indexed image endpoint", async () => {
@@ -291,7 +353,7 @@ describe("Jellyfin services", () => {
     const service = new JellyfinActorPhotoService({
       signalService: new SignalService(null),
       networkClient: networkClient as unknown as NetworkClient,
-      actorMapUrl: "https://example.com/empty-map.json",
+      actorSourceProvider: createActorSourceProvider(networkClient),
     });
 
     const result = await service.run(

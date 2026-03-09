@@ -978,15 +978,15 @@ function ToolComponent() {
                   )}
                   <div className="space-y-4">
                     <div className="grid gap-2">
-                      <Label className="text-xs font-medium text-muted-foreground">信息同步</Label>
+                      <Label className="text-xs font-medium text-muted-foreground">演员资料同步</Label>
                       <div className="flex gap-2">
                         <Select value={actorInfoMode} onValueChange={(v) => setActorInfoMode(v as "all" | "missing")}>
                           <SelectTrigger className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2 flex-1">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="missing">仅缺失</SelectItem>
-                            <SelectItem value="all">全部</SelectItem>
+                            <SelectItem value="missing">仅补全空白资料</SelectItem>
+                            <SelectItem value="all">更新已有资料</SelectItem>
                           </SelectContent>
                         </Select>
                         <Button
@@ -997,6 +997,11 @@ function ToolComponent() {
                         >
                           {syncRunning ? "同步中..." : "同步信息"}
                         </Button>
+                      </div>
+                      <div className="text-[11px] leading-relaxed text-muted-foreground">
+                        {actorInfoMode === "missing"
+                          ? "只补充还没有的演员简介、资料标签和摘要。"
+                          : "按当前抓取结果刷新演员简介、资料标签和摘要。"}
                       </div>
                     </div>
 
@@ -1009,15 +1014,15 @@ function ToolComponent() {
                     </div>
 
                     <div className="grid gap-2">
-                      <Label className="text-xs font-medium text-muted-foreground">头像同步</Label>
+                      <Label className="text-xs font-medium text-muted-foreground">演员头像同步</Label>
                       <div className="flex gap-2">
                         <Select value={actorPhotoMode} onValueChange={(v) => setActorPhotoMode(v as "all" | "missing")}>
                           <SelectTrigger className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2 flex-1">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="missing">仅缺失</SelectItem>
-                            <SelectItem value="all">全部</SelectItem>
+                            <SelectItem value="missing">仅补全缺失头像</SelectItem>
+                            <SelectItem value="all">重新同步头像</SelectItem>
                           </SelectContent>
                         </Select>
                         <Button
@@ -1028,6 +1033,11 @@ function ToolComponent() {
                         >
                           {syncRunning ? "同步中..." : "同步头像"}
                         </Button>
+                      </div>
+                      <div className="text-[11px] leading-relaxed text-muted-foreground">
+                        {actorPhotoMode === "missing"
+                          ? "只给没有头像的演员补充头像。"
+                          : "按当前抓取结果重新同步演员头像。"}
                       </div>
                     </div>
                   </div>

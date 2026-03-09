@@ -81,3 +81,19 @@ export function setProperty(obj: Record<string, unknown>, path: string, value: u
     current[tail] = value;
   }
 }
+
+/**
+ * Builds a URL with optional query parameters.
+ */
+export function buildUrl(baseUrl: string, pathname = "/", query: Record<string, string | undefined> = {}): string {
+  const url = new URL(pathname, `${baseUrl}/`);
+
+  for (const [key, value] of Object.entries(query)) {
+    if (!value) {
+      continue;
+    }
+    url.searchParams.set(key, value);
+  }
+
+  return url.toString();
+}

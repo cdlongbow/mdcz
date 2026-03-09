@@ -1,4 +1,4 @@
-export { buildJellyfinUrl, type JellyfinMode, normalizeActorName, parseMode } from "./auth";
+export { buildJellyfinUrl, type JellyfinMode, parseMode } from "./auth";
 export { checkConnection } from "./connection";
 export { JellyfinServiceError } from "./errors";
 export { JellyfinActorPhotoService } from "./images";

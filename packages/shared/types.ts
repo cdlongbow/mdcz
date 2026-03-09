@@ -5,8 +5,10 @@ export interface ActorProfile {
   aliases?: string[];
   gender?: string;
   birth_date?: string;
+  birth_place?: string;
+  blood_type?: string;
   description?: string;
-  cover_url?: string;
+  photo_url?: string;
   height_cm?: number;
   bust_cm?: number;
   waist_cm?: number;

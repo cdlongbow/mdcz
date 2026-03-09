@@ -1,3 +1,4 @@
+import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "@main/services/actorSource/types";
 import { ProxyType, ThemeMode, TranslateEngine, UiLanguage, Website } from "@shared/enums";
 import { z } from "zod";
 
@@ -16,7 +17,6 @@ const DEFAULT_ENABLED_SITES: Website[] = [
 ];
 
 const DEFAULT_SITE_ORDER: Website[] = [...DEFAULT_ENABLED_SITES];
-const PERSON_OVERVIEW_SOURCE_OPTIONS = ["local"] as const;
 
 const networkSchema = z.object({
   proxyType: z.enum(ProxyType).default(ProxyType.NONE),
@@ -93,8 +93,10 @@ const serverSchema = z.object({
   apiKey: z.string().default(""),
   userId: z.string().default(""),
   actorPhotoFolder: z.string().default(""),
-  personOverviewSources: z.array(z.enum(PERSON_OVERVIEW_SOURCE_OPTIONS)).default(["local"]),
+  personOverviewSources: z.array(z.enum(ACTOR_OVERVIEW_SOURCE_OPTIONS)).default(["local"]),
+  personImageSources: z.array(z.enum(ACTOR_IMAGE_SOURCE_OPTIONS)).default(["local", "gfriends"]),
   refreshPersonAfterSync: z.boolean().default(true),
+  lockOverviewAfterSync: z.boolean().default(false),
 });
 
 const shortcutsSchema = z.object({

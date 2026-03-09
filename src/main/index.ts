@@ -2,6 +2,15 @@ import { bootstrap } from "@main/bootstrap";
 import type { ServiceContainer } from "@main/container";
 import { registerIpcHandlers } from "@main/ipc";
 import { registerLocalFileHandler, registerLocalFileScheme } from "@main/localFileProtocol";
+import {
+  ActorSourceProvider,
+  ActorSourceRegistry,
+  AvbaseActorSource,
+  AvjohoActorSource,
+  GfriendsActorSource,
+  LocalActorSource,
+  OfficialActorSource,
+} from "@main/services/actorSource";
 import { type Configuration, configManager } from "@main/services/config";
 import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
 import { JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/jellyfin";
@@ -47,6 +56,15 @@ const ensureMainWindow = async (): Promise<void> => {
       fetchGateway,
     });
     const amazonJpImageService = new AmazonJpImageService(networkClient);
+    const actorSourceProvider = new ActorSourceProvider({
+      registry: new ActorSourceRegistry([
+        new LocalActorSource(),
+        new OfficialActorSource({ networkClient }),
+        new GfriendsActorSource({ networkClient }),
+        new AvjohoActorSource({ networkClient }),
+        new AvbaseActorSource({ networkClient }),
+      ]),
+    });
 
     const container: ServiceContainer = {
       signalService,
@@ -55,8 +73,9 @@ const ensureMainWindow = async (): Promise<void> => {
       fetchGateway,
       scraperService: new ScraperService(signalService, networkClient, crawlerProvider),
       crawlerProvider,
-      actorPhotoService: new JellyfinActorPhotoService({ signalService, networkClient }),
-      actorInfoService: new JellyfinActorInfoService({ signalService, networkClient }),
+      actorSourceProvider,
+      actorPhotoService: new JellyfinActorPhotoService({ signalService, networkClient, actorSourceProvider }),
+      actorInfoService: new JellyfinActorInfoService({ signalService, networkClient, actorSourceProvider }),
       symlinkService: new SymlinkService({ signalService }),
       amazonPosterToolService: new AmazonPosterToolService(networkClient, amazonJpImageService),
     };

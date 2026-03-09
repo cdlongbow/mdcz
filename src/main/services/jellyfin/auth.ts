@@ -15,10 +15,6 @@ export const parseMode = (value: unknown): JellyfinMode | null => {
   return null;
 };
 
-export const normalizeActorName = (value: string): string => {
-  return value.normalize("NFKC").replace(/\s+/gu, "").toLowerCase().trim();
-};
-
 export const isUuid = (value: string): boolean => {
   return UUID_PATTERN.test(value.trim());
 };

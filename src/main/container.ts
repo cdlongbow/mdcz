@@ -1,3 +1,4 @@
+import type { ActorSourceProvider } from "@main/services/actorSource";
 import type { CrawlerProvider, FetchGateway } from "@main/services/crawler";
 import type { JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/jellyfin";
 import type { NetworkClient } from "@main/services/network";
@@ -21,6 +22,7 @@ export interface ServiceContainer {
   fetchGateway: FetchGateway;
   scraperService: ScraperService;
   crawlerProvider: CrawlerProvider;
+  actorSourceProvider: ActorSourceProvider;
   actorPhotoService: JellyfinActorPhotoService;
   actorInfoService: JellyfinActorInfoService;
   symlinkService: SymlinkService;

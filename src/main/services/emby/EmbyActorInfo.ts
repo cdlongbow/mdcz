@@ -1,6 +1,9 @@
+import type { ActorSourceProvider } from "@main/services/actorSource";
+import { logActorSourceWarnings } from "@main/services/actorSource/logging";
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
+import { hasMissingActorInfo, type PlannedPersonSyncState, planPersonSync } from "@main/services/personSync/planner";
 import type { SignalService } from "@main/services/SignalService";
 
 import {
@@ -10,7 +13,6 @@ import {
   type EmbyPerson,
   EmbyServiceError,
   fetchPersons,
-  hasOverview,
   toStringArray,
   toStringRecord,
 } from "./common";
@@ -20,14 +22,11 @@ type ItemDetail = Record<string, unknown>;
 export interface EmbyActorInfoDependencies {
   signalService: SignalService;
   networkClient: NetworkClient;
+  actorSourceProvider: ActorSourceProvider;
 }
 
 const toStringValue = (value: unknown): string | undefined => {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
-};
-
-const toNumberValue = (value: unknown): number | undefined => {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 };
 
 export class EmbyActorInfo {
@@ -60,15 +59,24 @@ export class EmbyActorInfo {
 
       try {
         const detail = await this.fetchDetail(configuration, person);
-        const overview = toStringValue(detail.Overview);
+        const existing = {
+          overview: toStringValue(detail.Overview),
+          tags: toStringArray(detail.Tags),
+          taglines: toStringArray(detail.Taglines),
+        };
 
-        if (mode === "missing" && overview) {
+        if (mode === "missing" && !hasMissingActorInfo(existing)) {
           continue;
         }
 
-        const nextOverview = overview ?? `${person.Name} - metadata updated by MDCz Emby tool.`;
+        const actorSource = await this.deps.actorSourceProvider.lookup(configuration, person.Name);
+        logActorSourceWarnings(this.logger, person.Name, actorSource.warnings);
+        const synced = planPersonSync(actorSource.profile, existing, mode);
+        if (!synced.shouldUpdate) {
+          continue;
+        }
 
-        const payload = this.buildUpdatePayload(person, detail, nextOverview);
+        const payload = this.buildUpdatePayload(person, detail, synced);
         const updateUrl = buildApiUrl(configuration, `/Items/${encodeURIComponent(person.Id)}`);
 
         await this.networkClient.postText(updateUrl, JSON.stringify(payload), {
@@ -78,11 +86,11 @@ export class EmbyActorInfo {
         });
 
         processedCount += 1;
-        this.deps.signalService.showLogText(`Updated actor profile: ${person.Name}`);
+        this.deps.signalService.showLogText(`Updated actor info: ${person.Name}`);
       } catch (error) {
         failedCount += 1;
         const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(`Failed to update actor profile for ${person.Name}: ${message}`);
+        this.logger.warn(`Failed to update actor info for ${person.Name}: ${message}`);
       }
     }
 
@@ -113,27 +121,28 @@ export class EmbyActorInfo {
     }
   }
 
-  private buildUpdatePayload(person: EmbyPerson, detail: ItemDetail, overview: string): Record<string, unknown> {
-    const premiereDate = toStringValue(detail.PremiereDate) ?? "0000-00-00";
-    const productionYear = toNumberValue(detail.ProductionYear) ?? 0;
-
-    const taglines = toStringArray(detail.Taglines);
-    if (!hasOverview(overview) && taglines.length === 0) {
-      taglines.push("MDCz actor profile");
-    }
-
-    return {
+  private buildUpdatePayload(
+    person: EmbyPerson,
+    detail: ItemDetail,
+    synced: PlannedPersonSyncState,
+  ): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
       Name: toStringValue(detail.Name) ?? person.Name,
       ServerId: toStringValue(detail.ServerId) ?? person.ServerId ?? "",
       Id: person.Id,
       Genres: toStringArray(detail.Genres),
-      Tags: toStringArray(detail.Tags),
+      Tags: synced.tags,
       ProviderIds: toStringRecord(detail.ProviderIds),
-      ProductionLocations: toStringArray(detail.ProductionLocations),
-      PremiereDate: premiereDate,
-      ProductionYear: productionYear,
-      Overview: overview,
-      Taglines: taglines,
+      Overview: synced.overview ?? "",
+      Taglines: synced.taglines,
     };
+
+    for (const field of ["ProductionLocations", "PremiereDate", "ProductionYear"] as const) {
+      if (field in detail) {
+        payload[field] = detail[field];
+      }
+    }
+
+    return payload;
   }
 }

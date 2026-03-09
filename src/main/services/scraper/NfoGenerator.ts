@@ -48,8 +48,40 @@ const buildActorNodes = (actors: string[], profiles: ActorProfile[] | undefined)
         node.biography = profile.description;
       }
 
-      if (profile?.cover_url) {
-        node.thumb = profile.cover_url;
+      if (profile?.birth_date) {
+        node.birth_date = profile.birth_date;
+      }
+
+      if (profile?.birth_place) {
+        node.birth_place = profile.birth_place;
+      }
+
+      if (profile?.blood_type) {
+        node.blood_type = profile.blood_type;
+      }
+
+      if (profile?.height_cm !== undefined) {
+        node.height_cm = String(profile.height_cm);
+      }
+
+      if (profile?.bust_cm !== undefined) {
+        node.bust_cm = String(profile.bust_cm);
+      }
+
+      if (profile?.waist_cm !== undefined) {
+        node.waist_cm = String(profile.waist_cm);
+      }
+
+      if (profile?.hip_cm !== undefined) {
+        node.hip_cm = String(profile.hip_cm);
+      }
+
+      if (profile?.cup_size) {
+        node.cup_size = profile.cup_size;
+      }
+
+      if (profile?.photo_url) {
+        node.thumb = profile.photo_url;
       }
 
       node.role = "Actress";

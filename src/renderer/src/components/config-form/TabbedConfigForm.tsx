@@ -77,7 +77,8 @@ const TRANSLATE_ENGINE_OPTIONS: EnumOption[] = [
   { value: "google", label: "Google 翻译（免费）" },
 ];
 const LANGUAGE_OPTIONS = ["zh-CN", "zh-TW", "ja-JP", "en-US"];
-const JELLYFIN_OVERVIEW_SOURCE_OPTIONS = ["local"];
+const JELLYFIN_OVERVIEW_SOURCE_OPTIONS = ["local", "official", "avjoho", "avbase"];
+const JELLYFIN_IMAGE_SOURCE_OPTIONS = ["local", "official", "gfriends", "avjoho", "avbase"];
 
 // ── Field registry for search/filter ──
 
@@ -155,7 +156,9 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "server.userId", label: "用户 ID", section: "server" },
   { key: "server.actorPhotoFolder", label: "演员头像目录", section: "server" },
   { key: "server.personOverviewSources", label: "人物简介来源", section: "server" },
+  { key: "server.personImageSources", label: "人物头像来源", section: "server" },
   { key: "server.refreshPersonAfterSync", label: "同步后刷新人物", section: "server" },
+  { key: "server.lockOverviewAfterSync", label: "锁定人物简介", section: "server" },
   // shortcuts
   { key: "shortcuts.startOrStopScrape", label: "开始/停止刮削", section: "shortcuts" },
   { key: "shortcuts.searchByNumber", label: "按番号重刮", section: "shortcuts" },
@@ -460,6 +463,10 @@ function TranslateSection(_props: SectionRenderProps) {
 }
 
 function ServerSection(_props: SectionRenderProps) {
+  const form = useFormContext<FieldValues>();
+  const imageSources = toStringArray(form.watch("server.personImageSources"));
+  const showActorPhotoFolder = imageSources.includes("local");
+
   return (
     <>
       <UrlField name="server.url" label="Jellyfin 服务器地址" />
@@ -469,22 +476,35 @@ function ServerSection(_props: SectionRenderProps) {
         label="Jellyfin 用户 ID"
         description="必须是 UUID。用于人物列表读取，留空则按服务端默认处理。"
       />
-      <PathFieldWrapper
-        name="server.actorPhotoFolder"
-        label="演员头像目录"
-        description="人物头像同步时优先从这里读取本地头像。"
-        isDirectory
-      />
+      {showActorPhotoFolder && (
+        <PathFieldWrapper
+          name="server.actorPhotoFolder"
+          label="演员头像目录"
+          description="人物头像同步时优先从这里读取本地头像。"
+          isDirectory
+        />
+      )}
       <ChipArrayFieldWrapper
         name="server.personOverviewSources"
         label="人物简介来源顺序"
-        description="按顺序尝试：先本地 NFO，再按你配置的外部来源补人物简介。"
+        description="按顺序尝试已启用的 Jellyfin 简介来源。当前版本支持本地 NFO、official、AVJOHO 与 AVBase。"
         options={JELLYFIN_OVERVIEW_SOURCE_OPTIONS}
+      />
+      <ChipArrayFieldWrapper
+        name="server.personImageSources"
+        label="人物头像来源顺序"
+        description="按顺序尝试已启用的 Jellyfin 头像来源。当前版本支持本地目录、official、gfriends、AVJOHO 与 AVBase。"
+        options={JELLYFIN_IMAGE_SOURCE_OPTIONS}
       />
       <BoolField
         name="server.refreshPersonAfterSync"
         label="同步后刷新人物"
         description="同步简介或头像后，额外请求 Jellyfin 刷新人物元数据与图片。"
+      />
+      <BoolField
+        name="server.lockOverviewAfterSync"
+        label="同步后锁定人物简介"
+        description="写入简介后把 Overview 加入 LockedFields，降低被 Jellyfin 元数据刷新覆盖的概率。"
       />
     </>
   );

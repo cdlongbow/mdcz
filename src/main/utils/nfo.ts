@@ -2,6 +2,7 @@ import { toArray } from "@main/utils/common";
 import { Website } from "@shared/enums";
 import type { ActorProfile, CrawlerData } from "@shared/types";
 import { XMLParser } from "fast-xml-parser";
+import { parseActorBloodType, parseActorDate, parseActorMetricCm } from "./actorProfile";
 
 const WEBSITE_VALUES = new Set(Object.values(Website));
 
@@ -126,18 +127,25 @@ export const parseNfo = (xml: string): CrawlerData => {
         return null;
       }
 
-      const name = toStringValue((node as Record<string, unknown>).name);
+      const fields = node as Record<string, unknown>;
+      const name = toStringValue(fields.name);
       if (!name) {
         return null;
       }
 
       return {
         name,
-        aliases: toStringValue((node as Record<string, unknown>).altname)
-          ? [toStringValue((node as Record<string, unknown>).altname) as string]
-          : undefined,
-        description: toStringValue((node as Record<string, unknown>).biography),
-        cover_url: toStringValue((node as Record<string, unknown>).thumb),
+        aliases: toStringValue(fields.altname) ? [toStringValue(fields.altname) as string] : undefined,
+        birth_date: parseActorDate(toStringValue(fields.birth_date)),
+        birth_place: toStringValue(fields.birth_place),
+        blood_type: parseActorBloodType(toStringValue(fields.blood_type)),
+        description: toStringValue(fields.biography),
+        height_cm: parseActorMetricCm(toStringValue(fields.height_cm)),
+        bust_cm: parseActorMetricCm(toStringValue(fields.bust_cm)),
+        waist_cm: parseActorMetricCm(toStringValue(fields.waist_cm)),
+        hip_cm: parseActorMetricCm(toStringValue(fields.hip_cm)),
+        cup_size: toStringValue(fields.cup_size),
+        photo_url: toStringValue(fields.thumb),
       };
     })
     .filter((item): item is ActorProfile => item !== null);

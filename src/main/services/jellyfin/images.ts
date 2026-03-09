@@ -1,99 +1,24 @@
-import { access, readFile } from "node:fs/promises";
-import { join } from "node:path";
-
+import { readFile } from "node:fs/promises";
+import type { ActorSourceProvider } from "@main/services/actorSource";
+import { logActorSourceWarnings } from "@main/services/actorSource/logging";
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
-import { buildJellyfinHeaders, buildJellyfinUrl, type JellyfinMode, normalizeActorName } from "./auth";
+import { imageContentTypeFromPath, pathExists } from "@main/utils/file";
+import { buildJellyfinHeaders, buildJellyfinUrl, type JellyfinMode } from "./auth";
 import { getHttpStatus, toJellyfinServiceError } from "./errors";
-import {
-  buildActorSourceIndex,
-  fetchPersons,
-  type JellyfinBatchResult,
-  type JellyfinPerson,
-  refreshPerson,
-} from "./people";
-
-interface GfriendsResponse {
-  Content?: Record<string, Record<string, string>>;
-}
+import { fetchPersons, type JellyfinBatchResult, type JellyfinPerson, refreshPerson } from "./people";
 
 export interface JellyfinActorPhotoDependencies {
   signalService: SignalService;
   networkClient: NetworkClient;
-  actorMapUrl?: string;
+  actorSourceProvider: ActorSourceProvider;
 }
-
-const DEFAULT_GFRIENDS_FILETREE_URL = "https://raw.githubusercontent.com/gfriends/gfriends/master/Filetree.json";
-
-const hasFile = async (path: string): Promise<boolean> => {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const contentTypeFromPath = (path: string): string => {
-  const lower = path.toLowerCase();
-  if (lower.endsWith(".png")) {
-    return "image/png";
-  }
-  if (lower.endsWith(".webp")) {
-    return "image/webp";
-  }
-  return "image/jpeg";
-};
 
 const hasPrimaryImage = (person: JellyfinPerson): boolean => {
   const primary = person.ImageTags?.Primary;
   return typeof primary === "string" && primary.trim().length > 0;
-};
-
-const resolveRemoteActorPhotoUrl = (remoteActorMap: Map<string, string>, actorNames: string[]): string | undefined => {
-  for (const actorName of actorNames) {
-    const direct = remoteActorMap.get(actorName);
-    if (direct) {
-      return direct;
-    }
-
-    const collapsed = remoteActorMap.get(actorName.replaceAll(" ", ""));
-    if (collapsed) {
-      return collapsed;
-    }
-  }
-
-  return undefined;
-};
-
-const resolveLocalPhotoPath = async (configuration: Configuration, actorNames: string[]): Promise<string | null> => {
-  const photoFolder = configuration.server.actorPhotoFolder.trim();
-  if (!photoFolder) {
-    return null;
-  }
-
-  const baseNames = Array.from(new Set(actorNames.map((item) => item.trim()).filter((item) => item.length > 0)));
-  const candidates = baseNames.flatMap((actorName) => [
-    `${actorName}.jpg`,
-    `${actorName}.jpeg`,
-    `${actorName}.png`,
-    `${actorName}.webp`,
-    `${actorName.replaceAll(" ", "")}.jpg`,
-    `${actorName.replaceAll(" ", "")}.jpeg`,
-    `${actorName.replaceAll(" ", "")}.png`,
-    `${actorName.replaceAll(" ", "")}.webp`,
-  ]);
-
-  for (const fileName of candidates) {
-    const filePath = join(photoFolder, fileName);
-    if (await hasFile(filePath)) {
-      return filePath;
-    }
-  }
-
-  return null;
 };
 
 const uploadPrimaryImage = async (
@@ -154,17 +79,12 @@ export class JellyfinActorPhotoService {
 
   private readonly networkClient: NetworkClient;
 
-  private readonly actorMapUrl: string;
-
   constructor(private readonly deps: JellyfinActorPhotoDependencies) {
     this.networkClient = deps.networkClient;
-    this.actorMapUrl = deps.actorMapUrl ?? DEFAULT_GFRIENDS_FILETREE_URL;
   }
 
   async run(configuration: Configuration, mode: JellyfinMode): Promise<JellyfinBatchResult> {
     const persons = await fetchPersons(this.networkClient, configuration);
-    const actorSources = await buildActorSourceIndex(configuration);
-    const remoteActorMap = await this.loadActorMap();
     const total = persons.length;
 
     if (total === 0) {
@@ -187,28 +107,24 @@ export class JellyfinActorPhotoService {
       }
 
       try {
-        const actorSource = actorSources.get(normalizeActorName(person.Name));
-        const actorNames = [person.Name, ...(actorSource?.aliases ?? [])];
-        const localPhotoPath = await resolveLocalPhotoPath(configuration, [...actorNames]);
-        const remotePhotoUrl = actorSource?.coverUrl ?? resolveRemoteActorPhotoUrl(remoteActorMap, actorNames);
+        const actorSource = await this.deps.actorSourceProvider.lookup(configuration, person.Name);
+        logActorSourceWarnings(this.logger, person.Name, actorSource.warnings);
+        const photoUrl = actorSource.profile.photo_url?.trim();
 
         let content: Uint8Array | undefined;
         let contentType: string | undefined;
 
-        if (localPhotoPath) {
-          content = await readFile(localPhotoPath);
-          contentType = contentTypeFromPath(localPhotoPath);
-        } else if (remotePhotoUrl) {
-          if (await hasFile(remotePhotoUrl)) {
-            content = await readFile(remotePhotoUrl);
+        if (photoUrl) {
+          if (await pathExists(photoUrl)) {
+            content = await readFile(photoUrl);
           } else {
-            content = await this.networkClient.getContent(remotePhotoUrl, {
+            content = await this.networkClient.getContent(photoUrl, {
               headers: {
                 accept: "image/*",
               },
             });
           }
-          contentType = contentTypeFromPath(remotePhotoUrl);
+          contentType = imageContentTypeFromPath(photoUrl);
         }
 
         if (!content || !contentType) {
@@ -243,33 +159,5 @@ export class JellyfinActorPhotoService {
       processedCount,
       failedCount,
     };
-  }
-
-  private async loadActorMap(): Promise<Map<string, string>> {
-    const rawBase = this.actorMapUrl.replace(/\/Filetree\.json$/u, "").replace(/\/+$/u, "");
-
-    try {
-      const payload = await this.networkClient.getJson<GfriendsResponse>(this.actorMapUrl);
-      const map = new Map<string, string>();
-
-      if (!payload.Content) {
-        return map;
-      }
-
-      for (const [folder, files] of Object.entries(payload.Content)) {
-        for (const [actorName, fileName] of Object.entries(files)) {
-          if (!actorName || !fileName || map.has(actorName)) {
-            continue;
-          }
-          map.set(actorName, `${rawBase}/Content/${folder}/${fileName}`);
-        }
-      }
-
-      return map;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.debug(`Failed to load remote actor photo map: ${message}`);
-      return new Map<string, string>();
-    }
   }
 }

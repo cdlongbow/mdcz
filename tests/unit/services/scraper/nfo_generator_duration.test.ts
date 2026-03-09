@@ -57,7 +57,7 @@ describe("NfoGenerator", () => {
     expect(xml).toContain("<runtime>60</runtime>");
   });
 
-  it("prefers local assets and preserves actor thumbs in the generated XML", () => {
+  it("prefers local assets and preserves actor photos in the generated XML", () => {
     const xml = new NfoGenerator().buildXml(
       createCrawlerData({
         actors: ["Actor A"],
@@ -66,7 +66,7 @@ describe("NfoGenerator", () => {
             name: "Actor A",
             aliases: ["Alias A"],
             description: "Actor biography",
-            cover_url: "https://img.example.com/actor-a.jpg",
+            photo_url: "https://img.example.com/actor-a.jpg",
           },
         ],
         genres: ["Drama"],
