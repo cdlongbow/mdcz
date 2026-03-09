@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  type ActorLookupResult,
   ActorSourceProvider,
   ActorSourceRegistry,
   GfriendsActorSource,
@@ -11,9 +12,6 @@ import { configurationSchema, defaultConfiguration } from "@main/services/config
 import { checkConnection, JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/jellyfin";
 import type { NetworkClient } from "@main/services/network";
 import { SignalService } from "@main/services/SignalService";
-import { NfoGenerator } from "@main/services/scraper/NfoGenerator";
-import { Website } from "@shared/enums";
-import type { CrawlerData } from "@shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const tempDirs: string[] = [];
@@ -51,37 +49,39 @@ const createActorSourceProvider = (
     ]),
   });
 
-const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
-  title: "Sample",
-  number: "ABC-123",
-  actors: ["Actor A"],
-  actor_profiles: [
-    {
-      name: "Actor A",
-      aliases: ["Alias A"],
-      birth_date: "2001-02-03",
-      birth_place: "東京都",
-      blood_type: "A",
-      description: "Actor biography",
-      height_cm: 160,
-      bust_cm: 90,
-      waist_cm: 58,
-      hip_cm: 88,
-      cup_size: "G",
-      photo_url: "thumbs/actor-a.jpg",
-    },
-  ],
-  genres: [],
-  sample_images: [],
-  website: Website.DMM,
-  ...overrides,
-});
+class FakeActorSourceProvider {
+  readonly lookup = vi.fn(
+    async (_configuration: ReturnType<typeof createConfig>, name: string): Promise<ActorLookupResult> => ({
+      profile: {
+        name,
+      },
+      profileSources: {},
+      sourceResults: [],
+      warnings: [],
+    }),
+  );
+}
 
-const writeActorNfo = async (root: string): Promise<void> => {
-  const movieDir = join(root, "Actor A", "ABC-123");
-  await mkdir(movieDir, { recursive: true });
-  await writeFile(join(movieDir, "ABC-123.nfo"), new NfoGenerator().buildXml(createCrawlerData()), "utf8");
-};
+const createStructuredLookupResult = (name = "Actor A"): ActorLookupResult => ({
+  profile: {
+    name,
+    aliases: ["Alias A", "Alias B"],
+    birth_date: "2001-02-03",
+    birth_place: "東京都",
+    blood_type: "A",
+    description: "Actor biography",
+    height_cm: 160,
+    bust_cm: 90,
+    waist_cm: 58,
+    hip_cm: 88,
+    cup_size: "G",
+  },
+  profileSources: {
+    description: "official",
+  },
+  sourceResults: [],
+  warnings: [],
+});
 
 const readPostedPayload = (networkClient: FakeNetworkClient, index = 0): Record<string, unknown> => {
   const body = networkClient.postText.mock.calls[index]?.[1];
@@ -92,6 +92,9 @@ const expectManagedActorPayload = (payload: Record<string, unknown>, overview: s
   expect(payload).toMatchObject({
     Overview: overview,
     Taglines: ["MDCz: 2001-02-03 / 東京都 / A型 / 160cm / B90 W58 H88 / Gカップ"],
+    PremiereDate: "2001-02-03T00:00:00.000Z",
+    ProductionYear: 2001,
+    ProductionLocations: ["東京都"],
   });
   expect(payload.Tags).toEqual(
     expect.arrayContaining([
@@ -105,9 +108,6 @@ const expectManagedActorPayload = (payload: Record<string, unknown>, overview: s
       "mdcz:cup_size:G",
     ]),
   );
-  expect(payload).not.toHaveProperty("PremiereDate");
-  expect(payload).not.toHaveProperty("ProductionYear");
-  expect(payload).not.toHaveProperty("ProductionLocations");
 };
 
 describe("Jellyfin services", () => {
@@ -226,9 +226,6 @@ describe("Jellyfin services", () => {
   });
 
   it("uses local actor overview sources, can lock Overview, and refreshes the person after a successful update", async () => {
-    const root = await createTempDir();
-    await writeActorNfo(root);
-
     const networkClient = new FakeNetworkClient();
     networkClient.getJson.mockImplementation(async (url: string) => {
       const parsed = new URL(url);
@@ -240,19 +237,17 @@ describe("Jellyfin services", () => {
       }
       throw new Error(`Unexpected URL ${url}`);
     });
+    const actorSourceProvider = new FakeActorSourceProvider();
+    actorSourceProvider.lookup.mockResolvedValue(createStructuredLookupResult());
 
     const service = new JellyfinActorInfoService({
       signalService: new SignalService(null),
       networkClient: networkClient as unknown as NetworkClient,
-      actorSourceProvider: createActorSourceProvider(networkClient),
+      actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
     });
 
     const result = await service.run(
       createConfig({
-        paths: {
-          ...defaultConfiguration.paths,
-          mediaPath: root,
-        },
         server: {
           ...defaultConfiguration.server,
           url: "http://127.0.0.1:8096",
@@ -268,7 +263,7 @@ describe("Jellyfin services", () => {
     expect(result).toEqual({ processedCount: 1, failedCount: 0 });
     expect(networkClient.postText).toHaveBeenCalledTimes(2);
     expect(networkClient.postText.mock.calls[0]?.[0]).toContain("/Items/person-1?");
-    expectManagedActorPayload(readPostedPayload(networkClient), "Actor biography");
+    expectManagedActorPayload(readPostedPayload(networkClient), "Actor biography\n\n别名：Alias A / Alias B");
     expect(readPostedPayload(networkClient)).toMatchObject({
       LockedFields: ["Overview"],
       LockData: true,
@@ -277,9 +272,6 @@ describe("Jellyfin services", () => {
   });
 
   it("fills missing actor tags and summary without overwriting an existing Jellyfin overview", async () => {
-    const root = await createTempDir();
-    await writeActorNfo(root);
-
     const networkClient = new FakeNetworkClient();
     networkClient.getJson.mockImplementation(async (url: string) => {
       const parsed = new URL(url);
@@ -299,19 +291,17 @@ describe("Jellyfin services", () => {
       }
       throw new Error(`Unexpected URL ${url}`);
     });
+    const actorSourceProvider = new FakeActorSourceProvider();
+    actorSourceProvider.lookup.mockResolvedValue(createStructuredLookupResult());
 
     const service = new JellyfinActorInfoService({
       signalService: new SignalService(null),
       networkClient: networkClient as unknown as NetworkClient,
-      actorSourceProvider: createActorSourceProvider(networkClient),
+      actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
     });
 
     const result = await service.run(
       createConfig({
-        paths: {
-          ...defaultConfiguration.paths,
-          mediaPath: root,
-        },
         server: {
           ...defaultConfiguration.server,
           url: "http://127.0.0.1:8096",
@@ -326,6 +316,59 @@ describe("Jellyfin services", () => {
     expect(result).toEqual({ processedCount: 1, failedCount: 0 });
     expect(networkClient.postText).toHaveBeenCalledTimes(1);
     expectManagedActorPayload(readPostedPayload(networkClient), "已有简介");
+  });
+
+  it("appends aliases to the existing overview in all mode when the source has no description", async () => {
+    const networkClient = new FakeNetworkClient();
+    networkClient.getJson.mockImplementation(async (url: string) => {
+      const parsed = new URL(url);
+      if (parsed.pathname === "/Persons") {
+        return { Items: [{ Id: "person-1", Name: "Actor A", Overview: "已有简介\n\n别名：旧别名" }] };
+      }
+      if (parsed.pathname === "/Items/person-1") {
+        return {
+          Id: "person-1",
+          Name: "Actor A",
+          Overview: "已有简介\n\n别名：旧别名",
+          LockedFields: [],
+          LockData: false,
+        };
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+    const actorSourceProvider = new FakeActorSourceProvider();
+    actorSourceProvider.lookup.mockResolvedValue({
+      profile: {
+        name: "Actor A",
+        aliases: ["Alias A", "Alias B"],
+      },
+      profileSources: {},
+      sourceResults: [],
+      warnings: [],
+    });
+
+    const service = new JellyfinActorInfoService({
+      signalService: new SignalService(null),
+      networkClient: networkClient as unknown as NetworkClient,
+      actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
+    });
+
+    const result = await service.run(
+      createConfig({
+        server: {
+          ...defaultConfiguration.server,
+          url: "http://127.0.0.1:8096",
+          apiKey: "token",
+          personOverviewSources: ["local"],
+        },
+      }),
+      "all",
+    );
+
+    expect(result).toEqual({ processedCount: 1, failedCount: 0 });
+    expect(readPostedPayload(networkClient)).toMatchObject({
+      Overview: "已有简介\n\n别名：Alias A / Alias B",
+    });
   });
 
   it("uploads actor photos as raw bytes and falls back to the indexed image endpoint", async () => {

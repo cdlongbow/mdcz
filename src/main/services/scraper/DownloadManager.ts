@@ -57,8 +57,28 @@ export interface DownloadCallbacks {
 type PrimaryImageKey = keyof Pick<DownloadedAssets, "thumb" | "poster" | "fanart">;
 type PrimaryImageTask = { key: PrimaryImageKey; candidates: string[]; path: string; keepExisting: boolean };
 type SceneImageTask = { key: "sceneImages"; path: string; url: string };
-type ParallelResult<K extends string> = { key: K; path: string; success: boolean };
+type ParallelResult<K extends string, TValue> = { key: K; path: string; success: boolean; value?: TValue };
 type ProbedImageCandidate = ProbeResult & { index: number; url: string };
+
+const getPrimaryFanartSampleUrl = (data: CrawlerData): string | undefined => {
+  return data.fanart_url ? undefined : (normalizeUrl(data.sample_images[0]) ?? undefined);
+};
+
+const getSceneImageUrls = (
+  data: CrawlerData,
+  maxSceneImages: number,
+  reservePrimarySampleForFanart: boolean,
+): string[] => {
+  const sampleImages = reservePrimarySampleForFanart ? data.sample_images.slice(1) : data.sample_images;
+  return sampleImages
+    .map((item) => normalizeUrl(item))
+    .filter((item): item is string => !!item)
+    .slice(0, maxSceneImages);
+};
+
+const toSceneDownloadResult = async (download: Promise<unknown>): Promise<true | undefined> => {
+  return (await download) ? true : undefined;
+};
 
 export class DownloadManager {
   private readonly logger = loggerService.getLogger("DownloadManager");
@@ -79,6 +99,8 @@ export class DownloadManager {
 
     const primaryTasks = this.buildPrimaryImageTasks(outputDir, data, config, imageAlternatives);
     const pendingPrimaryTasks: PrimaryImageTask[] = [];
+    const primaryFanartSampleUrl = getPrimaryFanartSampleUrl(data);
+    let usedPrimarySampleForFanart = false;
 
     for (const task of primaryTasks) {
       const existingAsset = await resolveExistingAsset(task.path);
@@ -93,7 +115,7 @@ export class DownloadManager {
     }
 
     const primaryResults = await this.runParallel(pendingPrimaryTasks, 3, async (task) => {
-      return !!(await this.downloadBestImage(task.candidates, task.path));
+      return await this.downloadBestImage(task.candidates, task.path);
     });
 
     for (const result of primaryResults) {
@@ -101,6 +123,9 @@ export class DownloadManager {
         const key = result.key as PrimaryImageKey;
         assets[key] = result.path;
         assets.downloaded.push(result.path);
+        if (key === "fanart" && result.value && result.value === primaryFanartSampleUrl) {
+          usedPrimarySampleForFanart = true;
+        }
       }
     }
 
@@ -119,10 +144,7 @@ export class DownloadManager {
       if (config.download.keepSceneImages && existingSceneImages.length > 0) {
         assets.sceneImages.push(...existingSceneImages);
       } else {
-        const urls = (data.sample_images ?? [])
-          .map((item) => normalizeUrl(item))
-          .filter((item): item is string => !!item)
-          .slice(0, config.aggregation.behavior.maxSceneImages);
+        const urls = getSceneImageUrls(data, config.aggregation.behavior.maxSceneImages, usedPrimarySampleForFanart);
 
         if (urls.length === 0) {
           assets.sceneImages.push(...existingSceneImages);
@@ -137,7 +159,7 @@ export class DownloadManager {
           const sceneResults = await this.runParallel(
             sceneTasks,
             config.download.sceneImageConcurrency,
-            async (task) => !!(await this.downloadAndValidateImage(task.url, task.path)),
+            async (task) => toSceneDownloadResult(this.downloadAndValidateImage(task.url, task.path)),
             () => {
               sceneCompleted++;
               callbacks?.onSceneProgress?.(sceneCompleted, sceneTasks.length);
@@ -169,35 +191,18 @@ export class DownloadManager {
       }
     }
 
-    const horizontalPath = assets.thumb ?? assets.fanart;
-    if (horizontalPath) {
-      if (config.download.downloadThumb && !assets.thumb) {
-        const thumbTargetPath = join(outputDir, "thumb.jpg");
-        const thumbResult = await resolveSingleAsset({
-          targetPath: thumbTargetPath,
-          keepExisting: config.download.keepThumb,
-          create: () => this.copyDerivedImage(horizontalPath, thumbTargetPath, "thumb"),
-        });
-        if (thumbResult.assetPath) {
-          assets.thumb = thumbResult.assetPath;
-          if (thumbResult.createdPath) {
-            assets.downloaded.push(thumbResult.createdPath);
-          }
-        }
-      }
-
-      if (config.download.downloadFanart && !assets.fanart) {
-        const fanartTargetPath = join(outputDir, "fanart.jpg");
-        const fanartResult = await resolveSingleAsset({
-          targetPath: fanartTargetPath,
-          keepExisting: config.download.keepFanart,
-          create: () => this.copyDerivedImage(horizontalPath, fanartTargetPath, "fanart"),
-        });
-        if (fanartResult.assetPath) {
-          assets.fanart = fanartResult.assetPath;
-          if (fanartResult.createdPath) {
-            assets.downloaded.push(fanartResult.createdPath);
-          }
+    if (config.download.downloadFanart && !assets.fanart && assets.thumb) {
+      const thumbPath = assets.thumb;
+      const fanartTargetPath = join(outputDir, "fanart.jpg");
+      const fanartResult = await resolveSingleAsset({
+        targetPath: fanartTargetPath,
+        keepExisting: config.download.keepFanart,
+        create: () => this.copyDerivedImage(thumbPath, fanartTargetPath, "fanart"),
+      });
+      if (fanartResult.assetPath) {
+        assets.fanart = fanartResult.assetPath;
+        if (fanartResult.createdPath) {
+          assets.downloaded.push(fanartResult.createdPath);
         }
       }
     }
@@ -253,7 +258,9 @@ export class DownloadManager {
       config.download.downloadFanart,
       config.download.keepFanart,
       data.fanart_url,
-      imageAlternatives.fanart_url,
+      [getPrimaryFanartSampleUrl(data), ...(imageAlternatives.fanart_url ?? [])].filter(
+        (item): item is string => typeof item === "string",
+      ),
       join(outputDir, "fanart.jpg"),
     );
 
@@ -294,13 +301,13 @@ export class DownloadManager {
     return candidates;
   }
 
-  private async runParallel<K extends string, TTask extends { key: K; path: string }>(
+  private async runParallel<K extends string, TTask extends { key: K; path: string }, TValue>(
     tasks: TTask[],
     maxConcurrent: number,
-    runner: (task: TTask) => Promise<boolean>,
+    runner: (task: TTask) => Promise<TValue | undefined>,
     onItemComplete?: () => void,
-  ): Promise<Array<ParallelResult<K>>> {
-    const results: Array<ParallelResult<K>> = new Array(tasks.length);
+  ): Promise<Array<ParallelResult<K, TValue>>> {
+    const results: Array<ParallelResult<K, TValue>> = new Array(tasks.length);
     let completed = 0;
     let running = 0;
     let nextIndex = 0;
@@ -315,8 +322,13 @@ export class DownloadManager {
           running++;
 
           runner(task)
-            .then((success) => {
-              results[taskIndex] = { key: task.key, path: task.path, success };
+            .then((value) => {
+              results[taskIndex] = {
+                key: task.key,
+                path: task.path,
+                success: value !== undefined,
+                value,
+              };
             })
             .catch((error) => {
               const message = error instanceof Error ? error.message : String(error);
@@ -340,19 +352,19 @@ export class DownloadManager {
     });
   }
 
-  private async downloadBestImage(candidates: string[], outputPath: string): Promise<string | null> {
+  private async downloadBestImage(candidates: string[], outputPath: string): Promise<string | undefined> {
     if (candidates.length === 0) {
-      return null;
+      return undefined;
     }
 
     for (const url of await this.orderImageCandidatesByProbe(candidates)) {
       const downloadedPath = await this.downloadAndValidateImage(url, outputPath);
       if (downloadedPath) {
-        return downloadedPath;
+        return url;
       }
     }
 
-    return null;
+    return undefined;
   }
 
   private async downloadAndValidateImage(url: string, outputPath: string): Promise<string | null> {

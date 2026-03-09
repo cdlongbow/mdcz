@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, relative } from "node:path";
 import { toArray } from "@main/utils/common";
+import { buildManagedMovieTags } from "@main/utils/movieMetadata";
 import type { ActorProfile, CrawlerData, DownloadedAssets, VideoMeta } from "@shared/types";
 import { XMLBuilder } from "fast-xml-parser";
 import type { SourceMap } from "./aggregation/types";
@@ -11,6 +12,8 @@ const builder = new XMLBuilder({
   format: true,
   commentPropName: "#comment",
 });
+
+const OUTLINE_MAX_CHARS = 200;
 
 const normalizeActorKey = (value: string): string =>
   value
@@ -36,56 +39,15 @@ const buildActorNodes = (actors: string[], profiles: ActorProfile[] | undefined)
   return actors
     .map((name) => name.trim())
     .filter((name) => name.length > 0)
-    .map((name) => {
+    .map((name, index) => {
       const profile = profileByName.get(normalizeActorKey(name));
-      const node: Record<string, unknown> = { name };
-
-      if (profile?.aliases && profile.aliases.length > 0) {
-        node.altname = profile.aliases[0];
-      }
-
-      if (profile?.description) {
-        node.biography = profile.description;
-      }
-
-      if (profile?.birth_date) {
-        node.birth_date = profile.birth_date;
-      }
-
-      if (profile?.birth_place) {
-        node.birth_place = profile.birth_place;
-      }
-
-      if (profile?.blood_type) {
-        node.blood_type = profile.blood_type;
-      }
-
-      if (profile?.height_cm !== undefined) {
-        node.height_cm = String(profile.height_cm);
-      }
-
-      if (profile?.bust_cm !== undefined) {
-        node.bust_cm = String(profile.bust_cm);
-      }
-
-      if (profile?.waist_cm !== undefined) {
-        node.waist_cm = String(profile.waist_cm);
-      }
-
-      if (profile?.hip_cm !== undefined) {
-        node.hip_cm = String(profile.hip_cm);
-      }
-
-      if (profile?.cup_size) {
-        node.cup_size = profile.cup_size;
-      }
-
-      if (profile?.photo_url) {
-        node.thumb = profile.photo_url;
-      }
-
-      node.role = "Actress";
-      return node;
+      return {
+        name,
+        type: "Actor",
+        thumb: profile?.photo_url,
+        order: index,
+        sortorder: index,
+      };
     });
 };
 
@@ -105,6 +67,79 @@ const parseReleaseYear = (releaseDate: string | undefined): number | undefined =
 
 const buildStringNodes = (values: string[]) => values.map((value) => value.trim()).filter((value) => value.length > 0);
 
+const truncateText = (value: string, maxChars: number): string => Array.from(value).slice(0, maxChars).join("");
+
+const buildMovieTags = (data: CrawlerData): string[] => {
+  return Array.from(
+    new Set([
+      ...buildStringNodes(toArray(data.genres)),
+      ...buildManagedMovieTags({
+        contentType: data.content_type,
+        publisher: data.publisher,
+      }),
+    ]),
+  );
+};
+
+const buildVideoNode = (videoMeta: VideoMeta | undefined): Record<string, unknown> | undefined => {
+  if (!videoMeta) {
+    return undefined;
+  }
+
+  const video: Record<string, unknown> = {};
+  if (videoMeta.codec) {
+    video.codec = videoMeta.codec;
+  }
+  if (Number.isFinite(videoMeta.width)) {
+    video.width = videoMeta.width;
+  }
+  if (Number.isFinite(videoMeta.height)) {
+    video.height = videoMeta.height;
+  }
+  if (Number.isFinite(videoMeta.durationSeconds)) {
+    video.durationinseconds = videoMeta.durationSeconds;
+  }
+  if (videoMeta.bitrate !== undefined && Number.isFinite(videoMeta.bitrate)) {
+    video.bitrate = videoMeta.bitrate;
+  }
+
+  return Object.keys(video).length > 0 ? video : undefined;
+};
+
+const buildRelativeAssetPath = (referenceAssetPath: string | undefined, imagePath: string): string => {
+  return referenceAssetPath
+    ? relative(dirname(referenceAssetPath), imagePath).replaceAll("\\", "/")
+    : imagePath.split("/").slice(-2).join("/");
+};
+
+const buildFanartThumbs = (data: CrawlerData, assets: DownloadedAssets | undefined): Array<Record<string, unknown>> => {
+  const thumbs: Array<Record<string, unknown>> = [];
+
+  if (assets?.fanart) {
+    thumbs.push({ "#text": basename(assets.fanart) });
+  } else {
+    const primaryFanartUrl = data.fanart_url || data.sample_images[0] || data.thumb_url;
+    if (primaryFanartUrl) {
+      thumbs.push({ "#text": primaryFanartUrl });
+    }
+  }
+
+  if (assets?.sceneImages && assets.sceneImages.length > 0) {
+    const referenceAssetPath = assets.fanart ?? assets.thumb ?? assets.poster;
+    for (const imagePath of assets.sceneImages) {
+      thumbs.push({ "#text": buildRelativeAssetPath(referenceAssetPath, imagePath) });
+    }
+    return thumbs;
+  }
+
+  const extraSampleImages = data.fanart_url ? data.sample_images : data.sample_images.slice(1);
+  for (const imageUrl of extraSampleImages.map((value) => value.trim()).filter((value) => value.length > 0)) {
+    thumbs.push({ "#text": imageUrl });
+  }
+
+  return thumbs;
+};
+
 export interface NfoOptions {
   assets?: DownloadedAssets;
   sources?: SourceMap;
@@ -115,10 +150,14 @@ export class NfoGenerator {
   buildXml(data: CrawlerData, options?: NfoOptions): string {
     const title = data.title_zh?.trim() || data.title;
     const plot = data.plot_zh?.trim() || data.plot?.trim();
+    const outline = plot ? truncateText(plot, OUTLINE_MAX_CHARS) : undefined;
     const assets = options?.assets;
     const sources = options?.sources;
-    const durationSeconds = options?.videoMeta?.durationSeconds ?? data.durationSeconds;
+    const videoMeta = options?.videoMeta;
+    const durationSeconds = videoMeta?.durationSeconds ?? data.durationSeconds;
     const runtimeMinutes = durationSeconds ? Math.round(durationSeconds / 60) : undefined;
+    const tags = buildMovieTags(data);
+    const videoNode = buildVideoNode(videoMeta);
 
     const movie: Record<string, unknown> = {};
 
@@ -130,14 +169,15 @@ export class NfoGenerator {
     movie.title = title;
     movie.originaltitle = data.title;
     movie.plot = plot && plot.length > 0 ? plot : undefined;
+    movie.outline = outline;
     movie.premiered = data.release_date;
     movie.releasedate = data.release_date;
+    movie.dateadded = new Date().toISOString();
     movie.year = data.release_year ?? parseReleaseYear(data.release_date);
     movie.runtime = runtimeMinutes;
     movie.rating = data.rating;
     movie.studio = data.studio;
     movie.director = data.director;
-    movie.publisher = data.publisher;
     movie.mpaa = "XXX";
     movie.set = data.series;
 
@@ -147,14 +187,13 @@ export class NfoGenerator {
       movie.trailer = data.trailer_url;
     }
 
-    movie.website = data.website;
     movie.uniqueid = {
       "@_type": data.website,
       "@_default": "true",
       "#text": data.number,
     };
     movie.genre = Array.from(new Set(buildStringNodes(toArray(data.genres))));
-    movie.tag = movie.genre;
+    movie.tag = tags;
     movie.actor = buildActorNodes(toArray(data.actors), data.actor_profiles);
 
     // Image thumbs - prefer local asset paths, fall back to URLs
@@ -174,27 +213,17 @@ export class NfoGenerator {
       movie.thumb = thumbs;
     }
 
-    // Fanart section - includes fanart + scene images
-    const fanartThumbs: Array<Record<string, unknown>> = [];
-    if (assets?.fanart) {
-      fanartThumbs.push({ "#text": basename(assets.fanart) });
-    } else if (data.fanart_url) {
-      fanartThumbs.push({ "#text": data.fanart_url });
-    }
-
-    if (assets?.sceneImages && assets.sceneImages.length > 0) {
-      // Use relative paths: samples/scene-001.jpg
-      const referenceAssetPath = assets.fanart ?? assets.thumb ?? assets.poster;
-      for (const imagePath of assets.sceneImages) {
-        const relativePath = referenceAssetPath
-          ? relative(dirname(referenceAssetPath), imagePath).replaceAll("\\", "/")
-          : imagePath.split("/").slice(-2).join("/");
-        fanartThumbs.push({ "#text": relativePath });
-      }
-    }
-
+    const fanartThumbs = buildFanartThumbs(data, assets);
     if (fanartThumbs.length > 0) {
       movie.fanart = { thumb: fanartThumbs.length === 1 ? fanartThumbs[0] : fanartThumbs };
+    }
+
+    if (videoNode) {
+      movie.fileinfo = {
+        streamdetails: {
+          video: videoNode,
+        },
+      };
     }
 
     const xmlBody = builder.build({ movie });

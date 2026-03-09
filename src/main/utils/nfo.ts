@@ -1,8 +1,8 @@
 import { toArray } from "@main/utils/common";
+import { parseManagedMovieTags } from "@main/utils/movieMetadata";
 import { Website } from "@shared/enums";
 import type { ActorProfile, CrawlerData } from "@shared/types";
 import { XMLParser } from "fast-xml-parser";
-import { parseActorBloodType, parseActorDate, parseActorMetricCm } from "./actorProfile";
 
 const WEBSITE_VALUES = new Set(Object.values(Website));
 
@@ -60,6 +60,30 @@ const pickThumbByAspect = (thumbs: ThumbEntry[], aspects: string[]): string | un
   return thumbs.find((entry) => entry.aspect && normalizedAspects.includes(entry.aspect))?.value;
 };
 
+const toRecord = (value: unknown): Record<string, unknown> | undefined => {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
+};
+
+const toStringArray = (value: unknown): string[] => {
+  return toArray(value)
+    .map((item) => toStringValue(item) ?? "")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+};
+
+const parseDurationSeconds = (movieNode: Record<string, unknown>): number | undefined => {
+  const fileinfo = toRecord(movieNode.fileinfo);
+  const streamdetails = toRecord(fileinfo?.streamdetails);
+  const video = toRecord(streamdetails?.video);
+  const durationValue = toStringValue(video?.durationinseconds);
+  if (!durationValue) {
+    return undefined;
+  }
+
+  const durationSeconds = Number.parseInt(durationValue, 10);
+  return Number.isFinite(durationSeconds) ? durationSeconds : undefined;
+};
+
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
@@ -93,10 +117,9 @@ export const parseNfo = (xml: string): CrawlerData => {
   const number = toStringValue(uniqueid) ?? "";
 
   const website =
-    parseWebsite(movieNode.website) ??
-    (uniqueidNode && typeof uniqueidNode === "object"
+    uniqueidNode && typeof uniqueidNode === "object"
       ? parseWebsite((uniqueidNode as Record<string, unknown>)["@_type"])
-      : null);
+      : null;
 
   if (!website) {
     throw new Error("NFO missing website");
@@ -135,25 +158,14 @@ export const parseNfo = (xml: string): CrawlerData => {
 
       return {
         name,
-        aliases: toStringValue(fields.altname) ? [toStringValue(fields.altname) as string] : undefined,
-        birth_date: parseActorDate(toStringValue(fields.birth_date)),
-        birth_place: toStringValue(fields.birth_place),
-        blood_type: parseActorBloodType(toStringValue(fields.blood_type)),
-        description: toStringValue(fields.biography),
-        height_cm: parseActorMetricCm(toStringValue(fields.height_cm)),
-        bust_cm: parseActorMetricCm(toStringValue(fields.bust_cm)),
-        waist_cm: parseActorMetricCm(toStringValue(fields.waist_cm)),
-        hip_cm: parseActorMetricCm(toStringValue(fields.hip_cm)),
-        cup_size: toStringValue(fields.cup_size),
         photo_url: toStringValue(fields.thumb),
       };
     })
     .filter((item): item is ActorProfile => item !== null);
 
-  const genres = toArray(movieNode.genre)
-    .map((item) => toStringValue(item) ?? "")
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
+  const genres = toStringArray(movieNode.genre);
+  const tags = toStringArray(movieNode.tag);
+  const managedMovieTags = parseManagedMovieTags(tags);
 
   const thumbs = parseThumbEntries(movieNode.thumb);
   const posterUrl = pickThumbByAspect(thumbs, ["poster"]);
@@ -182,6 +194,8 @@ export const parseNfo = (xml: string): CrawlerData => {
 
   const rating = ratingText ? Number.parseFloat(ratingText) : undefined;
   const releaseYear = yearText ? Number.parseInt(yearText, 10) : undefined;
+  const durationSeconds = parseDurationSeconds(movieNode);
+  const outline = toStringValue(movieNode.outline);
 
   return {
     title: originaltitle ?? title,
@@ -192,13 +206,15 @@ export const parseNfo = (xml: string): CrawlerData => {
     genres,
     studio: toStringValue(movieNode.studio),
     director: toStringValue(movieNode.director),
-    publisher: toStringValue(movieNode.publisher),
+    publisher: managedMovieTags.publisher,
     series: toStringValue(movieNode.set) ?? toStringValue(movieNode.series),
-    plot,
-    plot_zh: plot,
+    plot: plot ?? outline,
+    plot_zh: plot ?? outline,
     release_date: premiered ?? releasedate,
     release_year: Number.isFinite(releaseYear) ? releaseYear : undefined,
+    durationSeconds,
     rating: Number.isFinite(rating) ? rating : undefined,
+    content_type: managedMovieTags.content_type,
     thumb_url: thumbUrl,
     poster_url: posterUrl,
     fanart_url: fanartUrl,

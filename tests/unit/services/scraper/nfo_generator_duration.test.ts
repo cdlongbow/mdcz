@@ -69,6 +69,8 @@ describe("NfoGenerator", () => {
             photo_url: "https://img.example.com/actor-a.jpg",
           },
         ],
+        content_type: "VR",
+        publisher: "PRESTIGE",
         genres: ["Drama"],
         studio: "Studio",
         director: "Director",
@@ -88,10 +90,19 @@ describe("NfoGenerator", () => {
     expect(xml).toContain("<thumb>samples/scene-001.jpg</thumb>");
     expect(xml).toContain("<trailer>trailer.mp4</trailer>");
     expect(xml).toContain("<releasedate>2024-01-02</releasedate>");
+    expect(xml).toContain("<outline>Plot</outline>");
+    expect(xml).toContain("<dateadded>");
     expect(xml).toContain("<name>Actor A</name>");
-    expect(xml).toContain("<altname>Alias A</altname>");
-    expect(xml).toContain("<biography>Actor biography</biography>");
+    expect(xml).toContain("<type>Actor</type>");
     expect(xml).toContain("<thumb>https://img.example.com/actor-a.jpg</thumb>");
+    expect(xml).toContain("<order>0</order>");
+    expect(xml).toContain("<sortorder>0</sortorder>");
+    expect(xml).toContain("<tag>Drama</tag>");
+    expect(xml).toContain("<tag>mdcz:content_type:VR</tag>");
+    expect(xml).toContain("<tag>mdcz:publisher:PRESTIGE</tag>");
+    expect(xml).not.toContain("<altname>");
+    expect(xml).not.toContain("<biography>");
+    expect(xml).not.toContain("<website>");
   });
 
   it("round-trips Jellyfin-supported set and release date fields", () => {
@@ -130,28 +141,44 @@ describe("NfoGenerator", () => {
     expect(parsed.sample_images).toEqual(["samples/scene-001.jpg"]);
   });
 
-  it("round-trips actor aliases and biography from NFO actor nodes", () => {
+  it("writes streamdetails when local video metadata is available", () => {
     const xml = new NfoGenerator().buildXml(
       createCrawlerData({
-        actors: ["Actor A"],
-        actor_profiles: [
-          {
-            name: "Actor A",
-            aliases: ["Alias A"],
-            description: "Actor biography",
-          },
-        ],
+        durationSeconds: 5400,
       }),
+      {
+        videoMeta: {
+          durationSeconds: 3600,
+          width: 1920,
+          height: 1080,
+          codec: "h264",
+          bitrate: 8_000_000,
+        },
+      },
     );
 
+    expect(xml).toContain("<fileinfo>");
+    expect(xml).toContain("<streamdetails>");
+    expect(xml).toContain("<video>");
+    expect(xml).toContain("<codec>h264</codec>");
+    expect(xml).toContain("<width>1920</width>");
+    expect(xml).toContain("<height>1080</height>");
+    expect(xml).toContain("<durationinseconds>3600</durationinseconds>");
+    expect(xml).toContain("<bitrate>8000000</bitrate>");
+  });
+
+  it("uses the first sample image as fallback fanart when a dedicated fanart is unavailable", () => {
+    const xml = new NfoGenerator().buildXml(
+      createCrawlerData({
+        thumb_url: "https://remote.example.com/thumb.jpg",
+        sample_images: ["https://remote.example.com/scene-001.jpg", "https://remote.example.com/scene-002.jpg"],
+      }),
+    );
     const parsed = parseNfo(xml);
 
-    expect(parsed.actor_profiles).toEqual([
-      expect.objectContaining({
-        name: "Actor A",
-        aliases: ["Alias A"],
-        description: "Actor biography",
-      }),
-    ]);
+    expect(xml).toContain("<fanart>");
+    expect(parsed.fanart_url).toBe("https://remote.example.com/scene-001.jpg");
+    expect(parsed.sample_images).toEqual(["https://remote.example.com/scene-002.jpg"]);
+    expect(parsed.thumb_url).toBe("https://remote.example.com/thumb.jpg");
   });
 });

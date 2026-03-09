@@ -3,7 +3,12 @@ import { logActorSourceWarnings } from "@main/services/actorSource/logging";
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
-import { hasMissingActorInfo, type PlannedPersonSyncState, planPersonSync } from "@main/services/personSync/planner";
+import {
+  hasMissingActorInfo,
+  normalizeExistingPersonSyncState,
+  type PlannedPersonSyncState,
+  planPersonSync,
+} from "@main/services/personSync/planner";
 import type { SignalService } from "@main/services/SignalService";
 
 import {
@@ -59,11 +64,14 @@ export class EmbyActorInfo {
 
       try {
         const detail = await this.fetchDetail(configuration, person);
-        const existing = {
+        const existing = normalizeExistingPersonSyncState({
           overview: toStringValue(detail.Overview),
           tags: toStringArray(detail.Tags),
           taglines: toStringArray(detail.Taglines),
-        };
+          premiereDate: toStringValue(detail.PremiereDate),
+          productionYear: typeof detail.ProductionYear === "number" ? detail.ProductionYear : undefined,
+          productionLocations: toStringArray(detail.ProductionLocations),
+        });
 
         if (mode === "missing" && !hasMissingActorInfo(existing)) {
           continue;
@@ -137,10 +145,16 @@ export class EmbyActorInfo {
       Taglines: synced.taglines,
     };
 
-    for (const field of ["ProductionLocations", "PremiereDate", "ProductionYear"] as const) {
-      if (field in detail) {
-        payload[field] = detail[field];
-      }
+    if (synced.productionLocations && synced.productionLocations.length > 0) {
+      payload.ProductionLocations = synced.productionLocations;
+    }
+
+    if (synced.premiereDate) {
+      payload.PremiereDate = synced.premiereDate;
+    }
+
+    if (synced.productionYear !== undefined) {
+      payload.ProductionYear = synced.productionYear;
     }
 
     return payload;

@@ -6,15 +6,25 @@ import {
   mergeActorProfiles,
   parseActorManagedTags,
 } from "@main/utils/actorProfile";
+import { buildPersonOverview, stripManagedPersonOverview } from "@main/utils/personMetadata";
 import type { ActorProfile } from "@shared/types";
 
 export type PersonSyncMode = "all" | "missing";
-export type PersonSyncField = "overview" | "tags" | "taglines";
+export type PersonSyncField =
+  | "overview"
+  | "tags"
+  | "taglines"
+  | "premiereDate"
+  | "productionLocations"
+  | "productionYear";
 
 export interface ExistingPersonSyncState {
   overview?: string;
   tags?: string[];
   taglines?: string[];
+  premiereDate?: string;
+  productionYear?: number;
+  productionLocations?: string[];
 }
 
 export interface PlannedPersonSyncState {
@@ -23,6 +33,9 @@ export interface PlannedPersonSyncState {
   overview?: string;
   tags: string[];
   taglines: string[];
+  premiereDate?: string;
+  productionYear?: number;
+  productionLocations?: string[];
 }
 
 const toTrimmedString = (value: string | undefined): string | undefined => {
@@ -31,12 +44,48 @@ const toTrimmedString = (value: string | undefined): string | undefined => {
 };
 
 const toStringArray = (value: string[] | undefined): string[] => {
-  return value?.filter((entry) => typeof entry === "string" && entry.trim().length > 0) ?? [];
+  return value?.map((entry) => entry.trim()).filter((entry) => entry.length > 0) ?? [];
+};
+
+const toFiniteNumber = (value: number | undefined): number | undefined => {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+};
+
+const extractIsoDate = (value: string | undefined): string | undefined => {
+  const normalized = toTrimmedString(value);
+  if (!normalized) {
+    return undefined;
+  }
+
+  const matched = normalized.match(/(\d{4}-\d{2}-\d{2})/u);
+  return matched?.[1];
+};
+
+const toPremiereDate = (birthDate: string | undefined): string | undefined => {
+  return birthDate ? `${birthDate}T00:00:00.000Z` : undefined;
+};
+
+const toProductionYear = (birthDate: string | undefined): number | undefined => {
+  if (!birthDate) {
+    return undefined;
+  }
+
+  const year = Number.parseInt(birthDate.slice(0, 4), 10);
+  return Number.isFinite(year) ? year : undefined;
 };
 
 const toNamedProfile = (name: string, partial: Partial<ActorProfile>): ActorProfile => ({
   name,
   ...partial,
+});
+
+export const normalizeExistingPersonSyncState = (existing: ExistingPersonSyncState): ExistingPersonSyncState => ({
+  overview: toTrimmedString(existing.overview),
+  tags: toStringArray(existing.tags),
+  taglines: toStringArray(existing.taglines),
+  premiereDate: toTrimmedString(existing.premiereDate),
+  productionYear: toFiniteNumber(existing.productionYear),
+  productionLocations: toStringArray(existing.productionLocations),
 });
 
 const toCanonicalManagedProfile = (
@@ -70,8 +119,75 @@ const haveSameTagMembers = (left: string[], right: string[]): boolean => {
   return true;
 };
 
-const haveSameTaglineOrder = (left: string[], right: string[]): boolean => {
+const haveSameArrayOrder = (left: string[], right: string[]): boolean => {
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
+};
+
+const resolveOverview = (
+  currentOverview: string | undefined,
+  sourceProfile: ActorProfile,
+  mode: PersonSyncMode,
+): string | undefined => {
+  const hasSourceAliases = sourceProfile.aliases?.some((alias) => alias.trim().length > 0) ?? false;
+  const currentOverviewBase = hasSourceAliases
+    ? (stripManagedPersonOverview(currentOverview) ?? currentOverview)
+    : currentOverview;
+
+  if (mode === "missing") {
+    return currentOverview ?? buildPersonOverview(sourceProfile.description, sourceProfile);
+  }
+
+  return buildPersonOverview(sourceProfile.description ?? currentOverviewBase, sourceProfile) ?? currentOverviewBase;
+};
+
+const resolvePremiereDate = (
+  currentPremiereDate: string | undefined,
+  sourceBirthDate: string | undefined,
+  mode: PersonSyncMode,
+): string | undefined => {
+  const currentBirthDate = extractIsoDate(currentPremiereDate);
+  const targetPremiereDate = toPremiereDate(sourceBirthDate);
+
+  if (mode === "missing") {
+    return currentPremiereDate ?? targetPremiereDate;
+  }
+
+  if (!sourceBirthDate) {
+    return currentPremiereDate;
+  }
+
+  if (currentBirthDate === sourceBirthDate && currentPremiereDate) {
+    return currentPremiereDate;
+  }
+
+  return targetPremiereDate;
+};
+
+const resolveProductionYear = (
+  currentProductionYear: number | undefined,
+  sourceBirthDate: string | undefined,
+  mode: PersonSyncMode,
+): number | undefined => {
+  const targetProductionYear = toProductionYear(sourceBirthDate);
+  return mode === "all"
+    ? (targetProductionYear ?? currentProductionYear)
+    : (currentProductionYear ?? targetProductionYear);
+};
+
+const resolveProductionLocations = (
+  currentProductionLocations: string[],
+  sourceBirthPlace: string | undefined,
+  mode: PersonSyncMode,
+): string[] => {
+  if (!sourceBirthPlace) {
+    return currentProductionLocations;
+  }
+
+  if (mode === "missing") {
+    return currentProductionLocations.length > 0 ? currentProductionLocations : [sourceBirthPlace];
+  }
+
+  return [sourceBirthPlace, ...currentProductionLocations.filter((location) => location !== sourceBirthPlace)];
 };
 
 export const hasManagedActorTags = (tags: string[] | undefined): boolean => {
@@ -82,12 +198,35 @@ export const hasManagedActorSummary = (taglines: string[] | undefined): boolean 
   return toStringArray(taglines).some(isActorManagedTagline);
 };
 
-export const hasMissingActorInfo = (existing: ExistingPersonSyncState): boolean => {
-  return (
-    !toTrimmedString(existing.overview) ||
-    !hasManagedActorTags(existing.tags) ||
-    !hasManagedActorSummary(existing.taglines)
-  );
+export const hasMissingActorInfo = (
+  existing: ExistingPersonSyncState,
+  sourceProfile?: Pick<ActorProfile, "birth_date" | "birth_place">,
+): boolean => {
+  const normalizedExisting = normalizeExistingPersonSyncState(existing);
+
+  if (
+    !normalizedExisting.overview ||
+    !hasManagedActorTags(normalizedExisting.tags) ||
+    !hasManagedActorSummary(normalizedExisting.taglines)
+  ) {
+    return true;
+  }
+
+  const productionLocations = normalizedExisting.productionLocations ?? [];
+  const requiresBirthDateFields = sourceProfile ? Boolean(extractIsoDate(sourceProfile.birth_date)) : true;
+  const requiresBirthPlaceField = sourceProfile ? Boolean(toTrimmedString(sourceProfile.birth_place)) : true;
+
+  if (requiresBirthDateFields) {
+    if (!extractIsoDate(normalizedExisting.premiereDate) || normalizedExisting.productionYear === undefined) {
+      return true;
+    }
+  }
+
+  if (requiresBirthPlaceField && productionLocations.length === 0) {
+    return true;
+  }
+
+  return false;
 };
 
 export const planPersonSync = (
@@ -95,17 +234,21 @@ export const planPersonSync = (
   existing: ExistingPersonSyncState,
   mode: PersonSyncMode,
 ): PlannedPersonSyncState => {
-  const currentOverview = toTrimmedString(existing.overview);
-  const currentTags = toStringArray(existing.tags);
-  const currentTaglines = toStringArray(existing.taglines);
+  const normalizedExisting = normalizeExistingPersonSyncState(existing);
+  const currentOverview = normalizedExisting.overview;
+  const currentTags = normalizedExisting.tags ?? [];
+  const currentTaglines = normalizedExisting.taglines ?? [];
+  const currentPremiereDate = normalizedExisting.premiereDate;
+  const currentProductionYear = normalizedExisting.productionYear;
+  const currentProductionLocations = normalizedExisting.productionLocations ?? [];
+
   const retainedTags = currentTags.filter((tag) => !isActorManagedTag(tag));
   const retainedTaglines = currentTaglines.filter((tagline) => !isActorManagedTagline(tagline));
-  const sourceOverview = toTrimmedString(sourceProfile.description);
   const managedProfile = toCanonicalManagedProfile(sourceProfile, currentTags, mode);
   const managedTags = managedProfile ? buildActorManagedTags(managedProfile) : [];
   const managedTagline = managedProfile ? buildActorManagedTagline(managedProfile) : undefined;
 
-  const overview = mode === "all" ? (sourceOverview ?? currentOverview) : (currentOverview ?? sourceOverview);
+  const overview = resolveOverview(currentOverview, sourceProfile, mode);
   const tags = mode === "missing" && hasManagedActorTags(currentTags) ? currentTags : [...retainedTags, ...managedTags];
   const taglines =
     mode === "missing" && hasManagedActorSummary(currentTaglines)
@@ -114,6 +257,12 @@ export const planPersonSync = (
         ? [...retainedTaglines, managedTagline]
         : currentTaglines;
 
+  const sourceBirthDate = extractIsoDate(sourceProfile.birth_date);
+  const sourceBirthPlace = toTrimmedString(sourceProfile.birth_place);
+  const premiereDate = resolvePremiereDate(currentPremiereDate, sourceBirthDate, mode);
+  const productionYear = resolveProductionYear(currentProductionYear, sourceBirthDate, mode);
+  const productionLocations = resolveProductionLocations(currentProductionLocations, sourceBirthPlace, mode);
+
   const updatedFields: PersonSyncField[] = [];
   if (overview !== currentOverview) {
     updatedFields.push("overview");
@@ -121,8 +270,17 @@ export const planPersonSync = (
   if (!haveSameTagMembers(tags, currentTags)) {
     updatedFields.push("tags");
   }
-  if (!haveSameTaglineOrder(taglines, currentTaglines)) {
+  if (!haveSameArrayOrder(taglines, currentTaglines)) {
     updatedFields.push("taglines");
+  }
+  if (premiereDate !== currentPremiereDate) {
+    updatedFields.push("premiereDate");
+  }
+  if (productionYear !== currentProductionYear) {
+    updatedFields.push("productionYear");
+  }
+  if (!haveSameArrayOrder(productionLocations, currentProductionLocations)) {
+    updatedFields.push("productionLocations");
   }
 
   return {
@@ -131,5 +289,8 @@ export const planPersonSync = (
     overview,
     tags,
     taglines,
+    premiereDate,
+    productionYear,
+    productionLocations: productionLocations.length > 0 ? productionLocations : undefined,
   };
 };

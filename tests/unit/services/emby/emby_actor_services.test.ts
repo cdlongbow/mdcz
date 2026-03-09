@@ -35,6 +35,7 @@ class FakeActorSourceProvider {
 const createStructuredLookupResult = (name = "神木麗"): ActorLookupResult => ({
   profile: {
     name,
+    aliases: ["神木れい", "かみきれい"],
     birth_date: "1999-12-20",
     birth_place: "埼玉県",
     blood_type: "A",
@@ -61,6 +62,9 @@ const expectStructuredActorPayload = (payload: Record<string, unknown>, overview
   expect(payload).toMatchObject({
     Overview: overview,
     Taglines: ["MDCz: 1999-12-20 / 埼玉県 / A型 / 169cm / B95 W60 H85 / Gカップ"],
+    PremiereDate: "1999-12-20T00:00:00.000Z",
+    ProductionYear: 1999,
+    ProductionLocations: ["埼玉県"],
   });
   expect(payload.Tags).toEqual(
     expect.arrayContaining([
@@ -74,9 +78,6 @@ const expectStructuredActorPayload = (payload: Record<string, unknown>, overview
       "mdcz:cup_size:G",
     ]),
   );
-  expect(payload).not.toHaveProperty("PremiereDate");
-  expect(payload).not.toHaveProperty("ProductionYear");
-  expect(payload).not.toHaveProperty("ProductionLocations");
 };
 
 describe("Emby actor services", () => {
@@ -117,7 +118,7 @@ describe("Emby actor services", () => {
     expect(actorSourceProvider.lookup).toHaveBeenCalledWith(expect.any(Object), "神木麗");
     expect(networkClient.postText).toHaveBeenCalledTimes(1);
     expect(networkClient.postText.mock.calls[0]?.[0]).toContain("/Items/person-1?");
-    expectStructuredActorPayload(readPostedPayload(networkClient), "官方简介");
+    expectStructuredActorPayload(readPostedPayload(networkClient), "官方简介\n\n别名：神木れい / かみきれい");
   });
 
   it("fills missing actor tags and summary in missing mode without overwriting the overview", async () => {
@@ -156,6 +157,53 @@ describe("Emby actor services", () => {
     expect(result).toEqual({ processedCount: 1, failedCount: 0 });
     expectStructuredActorPayload(readPostedPayload(networkClient), "已有简介");
     expect(readPostedPayload(networkClient).Tags).toEqual(expect.arrayContaining(["favorite"]));
+  });
+
+  it("appends aliases to the existing overview in all mode when the source has no description", async () => {
+    const networkClient = new FakeNetworkClient();
+    networkClient.getJson.mockImplementation(async (url: string) => {
+      const parsed = new URL(url);
+      if (parsed.pathname === "/Persons") {
+        return { Items: [{ Id: "person-1", Name: "神木麗" }] };
+      }
+      if (parsed.pathname === "/Items/person-1") {
+        return { Id: "person-1", Name: "神木麗", Overview: "已有简介\n\n别名：旧别名" };
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+
+    const actorSourceProvider = new FakeActorSourceProvider();
+    actorSourceProvider.lookup.mockResolvedValue({
+      profile: {
+        name: "神木麗",
+        aliases: ["神木れい", "かみきれい"],
+      },
+      profileSources: {},
+      sourceResults: [],
+      warnings: [],
+    });
+
+    const service = new EmbyActorInfo({
+      signalService: new SignalService(null),
+      networkClient: networkClient as unknown as NetworkClient,
+      actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
+    });
+
+    const result = await service.run(
+      createConfig({
+        server: {
+          ...defaultConfiguration.server,
+          url: "http://127.0.0.1:8096",
+          apiKey: "token",
+        },
+      }),
+      "all",
+    );
+
+    expect(result).toEqual({ processedCount: 1, failedCount: 0 });
+    expect(readPostedPayload(networkClient)).toMatchObject({
+      Overview: "已有简介\n\n别名：神木れい / かみきれい",
+    });
   });
 
   it("preserves existing Emby production fields in the update payload", async () => {
@@ -219,6 +267,9 @@ describe("Emby actor services", () => {
           Overview: "已有简介",
           Tags: ["favorite", "mdcz:birth_date:1999-12-20"],
           Taglines: ["MDCz: 1999-12-20"],
+          PremiereDate: "1999-12-20T00:00:00.0000000Z",
+          ProductionLocations: ["埼玉県"],
+          ProductionYear: 1999,
         };
       }
       throw new Error(`Unexpected URL ${url}`);

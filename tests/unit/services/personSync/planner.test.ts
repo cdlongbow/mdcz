@@ -25,7 +25,7 @@ describe("person sync planner", () => {
     );
 
     expect(result.shouldUpdate).toBe(true);
-    expect(result.updatedFields).toEqual(["tags", "taglines"]);
+    expect(result.updatedFields).toEqual(["tags", "taglines", "premiereDate", "productionYear", "productionLocations"]);
     expect(result.overview).toBe("已有简介");
     expect(result.tags).toEqual(
       expect.arrayContaining([
@@ -37,12 +37,16 @@ describe("person sync planner", () => {
       ]),
     );
     expect(result.taglines).toEqual(["MDCz: 1999-12-20 / 埼玉県 / A型 / 169cm / B95 W60 H85 / Gカップ"]);
+    expect(result.premiereDate).toBe("1999-12-20T00:00:00.000Z");
+    expect(result.productionYear).toBe(1999);
+    expect(result.productionLocations).toEqual(["埼玉県"]);
   });
 
-  it("refreshes managed fields in all mode while preserving user tags and user taglines", () => {
+  it("refreshes managed fields and native person fields in all mode while preserving user tags and user taglines", () => {
     const result = planPersonSync(
       {
         name: "神木麗",
+        aliases: ["神木れい", "かみきれい"],
         description: "官方简介",
         birth_date: "1999-12-20",
         birth_place: "埼玉県",
@@ -53,18 +57,53 @@ describe("person sync planner", () => {
         overview: "旧简介",
         tags: ["favorite", "mdcz:height_cm:160"],
         taglines: ["常驻收藏", "MDCz: 160cm"],
+        premiereDate: "1999-12-19T00:00:00.000Z",
+        productionYear: 1998,
+        productionLocations: ["东京", "埼玉県"],
       },
       "all",
     );
 
     expect(result.shouldUpdate).toBe(true);
-    expect(result.updatedFields).toEqual(["overview", "tags", "taglines"]);
-    expect(result.overview).toBe("官方简介");
+    expect(result.updatedFields).toEqual([
+      "overview",
+      "tags",
+      "taglines",
+      "premiereDate",
+      "productionYear",
+      "productionLocations",
+    ]);
+    expect(result.overview).toBe("官方简介\n\n别名：神木れい / かみきれい");
     expect(result.tags).toEqual(
       expect.arrayContaining(["favorite", "mdcz:birth_date:1999-12-20", "mdcz:height_cm:169"]),
     );
     expect(result.tags).not.toContain("mdcz:height_cm:160");
     expect(result.taglines).toEqual(["常驻收藏", "MDCz: 1999-12-20 / 埼玉県 / A型 / 169cm"]);
+    expect(result.premiereDate).toBe("1999-12-20T00:00:00.000Z");
+    expect(result.productionYear).toBe(1999);
+    expect(result.productionLocations).toEqual(["埼玉県", "东京"]);
+  });
+
+  it("appends aliases to the existing overview in all mode when the source has no description", () => {
+    const result = planPersonSync(
+      {
+        name: "神木麗",
+        aliases: ["神木れい", "かみきれい"],
+      },
+      {
+        overview: "旧简介\n\n别名：旧别名",
+        tags: ["favorite", "mdcz:birth_date:1999-12-20"],
+        taglines: ["MDCz: 1999-12-20"],
+        premiereDate: "1999-12-20T00:00:00.000Z",
+        productionYear: 1999,
+        productionLocations: ["埼玉県"],
+      },
+      "all",
+    );
+
+    expect(result.shouldUpdate).toBe(true);
+    expect(result.updatedFields).toEqual(["overview"]);
+    expect(result.overview).toBe("旧简介\n\n别名：神木れい / かみきれい");
   });
 
   it("detects whether actor info is still missing", () => {
@@ -73,6 +112,9 @@ describe("person sync planner", () => {
         overview: "已有简介",
         tags: ["favorite", "mdcz:birth_date:1999-12-20"],
         taglines: ["MDCz: 1999-12-20"],
+        premiereDate: "1999-12-20T00:00:00.000Z",
+        productionYear: 1999,
+        productionLocations: ["埼玉県"],
       }),
     ).toBe(false);
 
@@ -82,6 +124,23 @@ describe("person sync planner", () => {
         tags: ["favorite"],
         taglines: [],
       }),
+    ).toBe(true);
+
+    expect(
+      hasMissingActorInfo(
+        {
+          overview: "已有简介",
+          tags: ["favorite", "mdcz:birth_date:1999-12-20"],
+          taglines: ["MDCz: 1999-12-20"],
+          premiereDate: undefined,
+          productionYear: undefined,
+          productionLocations: [],
+        },
+        {
+          birth_date: "1999-12-20",
+          birth_place: "埼玉県",
+        },
+      ),
     ).toBe(true);
   });
 });

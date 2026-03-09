@@ -9,7 +9,6 @@ describe("parseNfo", () => {
       <movie>
         <title>中文标题</title>
         <originaltitle>Original Title</originaltitle>
-        <website>${Website.JAVDB}</website>
         <uniqueid type="${Website.JAVDB}">ABC-123</uniqueid>
         <thumb aspect="poster">poster.jpg</thumb>
         <thumb aspect="thumb">thumb.jpg</thumb>
@@ -32,7 +31,6 @@ describe("parseNfo", () => {
     const xml = `
       <movie>
         <title>Only Thumb</title>
-        <website>${Website.JAVBUS}</website>
         <uniqueid type="${Website.JAVBUS}">DEF-456</uniqueid>
         <thumb>https://example.com/thumb.jpg</thumb>
       </movie>
@@ -44,44 +42,59 @@ describe("parseNfo", () => {
     expect(result.poster_url).toBeUndefined();
   });
 
-  it("round-trips structured actor profile fields", () => {
-    const xml = new NfoGenerator().buildXml({
-      title: "Sample",
-      number: "ABC-123",
-      actors: ["Actor A"],
-      actor_profiles: [
-        {
-          name: "Actor A",
-          birth_date: "2001-02-03",
-          birth_place: "東京都",
-          blood_type: "A",
-          description: "Actor biography",
-          height_cm: 160,
-          bust_cm: 90,
-          waist_cm: 58,
-          hip_cm: 88,
-          cup_size: "G",
-          photo_url: "actor-a.jpg",
+  it("round-trips standard actor nodes, managed movie tags, and streamdetails", () => {
+    const xml = new NfoGenerator().buildXml(
+      {
+        title: "Sample",
+        number: "ABC-123",
+        actors: ["Actor A"],
+        actor_profiles: [
+          {
+            name: "Actor A",
+            photo_url: "actor-a.jpg",
+          },
+        ],
+        content_type: "VR",
+        publisher: "PRESTIGE",
+        plot: "简短简介",
+        genres: [],
+        sample_images: [],
+        website: Website.DMM,
+      },
+      {
+        videoMeta: {
+          durationSeconds: 5400,
+          width: 1920,
+          height: 1080,
+          codec: "h264",
+          bitrate: 8_000_000,
         },
-      ],
-      genres: [],
-      sample_images: [],
-      website: Website.DMM,
-    });
+      },
+    );
 
     const parsed = parseNfo(xml);
     expect(parsed.actor_profiles?.[0]).toMatchObject({
       name: "Actor A",
-      birth_date: "2001-02-03",
-      birth_place: "東京都",
-      blood_type: "A",
-      description: "Actor biography",
-      height_cm: 160,
-      bust_cm: 90,
-      waist_cm: 58,
-      hip_cm: 88,
-      cup_size: "G",
       photo_url: "actor-a.jpg",
     });
+    expect(parsed.publisher).toBe("PRESTIGE");
+    expect(parsed.content_type).toBe("VR");
+    expect(parsed.durationSeconds).toBe(5400);
+    expect(parsed.plot).toBe("简短简介");
+  });
+
+  it("uses outline as the plot fallback", () => {
+    const xml = `
+      <movie>
+        <title>Only Outline</title>
+        <uniqueid type="${Website.JAVDB}">ABC-999</uniqueid>
+        <outline>概要内容</outline>
+      </movie>
+    `;
+
+    const result = parseNfo(xml);
+
+    expect(result.plot).toBe("概要内容");
+    expect(result.plot_zh).toBe("概要内容");
   });
 });

@@ -2,7 +2,6 @@ import { readFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join } from "node:path";
 import type { Configuration } from "@main/services/config";
 import { normalizeActorName } from "@main/utils/actor";
-import { ACTOR_PROFILE_METADATA_FIELDS, hasActorProfileFieldValue } from "@main/utils/actorProfile";
 import { CachedAsyncResolver } from "@main/utils/CachedAsyncResolver";
 import { listFiles, pathExists } from "@main/utils/file";
 import { parseNfo } from "@main/utils/nfo";
@@ -28,7 +27,6 @@ const mergeProfiles = (
   existing: IndexedActorProfile | undefined,
   incoming: IndexedActorProfile,
 ): IndexedActorProfile => {
-  const aliases = Array.from(new Set([...(existing?.aliases ?? []), ...incoming.aliases]));
   const existingPhoto = existing?.photo_url;
   const incomingPhoto = incoming.photo_url;
 
@@ -47,22 +45,9 @@ const mergeProfiles = (
 
   const merged: IndexedActorProfile = {
     name: existing?.name ?? incoming.name,
-    aliases,
+    aliases: [],
     photo_url: nextPhoto,
   };
-
-  for (const field of ACTOR_PROFILE_METADATA_FIELDS) {
-    if (field === "photo_url") {
-      continue;
-    }
-
-    const nextValue = existing?.[field] ?? incoming[field];
-    if (!hasActorProfileFieldValue(nextValue)) {
-      continue;
-    }
-
-    Object.assign(merged, { [field]: nextValue });
-  }
 
   return merged;
 };
@@ -161,7 +146,6 @@ const buildLocalActorRecordIndex = async (configuration: Configuration): Promise
         profilesByName.set(normalizeActorName(name), {
           name,
           aliases: [],
-          description: undefined,
           photo_url: undefined,
         });
       }
@@ -175,16 +159,7 @@ const buildLocalActorRecordIndex = async (configuration: Configuration): Promise
         const key = normalizeActorName(name);
         const nextProfile = mergeProfiles(profilesByName.get(key), {
           name,
-          aliases: profile.aliases ?? [],
-          birth_date: profile.birth_date,
-          birth_place: profile.birth_place,
-          blood_type: profile.blood_type,
-          description: profile.description,
-          height_cm: profile.height_cm,
-          bust_cm: profile.bust_cm,
-          waist_cm: profile.waist_cm,
-          hip_cm: profile.hip_cm,
-          cup_size: profile.cup_size,
+          aliases: [],
           photo_url: await resolveActorPhotoUrl(nfoPath, profile),
         });
         profilesByName.set(key, nextProfile);
@@ -196,11 +171,9 @@ const buildLocalActorRecordIndex = async (configuration: Configuration): Promise
           sourceHints,
         });
 
-        for (const variant of [merged.profile.name, ...merged.profile.aliases]) {
-          const normalized = normalizeActorName(variant);
-          if (normalized) {
-            index.set(normalized, merged);
-          }
+        const normalized = normalizeActorName(merged.profile.name);
+        if (normalized) {
+          index.set(normalized, merged);
         }
       }
     } catch {
@@ -240,16 +213,6 @@ export class LocalActorSource implements BaseActorSource {
         success: true,
         profile: {
           name: profile?.name ?? query.name.trim(),
-          aliases: aliases.length > 0 ? aliases : undefined,
-          birth_date: profile?.birth_date,
-          birth_place: profile?.birth_place,
-          blood_type: profile?.blood_type,
-          description: profile?.description,
-          height_cm: profile?.height_cm,
-          bust_cm: profile?.bust_cm,
-          waist_cm: profile?.waist_cm,
-          hip_cm: profile?.hip_cm,
-          cup_size: profile?.cup_size,
           photo_url: localPhotoPath ?? profile?.photo_url,
         },
         warnings: [],

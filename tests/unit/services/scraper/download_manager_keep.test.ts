@@ -134,6 +134,37 @@ describe("DownloadManager keep flags", () => {
     expect(networkClient.download).not.toHaveBeenCalled();
   });
 
+  it("keeps the first sample image for scene images when an existing fanart is reused", async () => {
+    const { root, manager, networkClient } = await createDownloadSubject({
+      "fanart.jpg": "fanart",
+    });
+    mockImageValidation(true);
+    const assets = await manager.downloadAll(
+      root,
+      createCrawlerData({
+        sample_images: ["https://example.com/scene-001.jpg", "https://example.com/scene-002.jpg"],
+      }),
+      createDownloadConfig({
+        downloadThumb: false,
+        downloadPoster: false,
+        downloadTrailer: false,
+      }),
+    );
+
+    expect(assets.fanart).toBe(join(root, "fanart.jpg"));
+    expect(assets.sceneImages).toEqual([
+      join(root, "samples", "scene-001.jpg"),
+      join(root, "samples", "scene-002.jpg"),
+    ]);
+    await expect(readFile(join(root, "samples", "scene-001.jpg"), "utf8")).resolves.toBe(
+      "downloaded:https://example.com/scene-001.jpg",
+    );
+    await expect(readFile(join(root, "samples", "scene-002.jpg"), "utf8")).resolves.toBe(
+      "downloaded:https://example.com/scene-002.jpg",
+    );
+    expect(networkClient.download).toHaveBeenCalledTimes(2);
+  });
+
   it("creates missing fanart from an existing kept thumb", async () => {
     const { root, manager, networkClient } = await createDownloadSubject({
       "thumb.jpg": "thumb",
@@ -152,6 +183,51 @@ describe("DownloadManager keep flags", () => {
     expect(assets.fanart).toBe(join(root, "fanart.jpg"));
     expect(assets.downloaded).toEqual([join(root, "fanart.jpg")]);
     await expect(readFile(join(root, "fanart.jpg"), "utf8")).resolves.toBe("thumb");
+    expect(networkClient.probe).not.toHaveBeenCalled();
+    expect(networkClient.download).not.toHaveBeenCalled();
+  });
+
+  it("uses the first sample image as the fanart source before falling back to thumb", async () => {
+    const { root, manager } = await createDownloadSubject();
+    mockImageValidation(true);
+    const assets = await manager.downloadAll(
+      root,
+      createCrawlerData({
+        thumb_url: "https://example.com/thumb.jpg",
+        sample_images: ["https://example.com/scene-001.jpg", "https://example.com/scene-002.jpg"],
+      }),
+      createDownloadConfig({
+        downloadTrailer: false,
+      }),
+    );
+
+    expect(assets.fanart).toBe(join(root, "fanart.jpg"));
+    expect(assets.sceneImages).toEqual([join(root, "samples", "scene-001.jpg")]);
+    await expect(readFile(join(root, "fanart.jpg"), "utf8")).resolves.toBe(
+      "downloaded:https://example.com/scene-001.jpg",
+    );
+    await expect(readFile(join(root, "samples", "scene-001.jpg"), "utf8")).resolves.toBe(
+      "downloaded:https://example.com/scene-002.jpg",
+    );
+  });
+
+  it("does not derive a missing thumb from an existing fanart image", async () => {
+    const { root, manager, networkClient } = await createDownloadSubject({
+      "fanart.jpg": "fanart",
+    });
+    const assets = await manager.downloadAll(
+      root,
+      createCrawlerData(),
+      createDownloadConfig({
+        downloadPoster: false,
+        downloadSceneImages: false,
+        downloadTrailer: false,
+      }),
+    );
+
+    expect(assets.fanart).toBe(join(root, "fanart.jpg"));
+    expect(assets.thumb).toBeUndefined();
+    await expect(access(join(root, "thumb.jpg"))).rejects.toThrow();
     expect(networkClient.probe).not.toHaveBeenCalled();
     expect(networkClient.download).not.toHaveBeenCalled();
   });

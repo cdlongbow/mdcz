@@ -40,8 +40,6 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
   actor_profiles: [
     {
       name: "Actor A",
-      aliases: ["Alias A"],
-      description: "Actor biography",
       photo_url: "thumbs/actor-a.jpg",
     },
   ],
@@ -61,7 +59,7 @@ describe("Actor source local and gfriends", () => {
     );
   });
 
-  it("builds local actor sources from NFO aliases, biography, and relative thumbs", async () => {
+  it("builds local actor sources from standard actor nodes and relative thumbs", async () => {
     const root = await createTempDir();
     const movieDir = join(root, "Actor A", "ABC-123");
     const thumbPath = join(movieDir, "thumbs", "actor-a.jpg");
@@ -82,14 +80,9 @@ describe("Actor source local and gfriends", () => {
 
     expect(sources.get("actora")).toMatchObject({
       name: "Actor A",
-      aliases: ["Alias A"],
-      description: "Actor biography",
       photo_url: thumbPath,
     });
-    expect(sources.get("aliasa")).toMatchObject({
-      name: "Actor A",
-      description: "Actor biography",
-    });
+    expect(sources.get("aliasa")).toBeUndefined();
   });
 
   it("drops missing relative actor thumbs instead of treating them as remote URLs", async () => {
@@ -115,7 +108,7 @@ describe("Actor source local and gfriends", () => {
     });
   });
 
-  it("uses local aliases to resolve gfriends image matches through the provider", async () => {
+  it("uses exact local names to resolve gfriends image matches through the provider", async () => {
     const root = await createTempDir();
     const movieDir = join(root, "Actor A", "ABC-123");
     await mkdir(movieDir, { recursive: true });
@@ -156,12 +149,11 @@ describe("Actor source local and gfriends", () => {
           personImageSources: ["local", "gfriends"],
         },
       }),
-      "Alias A",
+      "Actor A",
     );
 
     expect(result.profile).toMatchObject({
       name: "Actor A",
-      aliases: ["Alias A"],
       photo_url: "https://example.com/Content/actresses/actor-a.jpg",
     });
     expect(result.profileSources.photo_url).toBe("gfriends");

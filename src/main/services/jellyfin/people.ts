@@ -3,7 +3,12 @@ import { logActorSourceWarnings } from "@main/services/actorSource/logging";
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
-import { hasMissingActorInfo, type PlannedPersonSyncState, planPersonSync } from "@main/services/personSync/planner";
+import {
+  hasMissingActorInfo,
+  normalizeExistingPersonSyncState,
+  type PlannedPersonSyncState,
+  planPersonSync,
+} from "@main/services/personSync/planner";
 import type { SignalService } from "@main/services/SignalService";
 import { buildJellyfinHeaders, buildJellyfinUrl, isUuid, type JellyfinMode } from "./auth";
 import { JellyfinServiceError, toJellyfinServiceError } from "./errors";
@@ -98,6 +103,18 @@ const buildPersonUpdatePayload = (
 
   if (synced.taglines.length > 0) {
     payload.Taglines = synced.taglines;
+  }
+
+  if (synced.productionLocations && synced.productionLocations.length > 0) {
+    payload.ProductionLocations = synced.productionLocations;
+  }
+
+  if (synced.premiereDate) {
+    payload.PremiereDate = synced.premiereDate;
+  }
+
+  if (synced.productionYear !== undefined) {
+    payload.ProductionYear = synced.productionYear;
   }
 
   const lockedFields = Array.from(new Set(toStringArray(detail.LockedFields)));
@@ -344,11 +361,14 @@ export class JellyfinActorInfoService {
 
       try {
         const detail = await fetchPersonDetail(this.networkClient, configuration, person);
-        const existing = {
+        const existing = normalizeExistingPersonSyncState({
           overview: toStringValue(detail.Overview) ?? person.Overview,
           tags: toStringArray(detail.Tags),
           taglines: toStringArray(detail.Taglines),
-        };
+          premiereDate: toStringValue(detail.PremiereDate),
+          productionYear: typeof detail.ProductionYear === "number" ? detail.ProductionYear : undefined,
+          productionLocations: toStringArray(detail.ProductionLocations),
+        });
 
         if (mode === "missing" && !hasMissingActorInfo(existing)) {
           continue;
