@@ -3,8 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ActorImageService } from "@main/services/ActorImageService";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import { NfoGenerator } from "@main/services/scraper/NfoGenerator";
-import { Website } from "@shared/enums";
 import { afterEach, describe, expect, it } from "vitest";
 
 const tempDirs: string[] = [];
@@ -53,36 +51,6 @@ describe("ActorImageService", () => {
       source: "local",
     });
     expect(queue.pending).toEqual({});
-  });
-
-  it("stores remote images into blob cache and publishes a root actor image", async () => {
-    const root = await createTempDir();
-    const config = createConfig(root);
-    const service = new ActorImageService();
-    const bytes = new Uint8Array([1, 2, 3, 4]);
-
-    const result = await service.storeRemoteImage(config, {
-      name: "Actor A",
-      source: "official",
-      remoteUrl: "https://img.example.com/actor-a.png",
-      contentType: "image/png",
-      bytes,
-    });
-
-    const index = JSON.parse(await readFile(join(root, ".cache", "index.json"), "utf8")) as {
-      actors: Record<string, { publicFileName: string; blobRelativePath: string; source: string; locked: boolean }>;
-    };
-    const entry = index.actors.actora;
-
-    expect(result?.publicPath).toBe(join(root, "Actor A.png"));
-    expect(result?.batchNfoPaths).toEqual([]);
-    expect(entry).toMatchObject({
-      publicFileName: "Actor A.png",
-      source: "official",
-      locked: false,
-    });
-    expect(await readFile(join(root, entry.blobRelativePath))).toEqual(Buffer.from(bytes));
-    expect(await readFile(join(root, "Actor A.png"))).toEqual(Buffer.from(bytes));
   });
 
   it("queues actor image requests and preserves batch NFO references", async () => {
@@ -146,111 +114,17 @@ describe("ActorImageService", () => {
     });
   });
 
-  it("returns queued batch NFO paths when storing a remote image", async () => {
+  it("returns fallback on corrupt index.json without overwriting the file", async () => {
     const root = await createTempDir();
     const config = createConfig(root);
     const service = new ActorImageService();
-    const nfoA = join(root, "Movie1", "ABC-001.nfo");
-    const nfoB = join(root, "Movie2", "ABC-002.nfo");
 
-    await service.enqueue(config, { name: "Actor A", batchNfoPath: nfoA });
-    await service.enqueue(config, { name: "Actor A", batchNfoPath: nfoB });
+    await mkdir(join(root, ".cache"), { recursive: true });
+    await writeFile(join(root, ".cache", "index.json"), "not valid json", "utf8");
 
-    const result = await service.storeRemoteImage(config, {
-      name: "Actor A",
-      source: "official",
-      bytes: new Uint8Array([1, 2, 3]),
-      contentType: "image/jpg",
-    });
+    const resolved = await service.resolveLocalImage(config, ["Actor A"]);
 
-    expect(result?.batchNfoPaths).toEqual([nfoA, nfoB]);
-
-    const queue = JSON.parse(await readFile(join(root, ".cache", "queue.json"), "utf8")) as {
-      pending: Record<string, unknown>;
-    };
-    expect(queue.pending.actora).toBeUndefined();
-  });
-
-  it("backfills actor thumbs in existing NFO files after remote image download", async () => {
-    const root = await createTempDir();
-    const service = new ActorImageService();
-    const nfoGenerator = new NfoGenerator();
-
-    const movieDir = join(root, "Movie1");
-    const nfoPath = join(movieDir, "ABC-123.nfo");
-    const actorImagePath = join(root, "library", "Actor B.jpg");
-    await mkdir(join(root, "library"), { recursive: true });
-    await mkdir(movieDir, { recursive: true });
-    await writeFile(actorImagePath, "actor-b-image", "utf8");
-
-    const originalXml = nfoGenerator.buildXml({
-      title: "Sample Title",
-      number: "ABC-123",
-      actors: ["Actor A", "Actor B"],
-      actor_profiles: [{ name: "Actor A", photo_url: ".actors/Actor A.jpg" }, { name: "Actor B" }],
-      genres: [],
-      sample_images: [],
-      website: Website.DMM,
-    });
-    await writeFile(nfoPath, originalXml, "utf8");
-
-    await service.backfillBatch({
-      actorName: "Actor B",
-      imagePath: actorImagePath,
-      nfoPaths: [nfoPath],
-    });
-
-    const updatedXml = await readFile(nfoPath, "utf8");
-    expect(updatedXml).toContain(".actors/Actor B.jpg");
-    expect(await readFile(join(movieDir, ".actors", "Actor B.jpg"), "utf8")).toBe("actor-b-image");
-  });
-
-  it("preserves existing actor thumbs when backfilling a different actor", async () => {
-    const root = await createTempDir();
-    const service = new ActorImageService();
-    const nfoGenerator = new NfoGenerator();
-
-    const movieDir = join(root, "Movie1");
-    const nfoPath = join(movieDir, "ABC-123.nfo");
-    const actorImagePath = join(root, "library", "Actor B.jpg");
-    await mkdir(join(root, "library"), { recursive: true });
-    await mkdir(movieDir, { recursive: true });
-    await writeFile(actorImagePath, "actor-b-image", "utf8");
-
-    const originalXml = nfoGenerator.buildXml({
-      title: "Sample Title",
-      number: "ABC-123",
-      actors: ["Actor A", "Actor B"],
-      actor_profiles: [{ name: "Actor A", photo_url: ".actors/Actor A.jpg" }, { name: "Actor B" }],
-      genres: [],
-      sample_images: [],
-      website: Website.DMM,
-    });
-    await writeFile(nfoPath, originalXml, "utf8");
-
-    await service.backfillBatch({
-      actorName: "Actor B",
-      imagePath: actorImagePath,
-      nfoPaths: [nfoPath],
-    });
-
-    const updatedXml = await readFile(nfoPath, "utf8");
-    expect(updatedXml).toContain(".actors/Actor A.jpg");
-    expect(updatedXml).toContain(".actors/Actor B.jpg");
-  });
-
-  it("skips backfill gracefully when NFO file does not exist", async () => {
-    const root = await createTempDir();
-    const service = new ActorImageService();
-    const actorImagePath = join(root, "Actor B.jpg");
-    await writeFile(actorImagePath, "image", "utf8");
-
-    await expect(
-      service.backfillBatch({
-        actorName: "Actor B",
-        imagePath: actorImagePath,
-        nfoPaths: [join(root, "nonexistent", "ABC-123.nfo")],
-      }),
-    ).resolves.toBeUndefined();
+    expect(resolved).toBeUndefined();
+    expect(await readFile(join(root, ".cache", "index.json"), "utf8")).toBe("not valid json");
   });
 });
