@@ -1,8 +1,19 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { parseNfo } from "@main/utils/nfo";
 import { Website } from "@shared/enums";
 import type { CrawlerData, DownloadedAssets } from "@shared/types";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+
+const tempDirs: string[] = [];
+
+const createTempDir = async (): Promise<string> => {
+  const dirPath = await mkdtemp(join(tmpdir(), "mdcz-nfo-generator-"));
+  tempDirs.push(dirPath);
+  return dirPath;
+};
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Sample",
@@ -30,6 +41,12 @@ const createAssets = (): DownloadedAssets => ({
 });
 
 describe("NfoGenerator", () => {
+  afterEach(async () => {
+    await Promise.all(
+      tempDirs.splice(0, tempDirs.length).map((dirPath) => rm(dirPath, { recursive: true, force: true })),
+    );
+  });
+
   it("uses crawler duration when local video metadata is unavailable", () => {
     const xml = new NfoGenerator().buildXml(
       createCrawlerData({
@@ -178,5 +195,22 @@ describe("NfoGenerator", () => {
     expect(parsed.fanart_url).toBe("https://remote.example.com/scene-001.jpg");
     expect(parsed.sample_images).toEqual(["https://remote.example.com/scene-002.jpg"]);
     expect(parsed.thumb_url).toBe("https://remote.example.com/thumb.jpg");
+  });
+
+  it("writes both the primary NFO and a Jellyfin-compatible movie.nfo copy", async () => {
+    const root = await createTempDir();
+    const nfoPath = join(root, "ABC-123.nfo");
+    const movieNfoPath = join(root, "movie.nfo");
+    const generator = new NfoGenerator();
+
+    await generator.writeNfo(
+      nfoPath,
+      createCrawlerData({
+        title: "Sample Title",
+      }),
+    );
+
+    await expect(readFile(nfoPath, "utf8")).resolves.toContain("<title>Sample Title</title>");
+    await expect(readFile(movieNfoPath, "utf8")).resolves.toBe(await readFile(nfoPath, "utf8"));
   });
 });

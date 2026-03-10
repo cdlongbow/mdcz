@@ -120,7 +120,8 @@ function SettingsComponent() {
         setServerErrors(fields);
         setServerFieldErrors(fieldErrors);
         const firstMessage =
-          (Object.keys(fieldErrors).length > 0 && fields.map((field) => fieldErrors[field]).find((item) => Boolean(item))) ??
+          (Object.keys(fieldErrors).length > 0 &&
+            fields.map((field) => fieldErrors[field]).find((item) => Boolean(item))) ??
           undefined;
         toast.error(firstMessage ? `校验失败：${firstMessage}` : `校验失败：${fields.length} 个字段有误`);
       } else {
