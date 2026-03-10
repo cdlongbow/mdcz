@@ -789,7 +789,10 @@ export function TabbedConfigForm({
             extra={
               <div className="flex items-center gap-3">
                 {configPath && (
-                  <div className="hidden xl:flex items-center gap-1.5 opacity-20 text-[9px] font-mono truncate max-w-[200px] hover:opacity-100 transition-opacity">
+                  <div
+                    className="hidden lg:flex min-w-0 flex-1 items-center gap-1.5 text-[10px] font-mono text-muted-foreground/70 max-w-[280px] truncate hover:text-muted-foreground transition-colors"
+                    title={configPath}
+                  >
                     <FileText className="h-2.5 w-2.5" />
                     <span className="truncate">{configPath}</span>
                   </div>
