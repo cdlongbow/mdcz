@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { toast } from "sonner";
+import { useShallow } from "zustand/react/shallow";
 import { ipc } from "@/client/ipc";
 import MaintenanceBatchBar from "@/components/maintenance/MaintenanceBatchBar";
 import MaintenanceDetailView from "@/components/maintenance/MaintenanceDetailView";
@@ -40,25 +41,27 @@ export default function MaintenanceWorkbench({ mediaPath }: MaintenanceWorkbench
     applyPreviewResult,
     clearPreviewResults,
     beginExecution,
-  } = useMaintenanceStore((state) => ({
-    entries: state.entries,
-    presetId: state.presetId,
-    selectedIds: state.selectedIds,
-    executionStatus: state.executionStatus,
-    currentPath: state.currentPath,
-    statusText: state.statusText,
-    lastScannedDir: state.lastScannedDir,
-    previewResults: state.previewResults,
-    fieldSelections: state.fieldSelections,
-    setEntries: state.setEntries,
-    setExecutionStatus: state.setExecutionStatus,
-    setCurrentPath: state.setCurrentPath,
-    setStatusText: state.setStatusText,
-    setPreviewPending: state.setPreviewPending,
-    applyPreviewResult: state.applyPreviewResult,
-    clearPreviewResults: state.clearPreviewResults,
-    beginExecution: state.beginExecution,
-  }));
+  } = useMaintenanceStore(
+    useShallow((state) => ({
+      entries: state.entries,
+      presetId: state.presetId,
+      selectedIds: state.selectedIds,
+      executionStatus: state.executionStatus,
+      currentPath: state.currentPath,
+      statusText: state.statusText,
+      lastScannedDir: state.lastScannedDir,
+      previewResults: state.previewResults,
+      fieldSelections: state.fieldSelections,
+      setEntries: state.setEntries,
+      setExecutionStatus: state.setExecutionStatus,
+      setCurrentPath: state.setCurrentPath,
+      setStatusText: state.setStatusText,
+      setPreviewPending: state.setPreviewPending,
+      applyPreviewResult: state.applyPreviewResult,
+      clearPreviewResults: state.clearPreviewResults,
+      beginExecution: state.beginExecution,
+    })),
+  );
 
   const selectedEntries = useMemo(
     () => entries.filter((entry) => selectedIds.includes(entry.id)),

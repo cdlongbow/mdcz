@@ -2,6 +2,7 @@ import type { LocalScanEntry, MaintenanceItemResult } from "@shared/types";
 import { CheckCircle2, FileText, FolderOpen, Play, XCircle } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
+import { useShallow } from "zustand/react/shallow";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/ContextMenu";
@@ -122,16 +123,18 @@ function EntryItem({
 
 export default function MaintenanceEntryList() {
   const { entries, selectedIds, activeId, filter, itemResults, executionStatus, setFilter, toggleSelectAll } =
-    useMaintenanceStore((state) => ({
-      entries: state.entries,
-      selectedIds: state.selectedIds,
-      activeId: state.activeId,
-      filter: state.filter,
-      itemResults: state.itemResults,
-      executionStatus: state.executionStatus,
-      setFilter: state.setFilter,
-      toggleSelectAll: state.toggleSelectAll,
-    }));
+    useMaintenanceStore(
+      useShallow((state) => ({
+        entries: state.entries,
+        selectedIds: state.selectedIds,
+        activeId: state.activeId,
+        filter: state.filter,
+        itemResults: state.itemResults,
+        executionStatus: state.executionStatus,
+        setFilter: state.setFilter,
+        toggleSelectAll: state.toggleSelectAll,
+      })),
+    );
 
   const selectionLocked = executionStatus === "executing" || executionStatus === "stopping";
 

@@ -1,4 +1,5 @@
 import type { ActorProfile, FieldDiff } from "@shared/types";
+import { useShallow } from "zustand/react/shallow";
 import { ImageOptionCard } from "@/components/ImageOptionCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { getDefaultMaintenanceFieldSelection, hasMaintenanceFieldValue } from "@/lib/maintenance";
@@ -65,10 +66,12 @@ function DiffOption({
 }
 
 export default function ChangeDiffView({ entryId, diffs }: { entryId: string; diffs: FieldDiff[] }) {
-  const { entrySelections, setFieldSelection } = useMaintenanceStore((state) => ({
-    entrySelections: state.fieldSelections[entryId],
-    setFieldSelection: state.setFieldSelection,
-  }));
+  const { entrySelections, setFieldSelection } = useMaintenanceStore(
+    useShallow((state) => ({
+      entrySelections: state.fieldSelections[entryId],
+      setFieldSelection: state.setFieldSelection,
+    })),
+  );
 
   if (diffs.length === 0) {
     return (

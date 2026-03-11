@@ -1,5 +1,6 @@
 import { AlertTriangle } from "lucide-react";
 import { useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { getMaintenancePresetMeta, MAINTENANCE_PRESET_OPTIONS } from "@/components/maintenance/presetMeta";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -46,22 +47,24 @@ export default function MaintenanceBatchBar({
     previewResults,
     previewReadyCount,
     previewBlockedCount,
-  } = useMaintenanceStore((state) => ({
-    entries: state.entries,
-    selectedIds: state.selectedIds,
-    presetId: state.presetId,
-    setPresetId: state.setPresetId,
-    entriesCount: state.entries.length,
-    selectedCount: state.selectedIds.length,
-    executionStatus: state.executionStatus,
-    progressValue: state.progressValue,
-    progressCurrent: state.progressCurrent,
-    progressTotal: state.progressTotal,
-    previewPending: state.previewPending,
-    previewResults: state.previewResults,
-    previewReadyCount: state.previewReadyCount,
-    previewBlockedCount: state.previewBlockedCount,
-  }));
+  } = useMaintenanceStore(
+    useShallow((state) => ({
+      entries: state.entries,
+      selectedIds: state.selectedIds,
+      presetId: state.presetId,
+      setPresetId: state.setPresetId,
+      entriesCount: state.entries.length,
+      selectedCount: state.selectedIds.length,
+      executionStatus: state.executionStatus,
+      progressValue: state.progressValue,
+      progressCurrent: state.progressCurrent,
+      progressTotal: state.progressTotal,
+      previewPending: state.previewPending,
+      previewResults: state.previewResults,
+      previewReadyCount: state.previewReadyCount,
+      previewBlockedCount: state.previewBlockedCount,
+    })),
+  );
 
   const [executeDialogOpen, setExecuteDialogOpen] = useState(false);
   const [stopDialogOpen, setStopDialogOpen] = useState(false);

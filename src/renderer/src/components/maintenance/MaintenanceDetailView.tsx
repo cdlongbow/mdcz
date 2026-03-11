@@ -1,5 +1,6 @@
 import type { LocalScanEntry, MaintenanceItemResult, MaintenancePreviewItem } from "@shared/types";
 import { CheckCircle2, FileText, GitCompareArrows, XCircle } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { DetailPanel } from "@/components/DetailPanel";
 import ChangeDiffView from "@/components/maintenance/ChangeDiffView";
 import PathPlanView from "@/components/maintenance/PathPlanView";
@@ -53,13 +54,15 @@ const toDetailItem = (entry: LocalScanEntry, result?: MaintenanceItemResult | Ma
 };
 
 export default function MaintenanceDetailView() {
-  const { entries, activeId, presetId, previewResults, itemResults } = useMaintenanceStore((state) => ({
-    entries: state.entries,
-    activeId: state.activeId,
-    presetId: state.presetId,
-    previewResults: state.previewResults,
-    itemResults: state.itemResults,
-  }));
+  const { entries, activeId, presetId, previewResults, itemResults } = useMaintenanceStore(
+    useShallow((state) => ({
+      entries: state.entries,
+      activeId: state.activeId,
+      presetId: state.presetId,
+      previewResults: state.previewResults,
+      itemResults: state.itemResults,
+    })),
+  );
 
   const activeEntry = entries.find((entry) => entry.id === activeId) ?? null;
   const activePreview = activeEntry ? previewResults[activeEntry.id] : undefined;

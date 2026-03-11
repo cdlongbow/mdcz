@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { LayoutDashboard, PauseCircle, Play, StopCircle } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { toast } from "sonner";
+import { useShallow } from "zustand/react/shallow";
 import { pauseScrape, resumeScrape, startBatchScrape, stopScrape } from "@/api/manual";
 import { getCurrentConfig } from "@/client/api";
 import type { ConfigOutput } from "@/client/types";
@@ -48,21 +49,25 @@ function Index() {
   });
 
   const { isScraping, scrapeStatus, setScraping, setScrapeStatus, updateProgress, setStatusText, clearResults } =
-    useScrapeStore((state) => ({
-      isScraping: state.isScraping,
-      scrapeStatus: state.scrapeStatus,
-      setScraping: state.setScraping,
-      setScrapeStatus: state.setScrapeStatus,
-      updateProgress: state.updateProgress,
-      setStatusText: state.setStatusText,
-      clearResults: state.clearResults,
-    }));
+    useScrapeStore(
+      useShallow((state) => ({
+        isScraping: state.isScraping,
+        scrapeStatus: state.scrapeStatus,
+        setScraping: state.setScraping,
+        setScrapeStatus: state.setScrapeStatus,
+        updateProgress: state.updateProgress,
+        setStatusText: state.setStatusText,
+        clearResults: state.clearResults,
+      })),
+    );
   const maintenanceStatus = useMaintenanceStore((state) => state.executionStatus);
-  const { workbenchMode, setWorkbenchMode, setSelectedResultId } = useUIStore((state) => ({
-    workbenchMode: state.workbenchMode,
-    setWorkbenchMode: state.setWorkbenchMode,
-    setSelectedResultId: state.setSelectedResultId,
-  }));
+  const { workbenchMode, setWorkbenchMode, setSelectedResultId } = useUIStore(
+    useShallow((state) => ({
+      workbenchMode: state.workbenchMode,
+      setWorkbenchMode: state.setWorkbenchMode,
+      setSelectedResultId: state.setSelectedResultId,
+    })),
+  );
 
   const maintenanceBusy = maintenanceStatus !== "idle";
 
