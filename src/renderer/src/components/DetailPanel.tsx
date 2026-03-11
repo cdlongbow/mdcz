@@ -23,6 +23,11 @@ interface DetailPanelCompareProps {
   result?: MaintenanceItemResult | MaintenancePreviewItem;
   badgeLabel?: string;
   titleOverride?: string;
+  action?: {
+    label: string;
+    disabled?: boolean;
+    onClick: () => void;
+  };
 }
 
 interface DetailPanelProps {
@@ -99,10 +104,22 @@ export function DetailPanel({
                 {compare?.titleOverride ?? item.title ?? item.number}
               </p>
             </div>
-            <Badge variant="outline" className="gap-1 rounded-full px-2.5 py-1 text-xs">
-              <GitCompareArrows className="h-3.5 w-3.5" />
-              {compare?.badgeLabel ?? "数据对比"}
-            </Badge>
+            <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+              <Badge variant="outline" className="gap-1 self-start rounded-full px-2.5 py-1 text-xs sm:self-auto">
+                <GitCompareArrows className="h-3.5 w-3.5" />
+                {compare?.badgeLabel ?? "数据对比"}
+              </Badge>
+              {compare?.action && (
+                <Button
+                  size="sm"
+                  className="rounded-lg whitespace-nowrap"
+                  disabled={compare.action.disabled}
+                  onClick={compare.action.onClick}
+                >
+                  {compare.action.label}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 

@@ -77,7 +77,7 @@ export default function ChangeDiffView({ entryId, diffs }: { entryId: string; di
     return (
       <Card className="rounded-xl border shadow-sm">
         <CardContent className="flex min-h-48 items-center justify-center p-6 text-sm text-muted-foreground">
-          执行后将在此显示字段差异。
+          预览后将在此显示字段差异。
         </CardContent>
       </Card>
     );
@@ -103,6 +103,7 @@ export default function ChangeDiffView({ entryId, diffs }: { entryId: string; di
                     <ImageOptionCard
                       src={typeof diff.oldValue === "string" ? diff.oldValue : ""}
                       label="旧 (NFO)"
+                      stacked
                       selected={selectedSide === "old"}
                       empty={!hasOldValue}
                       emptyText="旧值为空"
@@ -113,6 +114,7 @@ export default function ChangeDiffView({ entryId, diffs }: { entryId: string; di
                     <ImageOptionCard
                       src={typeof diff.newValue === "string" ? diff.newValue : ""}
                       label="新 (网络)"
+                      stacked
                       selected={selectedSide === "new"}
                       empty={!hasNewValue}
                       emptyText="新值为空"

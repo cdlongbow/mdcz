@@ -42,6 +42,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     executionStatus,
     lastScannedDir,
     currentPath,
+    executeDialogOpen,
     previewPending,
     previewResults,
     previewReadyCount,
@@ -51,6 +52,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     setExecutionStatus,
     setCurrentPath,
     setStatusText,
+    setExecuteDialogOpen,
     setPreviewPending,
     applyPreviewResult,
     clearPreviewResults,
@@ -64,6 +66,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       executionStatus: state.executionStatus,
       lastScannedDir: state.lastScannedDir,
       currentPath: state.currentPath,
+      executeDialogOpen: state.executeDialogOpen,
       previewPending: state.previewPending,
       previewResults: state.previewResults,
       previewReadyCount: state.previewReadyCount,
@@ -73,6 +76,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       setExecutionStatus: state.setExecutionStatus,
       setCurrentPath: state.setCurrentPath,
       setStatusText: state.setStatusText,
+      setExecuteDialogOpen: state.setExecuteDialogOpen,
       setPreviewPending: state.setPreviewPending,
       applyPreviewResult: state.applyPreviewResult,
       clearPreviewResults: state.clearPreviewResults,
@@ -80,18 +84,26 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     })),
   );
 
-  const [executeDialogOpen, setExecuteDialogOpen] = useState(false);
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
 
   const presetMeta = getMaintenancePresetMeta(presetId);
+  const usesDiffView = presetId === "refresh_data" || presetId === "rebuild_all";
   const executing = executionStatus === "executing" || executionStatus === "stopping";
   const scanning = executionStatus === "scanning";
   const entriesCount = entries.length;
   const selectedCount = selectedIds.length;
+  const hasPreviewResults = Object.keys(previewResults).length > 0;
   const selectedEntries = useMemo(
     () => entries.filter((entry) => selectedIds.includes(entry.id)),
     [entries, selectedIds],
   );
+  const previewActionLabel = previewPending
+    ? "正在预览..."
+    : usesDiffView
+      ? hasPreviewResults
+        ? "刷新对比"
+        : "生成对比"
+      : "开始执行";
 
   const resolveScanDirectory = async (): Promise<string | null> => {
     const preferred = lastScannedDir || mediaPath?.trim() || "";
@@ -155,6 +167,13 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
           ? `预览完成 · 可执行 ${preview.readyCount} · 阻塞 ${preview.blockedCount}`
           : `预览完成 · 可执行 ${preview.readyCount} 项`,
       );
+      if (usesDiffView) {
+        toast.info(
+          preview.readyCount > 0
+            ? "预览完成，请在右侧数据对比中确认执行。"
+            : "预览完成，请在右侧数据对比中查看阻塞项。",
+        );
+      }
       return true;
     } catch (error) {
       setPreviewPending(false);
@@ -251,7 +270,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
             <Button
               onClick={async () => {
                 const ready = await handlePreview();
-                if (ready) {
+                if (ready && !usesDiffView) {
                   setExecuteDialogOpen(true);
                 }
               }}
@@ -259,7 +278,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
               className="h-9 rounded-lg px-4"
             >
               {previewPending ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-              {previewPending ? "正在预览..." : "开始执行"}
+              {previewActionLabel}
             </Button>
           </>
         ) : (
@@ -274,7 +293,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       </div>
 
       <Dialog open={executeDialogOpen} onOpenChange={setExecuteDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-xl min-w-0 overflow-hidden sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>确认执行维护操作</DialogTitle>
             <DialogDescription>请确认本次维护预设和预览结果。</DialogDescription>
@@ -284,10 +303,10 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
               <div>正在分析本次维护将要修改的内容...</div>
             </div>
           ) : (
-            <div className="space-y-4 text-sm">
-              <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2">
+            <div className="min-w-0 space-y-4 text-sm">
+              <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2">
                 <span className="text-muted-foreground">预设</span>
-                <span>{presetMeta.label}</span>
+                <span className="min-w-0 break-words">{presetMeta.label}</span>
                 <span className="text-muted-foreground">选中</span>
                 <span>
                   {selectedCount} / {entriesCount} 项
@@ -300,33 +319,35 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
 
               <div className="space-y-2">
                 <div className="text-muted-foreground">此操作将:</div>
-                <div className="space-y-1">
+                <div className="space-y-1 min-w-0">
                   {presetMeta.executeSummary.map((line) => (
-                    <div key={line}>· {line}</div>
+                    <div key={line} className="break-words">
+                      · {line}
+                    </div>
                   ))}
                 </div>
               </div>
 
-              <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl border p-3">
+              <div className="max-h-72 min-w-0 space-y-2 overflow-x-hidden overflow-y-auto rounded-xl border p-3">
                 {selectedEntries.map((entry) => {
                   const preview = previewResults[entry.id];
                   const diffCount = preview?.fieldDiffs?.length ?? 0;
                   const hasPathChange = Boolean(preview?.pathDiff?.changed);
 
                   return (
-                    <div key={entry.id} className="rounded-lg border bg-muted/20 px-3 py-2">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
+                    <div key={entry.id} className="min-w-0 rounded-lg border bg-muted/20 px-3 py-2">
+                      <div className="flex min-w-0 items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
                           <div className="font-medium">{entry.fileInfo.number}</div>
-                          <div className="truncate text-xs text-muted-foreground">
+                          <div className="break-all text-xs text-muted-foreground">
                             {entry.crawlerData?.title_zh ?? entry.crawlerData?.title ?? entry.fileInfo.fileName}
                           </div>
                         </div>
                         <div
                           className={
                             preview?.status === "blocked"
-                              ? "text-xs font-medium text-destructive"
-                              : "text-xs font-medium text-emerald-600"
+                              ? "shrink-0 whitespace-nowrap text-xs font-medium text-destructive"
+                              : "shrink-0 whitespace-nowrap text-xs font-medium text-emerald-600"
                           }
                         >
                           {preview?.status === "blocked" ? "阻塞" : "可执行"}
@@ -334,7 +355,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
                       </div>
 
                       {preview?.status === "blocked" ? (
-                        <div className="mt-2 text-xs text-destructive">{preview.error}</div>
+                        <div className="mt-2 break-all text-xs text-destructive">{preview.error}</div>
                       ) : (
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
                           <span>字段差异 {diffCount} 项</span>

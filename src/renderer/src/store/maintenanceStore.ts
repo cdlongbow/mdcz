@@ -14,6 +14,7 @@ export type MaintenanceFilter = "all" | "success" | "failed";
 type MaintenanceExecutionStatus = MaintenanceStatus["state"];
 
 const createPreviewResetState = () => ({
+  executeDialogOpen: false,
   previewPending: false,
   previewResults: {} as Record<string, MaintenancePreviewItem>,
   previewReadyCount: 0,
@@ -75,6 +76,7 @@ export interface MaintenanceState {
   currentPath: string;
   statusText: string;
   lastScannedDir: string;
+  executeDialogOpen: boolean;
   previewPending: boolean;
   previewResults: Record<string, MaintenancePreviewItem>;
   previewReadyCount: number;
@@ -93,6 +95,7 @@ export interface MaintenanceState {
   setCurrentPath: (path: string) => void;
   setStatusText: (text: string) => void;
   setProgress: (value: number, current: number, total: number) => void;
+  setExecuteDialogOpen: (open: boolean) => void;
   setPreviewPending: (pending: boolean) => void;
   applyPreviewResult: (result: MaintenancePreviewResult) => void;
   clearPreviewResults: () => void;
@@ -117,6 +120,7 @@ export const useMaintenanceStore = create<MaintenanceState>((set) => ({
   currentPath: "",
   statusText: "就绪",
   lastScannedDir: "",
+  executeDialogOpen: false,
   previewPending: false,
   previewResults: {},
   previewReadyCount: 0,
@@ -141,10 +145,11 @@ export const useMaintenanceStore = create<MaintenanceState>((set) => ({
         state.activeId && entries.some((entry) => entry.id === state.activeId)
           ? state.activeId
           : (entries[0]?.id ?? null);
+      const nextSelectedIds = entries.map((entry) => entry.id);
 
       return {
         entries,
-        selectedIds: [],
+        selectedIds: nextSelectedIds,
         activeId: nextActiveId,
         executionStatus: "idle",
         progressValue: 0,
@@ -200,6 +205,8 @@ export const useMaintenanceStore = create<MaintenanceState>((set) => ({
       progressCurrent: current,
       progressTotal: total,
     }),
+
+  setExecuteDialogOpen: (open) => set({ executeDialogOpen: open }),
 
   setPreviewPending: (pending) => set({ previewPending: pending }),
 
