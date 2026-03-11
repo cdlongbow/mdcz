@@ -115,7 +115,7 @@ export class MaintenanceService {
     };
 
     this.signalService.showLogText(`[维护] 开始执行：${preset.label}，共 ${entries.length} 个条目`);
-    this.signalService.setProgress(0, 0, entries.length);
+    this.signalService.resetProgress();
 
     try {
       const deps = this.createDependencies();
