@@ -1,13 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { LayoutDashboard, PauseCircle, Play, StopCircle } from "lucide-react";
-import { lazy, Suspense } from "react";
+import { AlertTriangle, LayoutDashboard, PauseCircle, Play, StopCircle } from "lucide-react";
+import { lazy, Suspense, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { pauseScrape, resumeScrape, startBatchScrape, stopScrape } from "@/api/manual";
 import { getCurrentConfig } from "@/client/api";
 import type { ConfigOutput } from "@/client/types";
+import MaintenanceBatchBar from "@/components/maintenance/MaintenanceBatchBar";
+import { ScrapeFailureDialog } from "@/components/maintenance/ScrapeFailureDialog";
 import { PageHeader } from "@/components/PageHeader";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { TabButton } from "@/components/ui/TabButton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
@@ -40,6 +43,7 @@ function DisabledModeButton({ label, tooltip, active }: { label: string; tooltip
 }
 
 function Index() {
+  const [failDialogOpen, setFailDialogOpen] = useState(false);
   const configQ = useQuery({
     queryKey: ["config", "current"],
     queryFn: async () => {
@@ -48,18 +52,27 @@ function Index() {
     },
   });
 
-  const { isScraping, scrapeStatus, setScraping, setScrapeStatus, updateProgress, setStatusText, clearResults } =
-    useScrapeStore(
-      useShallow((state) => ({
-        isScraping: state.isScraping,
-        scrapeStatus: state.scrapeStatus,
-        setScraping: state.setScraping,
-        setScrapeStatus: state.setScrapeStatus,
-        updateProgress: state.updateProgress,
-        setStatusText: state.setStatusText,
-        clearResults: state.clearResults,
-      })),
-    );
+  const {
+    isScraping,
+    scrapeStatus,
+    failedCount,
+    setScraping,
+    setScrapeStatus,
+    updateProgress,
+    setStatusText,
+    clearResults,
+  } = useScrapeStore(
+    useShallow((state) => ({
+      isScraping: state.isScraping,
+      scrapeStatus: state.scrapeStatus,
+      failedCount: state.failedCount,
+      setScraping: state.setScraping,
+      setScrapeStatus: state.setScrapeStatus,
+      updateProgress: state.updateProgress,
+      setStatusText: state.setStatusText,
+      clearResults: state.clearResults,
+    })),
+  );
   const maintenanceStatus = useMaintenanceStore((state) => state.executionStatus);
   const { workbenchMode, setWorkbenchMode, setSelectedResultId } = useUIStore(
     useShallow((state) => ({
@@ -160,7 +173,9 @@ function Index() {
           )}
         </Button>
       </>
-    ) : undefined;
+    ) : (
+      <MaintenanceBatchBar mediaPath={configQ.data?.paths?.mediaPath} />
+    );
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -183,37 +198,54 @@ function Index() {
       />
 
       <div className="px-8 pb-2 border-b bg-background/60 backdrop-blur-md">
-        <div className="flex items-center gap-2">
-          {maintenanceBusy ? (
-            <DisabledModeButton
-              label="正常刮削"
-              tooltip="维护模式执行中，暂时不能切换到正常刮削。"
-              active={workbenchMode === "scrape"}
-            />
-          ) : (
-            <TabButton
-              isActive={workbenchMode === "scrape"}
-              className="h-9 rounded-lg px-5 text-sm"
-              onClick={() => setWorkbenchMode("scrape")}
-            >
-              正常刮削
-            </TabButton>
-          )}
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            {maintenanceBusy ? (
+              <DisabledModeButton
+                label="正常刮削"
+                tooltip="维护模式执行中，暂时不能切换到正常刮削。"
+                active={workbenchMode === "scrape"}
+              />
+            ) : (
+              <TabButton
+                isActive={workbenchMode === "scrape"}
+                className="h-9 rounded-lg px-5 text-sm"
+                onClick={() => setWorkbenchMode("scrape")}
+              >
+                正常刮削
+              </TabButton>
+            )}
 
-          {isScraping ? (
-            <DisabledModeButton
-              label="维护模式"
-              tooltip="正常刮削执行中，暂时不能切换到维护模式。"
-              active={workbenchMode === "maintenance"}
-            />
-          ) : (
-            <TabButton
-              isActive={workbenchMode === "maintenance"}
-              className="h-9 rounded-lg px-5 text-sm"
-              onClick={() => setWorkbenchMode("maintenance")}
+            {isScraping ? (
+              <DisabledModeButton
+                label="维护模式"
+                tooltip="正常刮削执行中，暂时不能切换到维护模式。"
+                active={workbenchMode === "maintenance"}
+              />
+            ) : (
+              <TabButton
+                isActive={workbenchMode === "maintenance"}
+                className="h-9 rounded-lg px-5 text-sm"
+                onClick={() => setWorkbenchMode("maintenance")}
+              >
+                维护模式
+              </TabButton>
+            )}
+          </div>
+
+          {failedCount > 0 && !isScraping && workbenchMode === "scrape" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="rounded-lg h-9 px-4 gap-2 text-destructive hover:text-destructive hover:bg-destructive/10 whitespace-nowrap"
+              onClick={() => setFailDialogOpen(true)}
             >
-              维护模式
-            </TabButton>
+              <AlertTriangle className="h-4 w-4" />
+              失败处理
+              <Badge variant="destructive" className="h-4 px-1 text-[10px]">
+                {failedCount}
+              </Badge>
+            </Button>
           )}
         </div>
       </div>
@@ -224,13 +256,11 @@ function Index() {
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">加载中...</div>
           }
         >
-          {workbenchMode === "scrape" ? (
-            <ScrapeWorkbench />
-          ) : (
-            <MaintenanceWorkbench mediaPath={configQ.data?.paths?.mediaPath} />
-          )}
+          {workbenchMode === "scrape" ? <ScrapeWorkbench /> : <MaintenanceWorkbench />}
         </Suspense>
       </div>
+
+      <ScrapeFailureDialog open={failDialogOpen} onOpenChange={setFailDialogOpen} />
     </div>
   );
 }

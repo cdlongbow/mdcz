@@ -1,362 +1,311 @@
-import { CheckCircle2, FileText, FolderOpen, ImageIcon, Play, XCircle } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
-import { readNfo, updateNfo } from "@/api/manual";
+import type { MaintenanceItemResult, MaintenancePreviewItem } from "@shared/types";
+import { CheckCircle2, FileText, FolderOpen, GitCompareArrows, ImageIcon, Play, XCircle } from "lucide-react";
+import { useMemo } from "react";
+import { toDetailViewItemFromScrapeResult } from "@/components/detail/detailViewAdapters";
+import type { DetailViewItem } from "@/components/detail/types";
+import { useDetailViewController } from "@/components/detail/useDetailViewController";
+import ChangeDiffView from "@/components/maintenance/ChangeDiffView";
+import PathPlanView from "@/components/maintenance/PathPlanView";
 import { SceneImageGallery } from "@/components/SceneImageGallery";
 import { Row } from "@/components/shared/Row";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Card, CardContent } from "@/components/ui/Card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { Separator } from "@/components/ui/Separator";
-import type { ScrapeResult } from "@/store/scrapeStore";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
-import { buildImageSourceCandidates, getImageSrc } from "@/utils/image";
 
-function getDirFromPath(filePath: string) {
-  const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
-  if (slash <= 0) return filePath;
-  return filePath.slice(0, slash);
-}
+const EMPTY_RESULTS: ReturnType<typeof useScrapeStore.getState>["results"] = [];
 
-function toRenderableSrc(path: string | undefined): string {
-  if (!path) {
-    return "";
-  }
-
-  return getImageSrc(path);
+interface DetailPanelCompareProps {
+  result?: MaintenanceItemResult | MaintenancePreviewItem;
+  badgeLabel?: string;
+  titleOverride?: string;
 }
 
 interface DetailPanelProps {
-  item?: ScrapeResult | null;
+  item?: DetailViewItem | null;
   emptyMessage?: string;
+  compare?: DetailPanelCompareProps;
 }
 
-export function DetailPanel({ item: explicitItem, emptyMessage = "请选择一个项目以查看详情" }: DetailPanelProps = {}) {
-  const { results } = useScrapeStore();
-  const { selectedResultId } = useUIStore();
-  const [nfoOpen, setNfoOpen] = useState(false);
-  const [nfoPath, setNfoPath] = useState("");
-  const [nfoContent, setNfoContent] = useState("");
-  const [nfoLoading, setNfoLoading] = useState(false);
-  const [nfoSaving, setNfoSaving] = useState(false);
-  const [posterSrc, setPosterSrc] = useState("");
-  const [thumbSrc, setThumbSrc] = useState("");
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8 text-xs opacity-60">
+      <FileText className="h-12 w-12 mb-2 opacity-20" />
+      {message}
+    </div>
+  );
+}
 
-  const selectedItem = explicitItem ?? results.find((r) => r.id === selectedResultId);
-  const posterCandidates = buildImageSourceCandidates({
-    remotePath: selectedItem?.poster_url,
-    filePath: selectedItem?.path,
-    outputPath: selectedItem?.output_path,
-    fileName: "poster.jpg",
-  });
-  const thumbCandidates = buildImageSourceCandidates({
-    remotePath: selectedItem?.thumb_url,
-    filePath: selectedItem?.path,
-    outputPath: selectedItem?.output_path,
-    fileName: "thumb.jpg",
-  });
+export function DetailPanel({
+  item: explicitItem,
+  emptyMessage = "请选择一个项目以查看详情",
+  compare,
+}: DetailPanelProps = {}) {
+  const results = useScrapeStore((state) => (explicitItem === undefined ? state.results : EMPTY_RESULTS));
+  const selectedResultId = useUIStore((state) => (explicitItem === undefined ? state.selectedResultId : null));
 
-  useEffect(() => {
-    setPosterSrc(toRenderableSrc(posterCandidates.primary));
-  }, [posterCandidates.primary]);
+  const item = useMemo(
+    () =>
+      explicitItem !== undefined
+        ? explicitItem
+        : (() => {
+            const selectedResult = results.find((result) => result.id === selectedResultId);
+            return selectedResult ? toDetailViewItemFromScrapeResult(selectedResult) : null;
+          })(),
+    [explicitItem, results, selectedResultId],
+  );
 
-  useEffect(() => {
-    setThumbSrc(toRenderableSrc(thumbCandidates.primary));
-  }, [thumbCandidates.primary]);
+  const compareMode = Boolean(compare);
+  const {
+    posterSrc,
+    thumbSrc,
+    nfoOpen,
+    nfoContent,
+    nfoLoading,
+    nfoSaving,
+    setNfoOpen,
+    setNfoContent,
+    handlePlay,
+    handleOpenFolder,
+    handleOpenNfo,
+    handlePosterError,
+    handleThumbError,
+    handleSaveNfo,
+  } = useDetailViewController(compareMode ? null : item);
 
-  const handlePlay = () => {
-    if (!selectedItem?.path) {
-      toast.info("请先选择一个项目");
-      return;
-    }
-    if (window.electron?.openPath) {
-      window.electron.openPath(selectedItem.path);
-    } else {
-      toast.info("播放功能仅在桌面模式下可用");
-    }
-  };
+  if (!item) {
+    return <EmptyState message={emptyMessage} />;
+  }
 
-  const handleOpenFolder = () => {
-    if (!selectedItem?.path) {
-      toast.info("请先选择一个项目");
-      return;
-    }
-    if (window.electron?.openPath) {
-      const dir = getDirFromPath(selectedItem.path);
-      window.electron.openPath(dir);
-    } else {
-      toast.info("打开文件夹功能仅在桌面模式下可用");
-    }
-  };
-
-  const openNfoEditor = useCallback(async (path: string) => {
-    try {
-      setNfoLoading(true);
-      const response = await readNfo(path);
-      setNfoPath(path);
-      setNfoContent(response.data?.content ?? "");
-      setNfoOpen(true);
-    } catch {
-      toast.error("加载 NFO 失败");
-    } finally {
-      setNfoLoading(false);
-    }
-  }, []);
-
-  const handleSaveNfo = async () => {
-    try {
-      setNfoSaving(true);
-      await updateNfo(nfoPath, nfoContent);
-      toast.success("NFO 已保存");
-      setNfoOpen(false);
-    } catch {
-      toast.error("保存 NFO 失败");
-    } finally {
-      setNfoSaving(false);
-    }
-  };
-
-  const handleOpenNfo = async () => {
-    if (!selectedItem?.path) {
-      toast.info("请先选择一个项目");
-      return;
-    }
-    await openNfoEditor(selectedItem.path);
-  };
-
-  const handlePosterError = () => {
-    const localPoster = toRenderableSrc(posterCandidates.fallback);
-    if (localPoster && localPoster !== posterSrc) {
-      setPosterSrc(localPoster);
-    }
-  };
-
-  const handleThumbError = () => {
-    const localThumb = toRenderableSrc(thumbCandidates.fallback);
-    if (localThumb && localThumb !== thumbSrc) {
-      setThumbSrc(localThumb);
-    }
-  };
-
-  useEffect(() => {
-    const listener = (event: Event) => {
-      const custom = event as CustomEvent<{ path?: string }>;
-      const path = custom.detail?.path || selectedItem?.path;
-      if (!path) return;
-      void openNfoEditor(path);
-    };
-    window.addEventListener("app:open-nfo", listener);
-    return () => {
-      window.removeEventListener("app:open-nfo", listener);
-    };
-  }, [openNfoEditor, selectedItem?.path]);
-
-  if (!selectedItem) {
+  if (compareMode) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8 text-xs opacity-60">
-        <FileText className="h-12 w-12 mb-2 opacity-20" />
-        {emptyMessage}
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className="border-b bg-background/80 px-4 py-3 backdrop-blur">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold tracking-tight">{item.number}</h2>
+                {item.status === "success" ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-destructive" />
+                )}
+              </div>
+              <p className="mt-1 truncate text-sm text-muted-foreground">
+                {compare?.titleOverride ?? item.title ?? item.number}
+              </p>
+            </div>
+            <Badge variant="outline" className="gap-1 rounded-full px-2.5 py-1 text-xs">
+              <GitCompareArrows className="h-3.5 w-3.5" />
+              {compare?.badgeLabel ?? "数据对比"}
+            </Badge>
+          </div>
+        </div>
+
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="space-y-4 p-4">
+            {compare?.result?.error && (
+              <Card className="rounded-xl border-destructive/20 bg-destructive/5 shadow-none">
+                <CardContent className="p-4 text-sm text-destructive">{compare.result.error}</CardContent>
+              </Card>
+            )}
+
+            <ChangeDiffView entryId={item.id} diffs={compare?.result?.fieldDiffs ?? []} />
+
+            {compare?.result?.pathDiff && <PathPlanView pathDiff={compare.result.pathDiff} />}
+          </div>
+        </ScrollArea>
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* Sticky Header */}
-      <div className="shrink-0 px-4 py-2.5 border-b bg-background/80 backdrop-blur supports-backdrop-filter:bg-background/60">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold tracking-tight">{selectedItem.number}</h2>
-              {selectedItem.status === "success" ? (
-                <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-              ) : (
-                <XCircle className="h-4 w-4 text-red-500 shrink-0" />
-              )}
+    <>
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className="shrink-0 border-b bg-background/80 px-4 py-2.5 backdrop-blur supports-backdrop-filter:bg-background/60">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold tracking-tight">{item.number}</h2>
+                {item.status === "success" ? (
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
+                ) : (
+                  <XCircle className="h-4 w-4 shrink-0 text-red-500" />
+                )}
+              </div>
+              {item.title && <p className="mt-1 text-sm leading-snug text-muted-foreground">{item.title}</p>}
             </div>
-            {selectedItem.title && (
-              <p className="text-sm text-muted-foreground leading-snug mt-1">{selectedItem.title}</p>
-            )}
-          </div>
-          <div className="flex gap-1 shrink-0">
-            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handlePlay} title="播放">
-              <Play className="h-4 w-4" />
-            </Button>
-            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleOpenFolder} title="打开文件夹">
-              <FolderOpen className="h-4 w-4" />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8"
-              onClick={handleOpenNfo}
-              title="编辑 NFO"
-              disabled={nfoLoading}
-            >
-              <FileText className="h-4 w-4" />
-            </Button>
+            <div className="flex shrink-0 gap-1">
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handlePlay} title="播放">
+                <Play className="h-4 w-4" />
+              </Button>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleOpenFolder} title="打开文件夹">
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                onClick={handleOpenNfo}
+                title="编辑 NFO"
+                disabled={nfoLoading}
+              >
+                <FileText className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Scrollable Content */}
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="p-4 space-y-4 min-w-0">
-          {/* Poster + Metadata Side by Side */}
-          <div className="flex gap-4 items-stretch">
-            {/* Poster (left, fixed width) */}
-            <div className="shrink-0 w-36 self-stretch">
-              {posterSrc ? (
-                <div className="relative bg-muted/20 rounded-lg overflow-hidden border aspect-2/3">
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="min-w-0 space-y-4 p-4">
+            <div className="flex items-stretch gap-4">
+              <div className="w-36 shrink-0 self-stretch">
+                {posterSrc ? (
+                  <div className="relative aspect-2/3 overflow-hidden rounded-lg border bg-muted/20">
+                    <img
+                      src={posterSrc}
+                      alt="Poster"
+                      className="h-full w-full object-cover"
+                      onError={handlePosterError}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex aspect-2/3 w-full items-center justify-center rounded-lg border border-dashed bg-muted/20">
+                    <ImageIcon className="h-8 w-8 text-muted-foreground/30" />
+                  </div>
+                )}
+              </div>
+
+              <div className="min-w-0 flex-1 space-y-1">
+                {item.actors && item.actors.length > 0 && (
+                  <Row label="演员" variant="metadata">
+                    {item.actors.join(", ")}
+                  </Row>
+                )}
+                {item.release && (
+                  <Row label="发行" variant="metadata">
+                    {item.release}
+                  </Row>
+                )}
+                {item.duration && (
+                  <Row label="时长" variant="metadata">
+                    {item.duration}
+                  </Row>
+                )}
+                {item.resolution && (
+                  <Row label="分辨率" variant="metadata">
+                    {item.resolution}
+                  </Row>
+                )}
+                {item.codec && (
+                  <Row label="编码" variant="metadata">
+                    {item.codec}
+                  </Row>
+                )}
+                {item.bitrate && (
+                  <Row label="码率" variant="metadata">
+                    {item.bitrate}
+                  </Row>
+                )}
+                {item.studio && (
+                  <Row label="制片" variant="metadata">
+                    {item.studio}
+                  </Row>
+                )}
+                {item.series && (
+                  <Row label="系列" variant="metadata">
+                    {item.series}
+                  </Row>
+                )}
+                {item.publisher && (
+                  <Row label="发行商" variant="metadata">
+                    {item.publisher}
+                  </Row>
+                )}
+                {item.score && (
+                  <Row label="评分" variant="metadata">
+                    {item.score}
+                  </Row>
+                )}
+                {item.directors && item.directors.length > 0 && (
+                  <Row label="导演" variant="metadata">
+                    {item.directors.join(", ")}
+                  </Row>
+                )}
+              </div>
+            </div>
+
+            {item.tags && item.tags.length > 0 && (
+              <div>
+                <div className="mb-2 text-xs text-muted-foreground">标签</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {item.tags.map((tag) => (
+                    <Badge key={tag} variant="secondary" className="h-5 px-2 py-0.5 text-[10px]">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <Separator />
+
+            {thumbSrc && (
+              <div className="overflow-hidden rounded-xl border bg-black/5">
+                <div className="flex max-h-112 items-center justify-center bg-muted/10 p-3">
                   <img
-                    src={posterSrc}
-                    alt="Poster"
-                    className="w-full h-full object-cover"
-                    onError={handlePosterError}
+                    src={thumbSrc}
+                    alt="Thumb artwork"
+                    className="max-h-100 max-w-full object-contain"
+                    onError={handleThumbError}
                   />
                 </div>
-              ) : (
-                <div className="w-full aspect-2/3 bg-muted/20 rounded-lg flex items-center justify-center border border-dashed">
-                  <ImageIcon className="h-8 w-8 text-muted-foreground/30" />
+              </div>
+            )}
+
+            {item.sceneImages && item.sceneImages.length > 0 && (
+              <>
+                <Separator />
+                <SceneImageGallery images={item.sceneImages} />
+              </>
+            )}
+
+            <Separator />
+
+            {item.outline && (
+              <div>
+                <div className="mb-2 text-xs text-muted-foreground">内容简介</div>
+                <p className="wrap-break-word whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+                  {item.outline}
+                </p>
+              </div>
+            )}
+
+            {item.path && (
+              <div>
+                <div className="mb-2 text-xs text-muted-foreground">文件路径</div>
+                <div className="break-all rounded bg-muted/50 px-2 py-1.5 font-mono text-[10px] opacity-70">
+                  {item.path}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
-            {/* Metadata (right, flexible) */}
-            <div className="flex-1 min-w-0 space-y-1">
-              {selectedItem.actors && selectedItem.actors.length > 0 && (
-                <Row label="演员" variant="metadata">
-                  {selectedItem.actors.join(", ")}
-                </Row>
-              )}
-              {selectedItem.release && (
-                <Row label="发行" variant="metadata">
-                  {selectedItem.release}
-                </Row>
-              )}
-              {selectedItem.duration && (
-                <Row label="时长" variant="metadata">
-                  {selectedItem.duration}
-                </Row>
-              )}
-              {selectedItem.resolution && (
-                <Row label="分辨率" variant="metadata">
-                  {selectedItem.resolution}
-                </Row>
-              )}
-              {selectedItem.codec && (
-                <Row label="编码" variant="metadata">
-                  {selectedItem.codec}
-                </Row>
-              )}
-              {selectedItem.bitrate && (
-                <Row label="码率" variant="metadata">
-                  {selectedItem.bitrate}
-                </Row>
-              )}
-              {selectedItem.studio && (
-                <Row label="制片" variant="metadata">
-                  {selectedItem.studio}
-                </Row>
-              )}
-              {selectedItem.series && (
-                <Row label="系列" variant="metadata">
-                  {selectedItem.series}
-                </Row>
-              )}
-              {selectedItem.publisher && (
-                <Row label="发行商" variant="metadata">
-                  {selectedItem.publisher}
-                </Row>
-              )}
-              {selectedItem.score && (
-                <Row label="评分" variant="metadata">
-                  {selectedItem.score}
-                </Row>
-              )}
-              {selectedItem.directors && selectedItem.directors.length > 0 && (
-                <Row label="导演" variant="metadata">
-                  {selectedItem.directors.join(", ")}
-                </Row>
-              )}
-            </div>
+            {item.errorMessage && (
+              <div>
+                <div className="mb-2 text-xs text-muted-foreground">错误详情</div>
+                <div className="rounded bg-red-50 px-2 py-1.5 text-xs text-red-500 dark:bg-red-950/20">
+                  {item.errorMessage}
+                </div>
+              </div>
+            )}
           </div>
+        </ScrollArea>
+      </div>
 
-          {/* Tags */}
-          {selectedItem.tags && selectedItem.tags.length > 0 && (
-            <div>
-              <div className="text-xs text-muted-foreground mb-2">标签</div>
-              <div className="flex flex-wrap gap-1.5">
-                {selectedItem.tags.map((tag) => (
-                  <Badge key={tag} variant="secondary" className="text-[10px] py-0.5 h-5 px-2">
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <Separator />
-
-          {/* Fanart / Backdrop */}
-          {thumbSrc && (
-            <div className="bg-black/5 rounded-xl overflow-hidden border">
-              <div className="flex max-h-112 items-center justify-center bg-muted/10 p-3">
-                <img
-                  src={thumbSrc}
-                  alt="Thumb artwork"
-                  className="max-h-100 max-w-full object-contain"
-                  onError={handleThumbError}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Scene Image Gallery */}
-          {selectedItem.scene_images && selectedItem.scene_images.length > 0 && (
-            <>
-              <Separator />
-              <SceneImageGallery images={selectedItem.scene_images} />
-            </>
-          )}
-
-          <Separator />
-
-          {/* Outline */}
-          {selectedItem.outline && (
-            <div>
-              <div className="text-xs text-muted-foreground mb-2">内容简介</div>
-              <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap wrap-break-word">
-                {selectedItem.outline}
-              </p>
-            </div>
-          )}
-
-          {/* File Path */}
-          {selectedItem.path && (
-            <div>
-              <div className="text-xs text-muted-foreground mb-2">文件路径</div>
-              <div className="font-mono text-[10px] bg-muted/50 px-2 py-1.5 rounded break-all opacity-70">
-                {selectedItem.path}
-              </div>
-            </div>
-          )}
-
-          {/* Error Message */}
-          {selectedItem.error_msg && (
-            <div>
-              <div className="text-xs text-muted-foreground mb-2">错误详情</div>
-              <div className="text-xs text-red-500 bg-red-50 dark:bg-red-950/20 px-2 py-1.5 rounded">
-                {selectedItem.error_msg}
-              </div>
-            </div>
-          )}
-        </div>
-      </ScrollArea>
-
-      {/* NFO Editor Dialog */}
       <Dialog open={nfoOpen} onOpenChange={setNfoOpen}>
         <DialogContent className="max-w-5xl">
           <DialogHeader>
@@ -364,7 +313,7 @@ export function DetailPanel({ item: explicitItem, emptyMessage = "请选择一�
           </DialogHeader>
           <textarea
             value={nfoContent}
-            onChange={(e) => setNfoContent(e.target.value)}
+            onChange={(event) => setNfoContent(event.target.value)}
             className="h-[60vh] w-full resize-none rounded-md border bg-background p-3 font-mono text-[11px]"
           />
           <DialogFooter>
@@ -377,6 +326,6 @@ export function DetailPanel({ item: explicitItem, emptyMessage = "请选择一�
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
