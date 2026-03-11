@@ -167,20 +167,21 @@ describe("FieldAggregator", () => {
 
 class MultiResultCrawlerProvider extends CrawlerProvider {
   private readonly siteResults: Map<Website, CrawlerData>;
-  private readonly delayMs: number;
+  private readonly siteDelaysMs: Partial<Record<Website, number>>;
   readonly calledSites: Website[] = [];
 
-  constructor(siteResults: Map<Website, CrawlerData>, delayMs = 0) {
+  constructor(siteResults: Map<Website, CrawlerData>, siteDelaysMs: Partial<Record<Website, number>> = {}) {
     super({ fetchGateway: new FetchGateway(new NetworkClient()) });
     this.siteResults = siteResults;
-    this.delayMs = delayMs;
+    this.siteDelaysMs = siteDelaysMs;
   }
 
   override async crawl(input: CrawlerInput): Promise<CrawlerResponse> {
     this.calledSites.push(input.site);
 
-    if (this.delayMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, this.delayMs));
+    const delayMs = this.siteDelaysMs[input.site] ?? 0;
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
 
     const data = this.siteResults.get(input.site);
@@ -248,6 +249,54 @@ describe("AggregationService", () => {
     expect(result?.data.thumb_url).toBe("https://awsimgsrc.dmm.co.jp/thumb.jpg");
     expect(result?.stats.successCount).toBe(2);
     expect(result?.stats.failedCount).toBe(1); // JAVBUS has no data
+  });
+
+  it("uses configured durationSeconds priority instead of completion order", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.AVBASE,
+        makeCrawlerData({
+          durationSeconds: 8_100,
+          thumb_url: "https://avbase.example/thumb.jpg",
+          website: Website.AVBASE,
+        }),
+      ],
+      [
+        Website.DMM_TV,
+        makeCrawlerData({
+          durationSeconds: 7_200,
+          thumb_url: "https://dmmtv.example/thumb.jpg",
+          website: Website.DMM_TV,
+        }),
+      ],
+    ]);
+
+    const provider = new MultiResultCrawlerProvider(siteResults, {
+      [Website.AVBASE]: 0,
+      [Website.DMM_TV]: 30,
+    });
+    const service = new AggregationService(provider);
+    const config = configurationSchema.parse({
+      ...defaultConfiguration,
+      scrape: {
+        ...defaultConfiguration.scrape,
+        enabledSites: [Website.AVBASE, Website.DMM_TV],
+        siteOrder: [Website.AVBASE, Website.DMM_TV],
+      },
+      aggregation: {
+        ...defaultConfiguration.aggregation,
+        fieldPriorities: {
+          ...defaultConfiguration.aggregation.fieldPriorities,
+          durationSeconds: [Website.DMM_TV, Website.AVBASE],
+        },
+      },
+    });
+
+    const result = await service.aggregate("ABF-075", config);
+
+    expect(result).not.toBeNull();
+    expect(result?.data.durationSeconds).toBe(7_200);
+    expect(result?.sources.durationSeconds).toBe(Website.DMM_TV);
   });
 
   it("returns null when no crawlers succeed", async () => {

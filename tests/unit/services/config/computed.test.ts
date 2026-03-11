@@ -1,6 +1,6 @@
 import { buildComputedConfiguration } from "@main/services/config/computed";
 import { configurationSchema } from "@main/services/config/models";
-import { ProxyType } from "@shared/enums";
+import { ProxyType, Website } from "@shared/enums";
 import { describe, expect, it } from "vitest";
 
 describe("buildComputedConfiguration", () => {
@@ -95,6 +95,14 @@ describe("buildComputedConfiguration", () => {
     const configuration = configurationSchema.parse({});
 
     expect(configuration.paths.actorPhotoFolder).toBe("actor_photo");
+    expect(configuration.aggregation.fieldPriorities.durationSeconds).toEqual([
+      Website.DMM_TV,
+      Website.KM_PRODUCE,
+      Website.AVBASE,
+    ]);
+    expect(configuration.aggregation.fieldPriorities.actor_profiles).not.toContain(Website.AVBASE);
+    expect(configuration.aggregation.fieldPriorities.rating).not.toContain(Website.AVBASE);
+    expect(configuration.aggregation.fieldPriorities.trailer_url).not.toContain(Website.AVBASE);
   });
 
   it("does not read legacy personSync.actorPhotoFolder values", () => {
