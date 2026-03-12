@@ -1,7 +1,8 @@
 import { Website } from "@shared/enums";
 import type { CrawlerData, LocalScanEntry, MaintenancePreviewItem } from "@shared/types";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { buildCommittedCrawlerData, buildMaintenanceCommitItem } from "@/lib/maintenance";
+import { useMaintenanceStore } from "@/store/maintenanceStore";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Old Title",
@@ -36,6 +37,10 @@ const createEntry = (crawlerData: CrawlerData): LocalScanEntry => ({
     actorPhotos: ["/media/.actors/Actor A.jpg"],
   },
   currentDir: "/media",
+});
+
+afterEach(() => {
+  useMaintenanceStore.getState().reset();
 });
 
 describe("buildCommittedCrawlerData", () => {
@@ -117,6 +122,52 @@ describe("buildMaintenanceCommitItem", () => {
     expect(item.crawlerData?.thumb_url).toBe("https://example.com/new-thumb.jpg");
     expect(item.imageAlternatives).toEqual({
       thumb_url: ["https://example.com/thumb-alt.jpg"],
+    });
+  });
+});
+
+describe("useMaintenanceStore", () => {
+  it("keeps preview diffs while an item transitions into processing", () => {
+    const fieldDiff = {
+      field: "title" as const,
+      label: "标题",
+      oldValue: "Old Title",
+      newValue: "New Title",
+      changed: true,
+    };
+    const pathDiff = {
+      entryId: "entry-1",
+      currentVideoPath: "/media/ABC-123.mp4",
+      targetVideoPath: "/organized/ABC-123.mp4",
+      currentDir: "/media",
+      targetDir: "/organized",
+      changed: true,
+    };
+
+    useMaintenanceStore.getState().applyPreviewResult({
+      items: [
+        {
+          entryId: "entry-1",
+          status: "ready",
+          fieldDiffs: [fieldDiff],
+          pathDiff,
+        },
+      ],
+      readyCount: 1,
+      blockedCount: 0,
+    });
+
+    useMaintenanceStore.getState().beginExecution(["entry-1"]);
+    useMaintenanceStore.getState().applyItemResult({
+      entryId: "entry-1",
+      status: "processing",
+    });
+
+    expect(useMaintenanceStore.getState().itemResults["entry-1"]).toEqual({
+      entryId: "entry-1",
+      status: "processing",
+      fieldDiffs: [fieldDiff],
+      pathDiff,
     });
   });
 });

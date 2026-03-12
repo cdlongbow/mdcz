@@ -49,10 +49,11 @@ export const toDetailViewItemFromMaintenanceEntry = (
   result?: MaintenanceItemResult | MaintenancePreviewItem,
 ): DetailViewItem => {
   const data = entry.crawlerData;
+  const hasEntryError = Boolean(entry.scanError);
 
   return {
     id: entry.id,
-    status: result?.status === "failed" || result?.status === "blocked" ? "failed" : "success",
+    status: result?.status === "failed" || result?.status === "blocked" || hasEntryError ? "failed" : "success",
     number: entry.fileInfo.number,
     path: entry.videoPath,
     title: getMaintenanceDetailTitle(entry),
@@ -72,6 +73,6 @@ export const toDetailViewItemFromMaintenanceEntry = (
     fanartUrl: entry.assets.fanart ?? entry.assets.thumb ?? data?.fanart_url ?? data?.thumb_url,
     outputPath: entry.currentDir,
     sceneImages: entry.assets.sceneImages.length > 0 ? entry.assets.sceneImages : data?.sample_images,
-    errorMessage: result?.error,
+    errorMessage: result?.error ?? entry.scanError,
   };
 };

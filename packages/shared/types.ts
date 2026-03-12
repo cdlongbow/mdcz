@@ -125,6 +125,7 @@ export interface LocalScanEntry {
   fileInfo: FileInfo;
   nfoPath?: string;
   crawlerData?: CrawlerData;
+  scanError?: string;
   assets: DiscoveredAssets;
   currentDir: string;
 }

@@ -176,6 +176,11 @@ export class MaintenanceService {
         queue.add(async () => {
           if (this.controller?.signal.aborted) return;
 
+          this.signalService.showMaintenanceItemResult({
+            entryId: entry.id,
+            status: "processing",
+          });
+
           try {
             const result = await fileScraper.processFile(
               entry,

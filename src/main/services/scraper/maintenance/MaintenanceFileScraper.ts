@@ -221,6 +221,10 @@ export class MaintenanceFileScraper {
     let aggregationSources: SourceMap | undefined;
     let imageAlternatives: MaintenanceImageAlternatives = {};
 
+    if (!steps.aggregate && entry.scanError) {
+      throw new Error(entry.scanError);
+    }
+
     if (steps.aggregate) {
       if (options.emitLogs) {
         this.deps.signalService.showLogText(`[${fileInfo.number}] 联网获取元数据...`);
@@ -298,6 +302,11 @@ export class MaintenanceFileScraper {
   ): Promise<PreparedMaintenanceFile> {
     const { fileInfo } = entry;
     const { steps } = this.preset;
+
+    if (!steps.aggregate && entry.scanError) {
+      throw new Error(entry.scanError);
+    }
+
     const crawlerData = committed.crawlerData ?? entry.crawlerData;
     const fieldDiffs = entry.crawlerData && crawlerData ? diffCrawlerData(entry.crawlerData, crawlerData) : undefined;
 
@@ -506,6 +515,7 @@ export class MaintenanceFileScraper {
       fileInfo: updates.fileInfo,
       nfoPath: updates.nfoPath,
       crawlerData: crawlerData ?? entry.crawlerData,
+      scanError: undefined,
       assets: updates.assets,
       currentDir: updates.currentDir,
     };

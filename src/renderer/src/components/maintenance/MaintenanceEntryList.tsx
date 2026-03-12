@@ -15,24 +15,25 @@ import { type MaintenanceFilter, useMaintenanceStore } from "@/store/maintenance
 const getTitle = (entry: LocalScanEntry) =>
   entry.crawlerData?.title_zh ?? entry.crawlerData?.title ?? entry.fileInfo.fileName;
 
-const statusWeight = (result?: MaintenanceItemResult): number => {
-  if (!result) return 3;
-  if (result.status === "success") return 0;
-  if (result.status === "failed") return 1;
-  if (result.status === "processing") return 2;
-  return 3;
-};
-
-const matchesFilter = (filter: MaintenanceFilter, result?: MaintenanceItemResult): boolean => {
-  if (filter === "all") return true;
-  return result?.status === filter;
-};
-
-const toBrowserItemStatus = (result?: MaintenanceItemResult): MediaBrowserItemStatus => {
+const getEntryStatus = (entry: LocalScanEntry, result?: MaintenanceItemResult): MediaBrowserItemStatus => {
   if (result?.status === "success") return "success";
   if (result?.status === "failed") return "failed";
   if (result?.status === "processing") return "processing";
+  if (entry.scanError) return "failed";
   return "idle";
+};
+
+const statusWeight = (entry: LocalScanEntry, result?: MaintenanceItemResult): number => {
+  const status = getEntryStatus(entry, result);
+  if (status === "success") return 0;
+  if (status === "failed") return 1;
+  if (status === "processing") return 2;
+  return 3;
+};
+
+const matchesFilter = (filter: MaintenanceFilter, entry: LocalScanEntry, result?: MaintenanceItemResult): boolean => {
+  if (filter === "all") return true;
+  return getEntryStatus(entry, result) === filter;
 };
 
 function buildMenuContent(entry: LocalScanEntry) {
@@ -108,14 +109,14 @@ export default function MaintenanceEntryList() {
   const sortedEntries = useMemo(
     () =>
       [...entries].sort((left, right) => {
-        const weightDiff = statusWeight(itemResults[left.id]) - statusWeight(itemResults[right.id]);
+        const weightDiff = statusWeight(left, itemResults[left.id]) - statusWeight(right, itemResults[right.id]);
         if (weightDiff !== 0) return weightDiff;
         return left.fileInfo.number.localeCompare(right.fileInfo.number);
       }),
     [entries, itemResults],
   );
 
-  const visibleEntries = sortedEntries.filter((entry) => matchesFilter(filter, itemResults[entry.id]));
+  const visibleEntries = sortedEntries.filter((entry) => matchesFilter(filter, entry, itemResults[entry.id]));
   const visibleIds = visibleEntries.map((entry) => entry.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
   const selectedVisibleCount = visibleIds.filter((id) => selectedIds.includes(id)).length;
@@ -130,8 +131,8 @@ export default function MaintenanceEntryList() {
           active: activeId === entry.id,
           title: entry.fileInfo.number,
           subtitle: getTitle(entry),
-          errorText: result?.error,
-          status: toBrowserItemStatus(result),
+          errorText: result?.error ?? entry.scanError,
+          status: getEntryStatus(entry, result),
           selectionControl: (
             <Checkbox
               checked={selectedIds.includes(entry.id)}

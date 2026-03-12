@@ -30,6 +30,7 @@ const createEntry = (crawlerData: CrawlerData): LocalScanEntry => ({
     resolution: "1080p",
   },
   crawlerData,
+  scanError: undefined,
   assets: {
     poster: "/media/poster.jpg",
     thumb: "/media/thumb.jpg",
@@ -96,6 +97,39 @@ describe("toDetailViewItemFromScrapeResult", () => {
       outputPath: "/output",
       sceneImages: ["https://example.com/scene-1.jpg"],
       errorMessage: "Failed",
+    });
+  });
+
+  it("surfaces scan errors before preview or execution starts", () => {
+    const entry: LocalScanEntry = {
+      ...createEntry(createCrawlerData()),
+      scanError: "NFO 解析失败: Invalid NFO root",
+      crawlerData: undefined,
+    };
+
+    expect(toDetailViewItemFromMaintenanceEntry(entry)).toEqual({
+      id: "entry-1",
+      status: "failed",
+      number: "ABC-123",
+      path: "/media/ABC-123.mp4",
+      title: "ABC-123.mp4",
+      actors: undefined,
+      outline: undefined,
+      tags: undefined,
+      release: undefined,
+      duration: undefined,
+      resolution: "1080p",
+      directors: undefined,
+      series: undefined,
+      studio: undefined,
+      publisher: undefined,
+      score: undefined,
+      posterUrl: "/media/poster.jpg",
+      thumbUrl: "/media/thumb.jpg",
+      fanartUrl: "/media/fanart.jpg",
+      outputPath: "/media",
+      sceneImages: ["/media/extrafanart/fanart1.jpg"],
+      errorMessage: "NFO 解析失败: Invalid NFO root",
     });
   });
 });

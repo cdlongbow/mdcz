@@ -286,6 +286,7 @@ export const useMaintenanceStore = create<MaintenanceState>((set) => ({
 
   applyItemResult: (payload) =>
     set((state) => {
+      const previousResult = state.itemResults[payload.entryId];
       const targetEntry = state.entries.find((entry) => entry.id === payload.entryId);
       const updatedEntry = payload.status === "success" ? payload.updatedEntry : undefined;
       const nextEntries = updatedEntry
@@ -297,7 +298,10 @@ export const useMaintenanceStore = create<MaintenanceState>((set) => ({
         entries: nextEntries,
         itemResults: {
           ...state.itemResults,
-          [payload.entryId]: payload,
+          [payload.entryId]: {
+            ...previousResult,
+            ...payload,
+          },
         },
         currentPath:
           payload.status === "success"

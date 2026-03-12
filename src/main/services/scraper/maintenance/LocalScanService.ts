@@ -91,6 +91,7 @@ export class LocalScanService {
 
     const assets = await this.discoverAssets(dir, fileInfo.fileName, sceneImagesFolder);
     let crawlerData: CrawlerData | undefined;
+    let scanError: string | undefined;
 
     if (assets.nfo) {
       try {
@@ -98,6 +99,7 @@ export class LocalScanService {
         crawlerData = parseNfo(nfoContent);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        scanError = `NFO 解析失败: ${message}`;
         this.logger.warn(`Failed to parse NFO at ${assets.nfo}: ${message}`);
       }
     }
@@ -108,6 +110,7 @@ export class LocalScanService {
       fileInfo,
       nfoPath: assets.nfo,
       crawlerData,
+      scanError,
       assets,
       currentDir: dir,
     };
