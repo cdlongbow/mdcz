@@ -357,11 +357,29 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
                       {preview?.status === "blocked" ? (
                         <div className="mt-2 break-all text-xs text-destructive">{preview.error}</div>
                       ) : (
-                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                          <span>字段差异 {diffCount} 项</span>
-                          {hasPathChange && <span>路径将调整</span>}
-                          {!hasPathChange && diffCount === 0 && <span>无额外变更</span>}
-                        </div>
+                        <>
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                            <span>字段差异 {diffCount} 项</span>
+                            {hasPathChange && <span>路径将调整</span>}
+                            {!hasPathChange && diffCount === 0 && <span>无额外变更</span>}
+                          </div>
+                          {hasPathChange && preview?.pathDiff && (
+                            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                              <div className="min-w-0 rounded-md border bg-background/70 p-2">
+                                <div className="mb-1 text-[11px] font-medium text-muted-foreground">当前路径</div>
+                                <div className="break-all font-mono text-[11px] leading-relaxed">
+                                  {preview.pathDiff.currentVideoPath}
+                                </div>
+                              </div>
+                              <div className="min-w-0 rounded-md border border-primary/20 bg-primary/5 p-2">
+                                <div className="mb-1 text-[11px] font-medium text-muted-foreground">目标路径</div>
+                                <div className="break-all font-mono text-[11px] leading-relaxed">
+                                  {preview.pathDiff.targetVideoPath}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   );

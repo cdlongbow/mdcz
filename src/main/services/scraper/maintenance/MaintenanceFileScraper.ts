@@ -1,5 +1,6 @@
 import { copyFile, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { ActorImageService } from "@main/services/ActorImageService";
 import type { Configuration } from "@main/services/config/models";
 import { loggerService } from "@main/services/LoggerService";
 import { moveFileSafely, pathExists } from "@main/utils/file";
@@ -18,6 +19,7 @@ import type {
 import type { SourceMap } from "../aggregation/types";
 import type { OrganizePlan } from "../FileOrganizer";
 import type { FileScrapeProgress, FileScraperDependencies } from "../FileScraper";
+import { prepareCrawlerDataForNfo } from "../prepareCrawlerDataForNfo";
 import { diffCrawlerData } from "./diffCrawlerData";
 import { diffPaths } from "./diffPaths";
 import type { MaintenancePreset } from "./presets";
@@ -61,10 +63,14 @@ interface ResolvedMaintenanceArtifacts {
 export class MaintenanceFileScraper {
   private readonly logger = loggerService.getLogger("MaintenanceFileScraper");
 
+  private readonly actorImageService: ActorImageService;
+
   constructor(
     private readonly deps: FileScraperDependencies,
     private readonly preset: MaintenancePreset,
-  ) {}
+  ) {
+    this.actorImageService = deps.actorImageService ?? new ActorImageService();
+  }
 
   async processFile(
     entry: LocalScanEntry,
@@ -90,6 +96,8 @@ export class MaintenanceFileScraper {
             emitLogs: true,
           });
       const { crawlerData, fieldDiffs, aggregationSources, imageAlternatives, plan, pathDiff } = prepared;
+      let preparedCrawlerData = crawlerData;
+      let preparedActorPhotoPaths: string[] = [];
 
       // Step 4: Download assets (if enabled)
       let assets: DownloadedAssets = {
@@ -103,10 +111,12 @@ export class MaintenanceFileScraper {
 
       if (steps.download && plan && crawlerData) {
         this.deps.signalService.showLogText(`[${fileInfo.number}] 下载资源...`);
+        const forceReplace = this.getForcedPrimaryImageRefresh(entry, crawlerData);
         assets = await this.deps.downloadManager.downloadAll(plan.outputDir, crawlerData, config, imageAlternatives, {
           onSceneProgress: (downloaded, total) => {
             this.deps.signalService.showLogText(`[${fileInfo.number}] 场景图: ${downloaded}/${total}`);
           },
+          forceReplace,
         });
       }
 
@@ -122,7 +132,13 @@ export class MaintenanceFileScraper {
         } catch {
           this.logger.warn(`Video probe failed for ${fileInfo.filePath}`);
         }
-        savedNfoPath = await this.deps.nfoGenerator.writeNfo(plan.nfoPath, crawlerData, {
+        const preparedNfoData = await prepareCrawlerDataForNfo(this.actorImageService, config, crawlerData, {
+          movieDir: plan.outputDir,
+          sourceVideoPath: fileInfo.filePath,
+        });
+        preparedCrawlerData = preparedNfoData.data;
+        preparedActorPhotoPaths = preparedNfoData.actorPhotoPaths;
+        savedNfoPath = await this.deps.nfoGenerator.writeNfo(plan.nfoPath, preparedCrawlerData, {
           assets,
           sources: aggregationSources,
           videoMeta,
@@ -138,9 +154,16 @@ export class MaintenanceFileScraper {
         outputVideoPath = await this.deps.fileOrganizer.organizeVideo(fileInfo, plan, config);
       }
 
-      const resolvedArtifacts = await this.resolveArtifacts(entry, plan, outputVideoPath, assets, savedNfoPath);
+      const resolvedArtifacts = await this.resolveArtifacts(
+        entry,
+        plan,
+        outputVideoPath,
+        assets,
+        savedNfoPath,
+        preparedActorPhotoPaths,
+      );
       const resolvedAssets = this.toDownloadedAssets(assets, resolvedArtifacts.assets);
-      const updatedEntry = this.buildUpdatedEntry(entry, crawlerData, {
+      const updatedEntry = this.buildUpdatedEntry(entry, preparedCrawlerData, {
         fileInfo: { ...fileInfo, filePath: outputVideoPath },
         currentDir: plan?.outputDir ?? dirname(outputVideoPath),
         nfoPath: resolvedArtifacts.nfoPath,
@@ -152,7 +175,7 @@ export class MaintenanceFileScraper {
       const result: ScrapeResult = {
         fileInfo: { ...fileInfo, filePath: outputVideoPath },
         status: "success",
-        crawlerData,
+        crawlerData: preparedCrawlerData,
         outputPath: plan?.outputDir,
         nfoPath: resolvedArtifacts.nfoPath,
         assets: resolvedAssets,
@@ -345,6 +368,7 @@ export class MaintenanceFileScraper {
     outputVideoPath: string,
     assets: DownloadedAssets,
     savedNfoPath?: string,
+    preparedActorPhotoPaths: string[] = [],
   ): Promise<ResolvedMaintenanceArtifacts> {
     if (!plan) {
       const nfoPath = savedNfoPath ?? entry.nfoPath;
@@ -357,7 +381,7 @@ export class MaintenanceFileScraper {
           sceneImages: assets.sceneImages,
           trailer: assets.trailer,
           nfo: nfoPath,
-          actorPhotos: entry.assets.actorPhotos,
+          actorPhotos: preparedActorPhotoPaths.length > 0 ? preparedActorPhotoPaths : entry.assets.actorPhotos,
         },
       };
     }
@@ -374,7 +398,10 @@ export class MaintenanceFileScraper {
         sceneImages: await this.resolveAssetCollection(entry.assets.sceneImages, assets.sceneImages, outputDir),
         trailer: await this.resolvePrimaryAsset(entry.assets.trailer, assets.trailer, outputDir),
         nfo: nfoPath,
-        actorPhotos: await this.resolveAssetCollection(entry.assets.actorPhotos, [], outputDir),
+        actorPhotos:
+          preparedActorPhotoPaths.length > 0
+            ? preparedActorPhotoPaths
+            : await this.resolveAssetCollection(entry.assets.actorPhotos, [], outputDir),
       },
     };
   }
@@ -529,5 +556,31 @@ export class MaintenanceFileScraper {
     const value = Math.max(0, Math.min(100, Math.round(globalValue * 100)));
 
     this.deps.signalService.setProgress(value, fileIndex, totalFiles);
+  }
+
+  private getForcedPrimaryImageRefresh(
+    entry: LocalScanEntry,
+    crawlerData: CrawlerData,
+  ): Partial<Record<"thumb" | "poster" | "fanart", boolean>> {
+    const forceReplace: Partial<Record<"thumb" | "poster" | "fanart", boolean>> = {};
+    const mappings = [
+      { field: "thumb_url" as const, key: "thumb" as const },
+      { field: "poster_url" as const, key: "poster" as const },
+      { field: "fanart_url" as const, key: "fanart" as const },
+    ];
+
+    for (const { field, key } of mappings) {
+      const nextValue = this.normalizeComparableUrl(crawlerData[field]);
+      const currentValue = this.normalizeComparableUrl(entry.crawlerData?.[field]);
+      if (nextValue && nextValue !== currentValue) {
+        forceReplace[key] = true;
+      }
+    }
+
+    return forceReplace;
+  }
+
+  private normalizeComparableUrl(value: string | undefined): string {
+    return value?.trim() ?? "";
   }
 }

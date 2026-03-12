@@ -21,6 +21,7 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
 const createEntry = (crawlerData: CrawlerData): LocalScanEntry => ({
   id: "entry-1",
   videoPath: "/media/ABC-123.mp4",
+  nfoPath: "/media/ABC-123.nfo",
   fileInfo: {
     filePath: "/media/ABC-123.mp4",
     fileName: "ABC-123.mp4",
@@ -112,6 +113,7 @@ describe("toDetailViewItemFromScrapeResult", () => {
       status: "failed",
       number: "ABC-123",
       path: "/media/ABC-123.mp4",
+      nfoPath: "/media/ABC-123.nfo",
       title: "ABC-123.mp4",
       actors: undefined,
       outline: undefined,
@@ -163,6 +165,7 @@ describe("toDetailViewItemFromMaintenanceEntry", () => {
       status: "failed",
       number: "ABC-123",
       path: "/media/ABC-123.mp4",
+      nfoPath: "/media/ABC-123.nfo",
       title: "本地标题",
       actors: ["Actor A"],
       outline: "本地简介",

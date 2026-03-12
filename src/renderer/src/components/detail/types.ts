@@ -6,6 +6,7 @@ export interface DetailViewItem {
   number: string;
   title?: string;
   path?: string;
+  nfoPath?: string;
   actors?: string[];
   outline?: string;
   tags?: string[];

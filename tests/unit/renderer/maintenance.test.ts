@@ -170,4 +170,19 @@ describe("useMaintenanceStore", () => {
       pathDiff,
     });
   });
+
+  it("keeps stopped wording after an interrupted run becomes idle", () => {
+    useMaintenanceStore.getState().setExecutionStatus("stopping");
+    useMaintenanceStore.getState().setStatusText("正在停止维护操作...");
+
+    useMaintenanceStore.getState().applyStatusSnapshot({
+      state: "idle",
+      totalEntries: 2,
+      completedEntries: 2,
+      successCount: 1,
+      failedCount: 1,
+    });
+
+    expect(useMaintenanceStore.getState().statusText).toBe("已停止 · 成功 1 · 失败/取消 1");
+  });
 });

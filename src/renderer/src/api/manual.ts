@@ -33,6 +33,46 @@ const asNfoPath = (path: string): string => {
   return `${path}.nfo`;
 };
 
+const siblingPath = (path: string, name: string): string => {
+  const slash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  if (slash < 0) {
+    return name;
+  }
+
+  return `${path.slice(0, slash + 1)}${name}`;
+};
+
+const dedupePaths = (paths: string[]): string[] => {
+  return [...new Set(paths.filter((value) => value.trim().length > 0))];
+};
+
+export const buildNfoReadCandidates = (path: string): string[] => {
+  const trimmed = path.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const primaryPath = asNfoPath(trimmed);
+  if (primaryPath.toLowerCase().endsWith("movie.nfo")) {
+    return [primaryPath];
+  }
+
+  return dedupePaths([primaryPath, siblingPath(primaryPath, "movie.nfo")]);
+};
+
+const shouldRetryWithAlternateNfo = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const code =
+    typeof (error as Error & { code?: unknown }).code === "string"
+      ? String((error as Error & { code?: unknown }).code)
+      : error.name;
+
+  return code === "ENOENT" || code === "ENOTDIR";
+};
+
 const toProgress = (completedFiles: number, totalFiles: number): number => {
   if (totalFiles <= 0) {
     return 0;
@@ -111,13 +151,26 @@ export const deleteFileAndFolder = async (path: string) => {
 };
 
 export const readNfo = async (path: string) => {
-  const nfoPath = asNfoPath(path);
-  const response = await ipc.file.nfoRead(nfoPath);
-  const data: NfoResponse = {
-    path: nfoPath,
-    content: JSON.stringify(response.data, null, 2),
-  };
-  return { data };
+  const candidates = buildNfoReadCandidates(path);
+  let lastError: unknown;
+
+  for (const candidate of candidates) {
+    try {
+      const response = await ipc.file.nfoRead(candidate);
+      const data: NfoResponse = {
+        path: candidate,
+        content: JSON.stringify(response.data, null, 2),
+      };
+      return { data };
+    } catch (error) {
+      lastError = error;
+      if (!shouldRetryWithAlternateNfo(error)) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError ?? new Error("NFO path is required");
 };
 
 export const updateNfo = async (path: string, content: string) => {

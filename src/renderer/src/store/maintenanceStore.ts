@@ -32,6 +32,8 @@ const formatStatusText = (
   previousText: string,
   previousExecutionStatus: MaintenanceExecutionStatus,
 ): string => {
+  const wasStopping = previousExecutionStatus === "stopping" || previousText.startsWith("已停止");
+
   if (status.state === "scanning") {
     return "正在扫描目录...";
   }
@@ -44,12 +46,8 @@ const formatStatusText = (
     return `正在停止 · 已完成 ${status.completedEntries}/${status.totalEntries}`;
   }
 
-  if (
-    status.totalEntries > 0 &&
-    status.completedEntries < status.totalEntries &&
-    (previousExecutionStatus === "stopping" || previousText.startsWith("已停止"))
-  ) {
-    return `已停止 · 已完成 ${status.completedEntries}/${status.totalEntries}`;
+  if (wasStopping && status.totalEntries > 0) {
+    return `已停止 · 成功 ${status.successCount} · 失败/取消 ${status.failedCount}`;
   }
 
   if (status.totalEntries > 0) {

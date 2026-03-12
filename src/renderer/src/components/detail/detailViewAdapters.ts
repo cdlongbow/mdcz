@@ -56,6 +56,7 @@ export const toDetailViewItemFromMaintenanceEntry = (
     status: result?.status === "failed" || result?.status === "blocked" || hasEntryError ? "failed" : "success",
     number: entry.fileInfo.number,
     path: entry.videoPath,
+    nfoPath: entry.nfoPath,
     title: getMaintenanceDetailTitle(entry),
     actors: data?.actors,
     outline: data?.plot_zh ?? data?.plot,

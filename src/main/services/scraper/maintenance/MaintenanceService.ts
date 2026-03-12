@@ -1,3 +1,4 @@
+import { ActorImageService } from "@main/services/ActorImageService";
 import { type Configuration, configManager, configurationSchema } from "@main/services/config";
 import type { DeepPartial } from "@main/services/config/models";
 import type { CrawlerProvider } from "@main/services/crawler";
@@ -70,6 +71,7 @@ export class MaintenanceService {
     private readonly signalService: SignalService,
     private readonly networkClient: NetworkClient,
     private readonly crawlerProvider: CrawlerProvider,
+    private readonly actorImageService = new ActorImageService(),
   ) {}
 
   getStatus(): MaintenanceStatus {
@@ -161,6 +163,7 @@ export class MaintenanceService {
   }): Promise<void> {
     const { items, preset, config } = execution;
     const queue = this.queue;
+    const completedEntryIds = new Set<string>();
     if (!queue) {
       throw new Error("Maintenance queue is not initialized");
     }
@@ -199,6 +202,7 @@ export class MaintenanceService {
             } else {
               this.status.failedCount += 1;
             }
+            completedEntryIds.add(entry.id);
 
             const itemResult: MaintenanceItemResult = {
               entryId: entry.id,
@@ -214,6 +218,7 @@ export class MaintenanceService {
           } catch (error) {
             this.status.completedEntries += 1;
             this.status.failedCount += 1;
+            completedEntryIds.add(entry.id);
             const message = error instanceof Error ? error.message : String(error);
             this.logger.error(`Unexpected error processing ${entry.fileInfo.number}: ${message}`);
             this.signalService.showMaintenanceItemResult({
@@ -226,9 +231,29 @@ export class MaintenanceService {
       }
 
       await queue.onIdle();
+      const wasStopped = this.status.state === "stopping";
+
+      if (wasStopped) {
+        for (const item of items) {
+          if (completedEntryIds.has(item.entry.id)) {
+            continue;
+          }
+
+          completedEntryIds.add(item.entry.id);
+          this.status.completedEntries += 1;
+          this.status.failedCount += 1;
+          this.signalService.showMaintenanceItemResult({
+            entryId: item.entry.id,
+            status: "failed",
+            error: "维护已停止，项目未执行",
+          });
+        }
+      }
 
       this.signalService.showLogText(
-        `[维护] 执行完成：成功 ${this.status.successCount}，失败 ${this.status.failedCount}`,
+        wasStopped
+          ? `[维护] 执行已停止：成功 ${this.status.successCount}，失败/取消 ${this.status.failedCount}`
+          : `[维护] 执行完成：成功 ${this.status.successCount}，失败 ${this.status.failedCount}`,
       );
     } finally {
       this.status = { ...this.status, state: "idle" };
@@ -271,6 +296,7 @@ export class MaintenanceService {
       downloadManager: new DownloadManager(this.networkClient),
       fileOrganizer: new FileOrganizer(),
       signalService: this.signalService,
+      actorImageService: this.actorImageService,
     };
   }
 }

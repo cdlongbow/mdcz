@@ -61,7 +61,7 @@ export function useDetailViewController(item?: DetailViewItem | null) {
     try {
       setNfoLoading(true);
       const response = await readNfo(path);
-      setNfoPath(path);
+      setNfoPath(response.data?.path ?? path);
       setNfoContent(response.data?.content ?? "");
       setNfoOpen(true);
     } catch {
@@ -109,12 +109,13 @@ export function useDetailViewController(item?: DetailViewItem | null) {
   }, [item?.path]);
 
   const handleOpenNfo = useCallback(async () => {
-    if (!item?.path) {
+    const path = item?.nfoPath ?? item?.path;
+    if (!path) {
       toast.info("请先选择一个项目");
       return;
     }
-    await openNfoEditor(item.path);
-  }, [item?.path, openNfoEditor]);
+    await openNfoEditor(path);
+  }, [item?.nfoPath, item?.path, openNfoEditor]);
 
   const handlePosterError = useCallback(() => {
     const localPoster = toRenderableSrc(posterCandidates.fallback);
@@ -133,7 +134,7 @@ export function useDetailViewController(item?: DetailViewItem | null) {
   useEffect(() => {
     const listener = (event: Event) => {
       const custom = event as CustomEvent<{ path?: string }>;
-      const path = custom.detail?.path || item?.path;
+      const path = custom.detail?.path || item?.nfoPath || item?.path;
       if (!path) return;
       void openNfoEditor(path);
     };
@@ -142,7 +143,7 @@ export function useDetailViewController(item?: DetailViewItem | null) {
     return () => {
       window.removeEventListener("app:open-nfo", listener);
     };
-  }, [item?.path, openNfoEditor]);
+  }, [item?.nfoPath, item?.path, openNfoEditor]);
 
   return {
     posterSrc,
