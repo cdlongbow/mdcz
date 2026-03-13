@@ -156,6 +156,7 @@ export interface MaintenancePreviewItem {
   status: MaintenancePreviewStatus;
   error?: string;
   fieldDiffs?: FieldDiff[];
+  unchangedFieldDiffs?: FieldDiff[];
   pathDiff?: PathDiff;
   proposedCrawlerData?: CrawlerData;
   imageAlternatives?: MaintenanceImageAlternatives;
@@ -189,6 +190,7 @@ export interface MaintenanceItemResult {
   crawlerData?: CrawlerData;
   updatedEntry?: LocalScanEntry;
   fieldDiffs?: FieldDiff[];
+  unchangedFieldDiffs?: FieldDiff[];
   pathDiff?: PathDiff;
 }
 

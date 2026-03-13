@@ -184,7 +184,7 @@ describe("NfoGenerator", () => {
     expect(xml).toContain("<bitrate>8000000</bitrate>");
   });
 
-  it("uses the first sample image as fallback fanart when a dedicated fanart is unavailable", () => {
+  it("uses thumb artwork as fallback fanart and keeps sample images separate", () => {
     const xml = new NfoGenerator().buildXml(
       createCrawlerData({
         thumb_url: "https://remote.example.com/thumb.jpg",
@@ -194,8 +194,11 @@ describe("NfoGenerator", () => {
     const parsed = parseNfo(xml);
 
     expect(xml).toContain("<fanart>");
-    expect(parsed.fanart_url).toBe("https://remote.example.com/scene-001.jpg");
-    expect(parsed.sample_images).toEqual(["https://remote.example.com/scene-002.jpg"]);
+    expect(parsed.fanart_url).toBe("https://remote.example.com/thumb.jpg");
+    expect(parsed.sample_images).toEqual([
+      "https://remote.example.com/scene-001.jpg",
+      "https://remote.example.com/scene-002.jpg",
+    ]);
     expect(parsed.thumb_url).toBe("https://remote.example.com/thumb.jpg");
   });
 

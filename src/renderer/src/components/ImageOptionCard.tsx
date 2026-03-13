@@ -1,5 +1,5 @@
 import { ImageIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
 import { getImageSrc } from "@/utils/image";
@@ -9,7 +9,6 @@ export interface ImageOptionCardProps {
   label: string;
   width?: number | null;
   height?: number | null;
-  fileSize?: number | null;
   subtitle?: string;
   selected?: boolean;
   onClick?: () => void;
@@ -18,22 +17,7 @@ export interface ImageOptionCardProps {
   emptyText?: string;
   imageContainerClassName?: string;
   stacked?: boolean;
-}
-
-function formatBytes(bytes: number | null | undefined): string {
-  if (!Number.isFinite(bytes) || !bytes || bytes <= 0) {
-    return "未知";
-  }
-
-  const units = ["B", "KB", "MB", "GB"];
-  let value = bytes;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+  fallbackSrcs?: string[];
 }
 
 function formatDimensions(width: number | null | undefined, height: number | null | undefined): string {
@@ -48,7 +32,6 @@ export function ImageOptionCard({
   label,
   width,
   height,
-  fileSize,
   subtitle,
   selected = false,
   onClick,
@@ -57,15 +40,29 @@ export function ImageOptionCard({
   emptyText = "暂无图片",
   imageContainerClassName,
   stacked = false,
+  fallbackSrcs = [],
 }: ImageOptionCardProps) {
   const [naturalSize, setNaturalSize] = useState<{ src: string; width: number; height: number } | null>(null);
+  const [candidateIndex, setCandidateIndex] = useState(0);
 
-  const renderSrc = useMemo(() => {
+  const renderCandidates = useMemo(() => {
     if (empty || !src.trim()) {
-      return "";
+      return fallbackSrcs
+        .map((candidate) => getImageSrc(candidate))
+        .filter((candidate, index, candidates) => candidate.length > 0 && candidates.indexOf(candidate) === index);
     }
-    return getImageSrc(src);
-  }, [empty, src]);
+    return [src, ...fallbackSrcs]
+      .map((candidate) => getImageSrc(candidate))
+      .filter((candidate, index, candidates) => candidate.length > 0 && candidates.indexOf(candidate) === index);
+  }, [empty, fallbackSrcs, src]);
+
+  useEffect(() => {
+    const nextCandidates = new Set(renderCandidates);
+    setCandidateIndex(0);
+    setNaturalSize((current) => (current && nextCandidates.has(current.src) ? null : null));
+  }, [renderCandidates]);
+
+  const renderSrc = renderCandidates[candidateIndex] ?? "";
 
   const measuredSize = naturalSize?.src === renderSrc ? naturalSize : null;
   const resolvedWidth = width ?? measuredSize?.width ?? null;
@@ -110,6 +107,15 @@ export function ImageOptionCard({
                 });
               }
             }}
+            onError={() => {
+              setNaturalSize(null);
+              setCandidateIndex((currentIndex) => {
+                if (currentIndex < renderCandidates.length - 1) {
+                  return currentIndex + 1;
+                }
+                return renderCandidates.length;
+              });
+            }}
           />
         )}
       </div>
@@ -130,10 +136,6 @@ export function ImageOptionCard({
             <div className="text-sm text-foreground wrap-anywhere">
               <span className="text-muted-foreground">尺寸: </span>
               <span>{formatDimensions(resolvedWidth, resolvedHeight)}</span>
-            </div>
-            <div className="text-sm text-foreground wrap-anywhere">
-              <span className="text-muted-foreground">大小: </span>
-              <span>{formatBytes(fileSize)}</span>
             </div>
             {subtitle && <div className="text-sm text-muted-foreground wrap-anywhere">{subtitle}</div>}
           </>

@@ -1,4 +1,8 @@
-import { diffCrawlerData, diffCrawlerDataWithOptions } from "@main/services/scraper/maintenance/diffCrawlerData";
+import {
+  diffCrawlerData,
+  diffCrawlerDataWithOptions,
+  partitionCrawlerDataWithOptions,
+} from "@main/services/scraper/maintenance/diffCrawlerData";
 import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import { describe, expect, it } from "vitest";
@@ -74,5 +78,53 @@ describe("diffCrawlerData", () => {
     );
 
     expect(diffs).toEqual([]);
+  });
+
+  it("collects unchanged non-empty fields separately for maintenance display", () => {
+    const result = partitionCrawlerDataWithOptions(
+      createCrawlerData({
+        title: "Original Title",
+        plot: "Original Plot",
+      }),
+      createCrawlerData({
+        title: "Original Title",
+        plot: "Original Plot",
+        studio: "New Studio",
+      }),
+      {},
+    );
+
+    expect(result.fieldDiffs).toEqual([
+      {
+        field: "studio",
+        label: "制片",
+        oldValue: undefined,
+        newValue: "New Studio",
+        changed: true,
+      },
+    ]);
+    expect(result.unchangedFieldDiffs).toEqual([
+      {
+        field: "title",
+        label: "标题",
+        oldValue: "Original Title",
+        newValue: "Original Title",
+        changed: false,
+      },
+      {
+        field: "plot",
+        label: "简介",
+        oldValue: "Original Plot",
+        newValue: "Original Plot",
+        changed: false,
+      },
+      {
+        field: "actors",
+        label: "演员",
+        oldValue: ["Actor A"],
+        newValue: ["Actor A"],
+        changed: false,
+      },
+    ]);
   });
 });

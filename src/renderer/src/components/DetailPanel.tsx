@@ -131,7 +131,11 @@ export function DetailPanel({
               </Card>
             )}
 
-            <ChangeDiffView entryId={item.id} diffs={compare?.result?.fieldDiffs ?? []} />
+            <ChangeDiffView
+              entryId={item.id}
+              diffs={compare?.result?.fieldDiffs ?? []}
+              unchangedDiffs={compare?.result?.unchangedFieldDiffs ?? []}
+            />
 
             {compare?.result?.pathDiff && <PathPlanView pathDiff={compare.result.pathDiff} />}
           </div>

@@ -211,6 +211,7 @@ export class MaintenanceService {
               crawlerData: result.scrapeResult.crawlerData,
               updatedEntry: result.updatedEntry,
               fieldDiffs: result.fieldDiffs,
+              unchangedFieldDiffs: result.unchangedFieldDiffs,
               pathDiff: result.pathDiff,
             };
 

@@ -62,6 +62,6 @@ export const FIELD_STRATEGIES: Partial<Record<keyof CrawlerData, AggregationStra
   plot_zh: "longest",
   actors: "union",
   actor_profiles: "union",
-  genres: "union",
+  genres: "first_non_empty",
   sample_images: "first_non_empty",
 };

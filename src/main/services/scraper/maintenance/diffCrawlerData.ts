@@ -9,6 +9,11 @@ interface DiffCrawlerDataOptions {
   includeTranslatedFields?: boolean;
 }
 
+export interface PartitionedCrawlerDataDiffs {
+  fieldDiffs: FieldDiff[];
+  unchangedFieldDiffs: FieldDiff[];
+}
+
 const DIFFABLE_FIELDS: DiffableField[] = [
   { key: "title", label: "标题" },
   { key: "title_zh", label: "中文标题" },
@@ -39,9 +44,16 @@ const isEqual = (a: unknown, b: unknown): boolean => {
   return false;
 };
 
+const hasValue = (value: unknown): boolean => {
+  if (value == null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+};
+
 /**
  * Compute field-level diffs between old (local NFO) and new (network) CrawlerData.
- * Only includes fields that have changed.
+ * Only includes fields whose values actually changed.
  */
 export function diffCrawlerData(oldData: CrawlerData, newData: CrawlerData): FieldDiff[] {
   return diffCrawlerDataWithOptions(oldData, newData, {});
@@ -52,7 +64,16 @@ export function diffCrawlerDataWithOptions(
   newData: CrawlerData,
   options: DiffCrawlerDataOptions,
 ): FieldDiff[] {
-  const diffs: FieldDiff[] = [];
+  return partitionCrawlerDataWithOptions(oldData, newData, options).fieldDiffs;
+}
+
+export function partitionCrawlerDataWithOptions(
+  oldData: CrawlerData,
+  newData: CrawlerData,
+  options: DiffCrawlerDataOptions,
+): PartitionedCrawlerDataDiffs {
+  const fieldDiffs: FieldDiff[] = [];
+  const unchangedFieldDiffs: FieldDiff[] = [];
   const includeTranslatedFields = options.includeTranslatedFields ?? true;
 
   for (const { key, label } of DIFFABLE_FIELDS) {
@@ -62,10 +83,14 @@ export function diffCrawlerDataWithOptions(
 
     const oldValue = oldData[key];
     const newValue = newData[key];
+    const changed = !isEqual(oldValue, newValue);
 
-    if (!isEqual(oldValue, newValue)) {
-      diffs.push({ field: key, label, oldValue, newValue, changed: true });
+    if (!changed && !hasValue(oldValue)) {
+      continue;
     }
+
+    const target = changed ? fieldDiffs : unchangedFieldDiffs;
+    target.push({ field: key, label, oldValue, newValue, changed });
   }
 
   // Array fields: actors, genres, sample_images
@@ -78,10 +103,18 @@ export function diffCrawlerDataWithOptions(
   for (const { key, label } of arrayFields) {
     const oldArr = oldData[key] as unknown[];
     const newArr = newData[key] as unknown[];
-    if (!isEqual(oldArr, newArr)) {
-      diffs.push({ field: key, label, oldValue: oldArr, newValue: newArr, changed: true });
+    const changed = !isEqual(oldArr, newArr);
+
+    if (!changed && !hasValue(oldArr)) {
+      continue;
     }
+
+    const target = changed ? fieldDiffs : unchangedFieldDiffs;
+    target.push({ field: key, label, oldValue: oldArr, newValue: newArr, changed });
   }
 
-  return diffs;
+  return {
+    fieldDiffs,
+    unchangedFieldDiffs,
+  };
 }

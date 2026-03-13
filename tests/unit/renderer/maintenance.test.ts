@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildCommittedCrawlerData,
   buildMaintenanceCommitItem,
+  resolveMaintenanceDiffImageOption,
   resolveMaintenanceDiffImageSrc,
 } from "@/lib/maintenance";
 import { useMaintenanceStore } from "@/store/maintenanceStore";
@@ -165,6 +166,51 @@ describe("resolveMaintenanceDiffImageSrc", () => {
 
     expect(resolveMaintenanceDiffImageSrc(entry, diff, "old")).toBe("/media/fanart.jpg");
   });
+
+  it("falls back to thumb artwork for fanart previews instead of sample images", () => {
+    const baseEntry = createEntry(
+      createCrawlerData({
+        thumb_url: "thumb.jpg",
+        fanart_url: undefined,
+        sample_images: ["https://example.com/old-scene.jpg"],
+      }),
+    );
+    const entry: LocalScanEntry = {
+      ...baseEntry,
+      assets: {
+        ...baseEntry.assets,
+        fanart: undefined,
+      },
+    };
+    const preview: MaintenancePreviewItem = {
+      entryId: entry.id,
+      status: "ready",
+      proposedCrawlerData: createCrawlerData({
+        thumb_url: "https://example.com/new-thumb.jpg",
+        fanart_url: undefined,
+        sample_images: ["https://example.com/new-scene.jpg"],
+      }),
+      imageAlternatives: {
+        thumb_url: ["https://example.com/new-thumb-alt.jpg"],
+      },
+    };
+    const diff: FieldDiff = {
+      field: "fanart_url",
+      label: "背景图",
+      oldValue: undefined,
+      newValue: undefined,
+      changed: false,
+    };
+
+    expect(resolveMaintenanceDiffImageOption(entry, preview, diff, "old")).toEqual({
+      src: "",
+      fallbackSrcs: ["/media/thumb.jpg"],
+    });
+    expect(resolveMaintenanceDiffImageOption(entry, preview, diff, "new")).toEqual({
+      src: "",
+      fallbackSrcs: ["https://example.com/new-thumb.jpg", "https://example.com/new-thumb-alt.jpg"],
+    });
+  });
 });
 
 describe("useMaintenanceStore", () => {
@@ -175,6 +221,13 @@ describe("useMaintenanceStore", () => {
       oldValue: "Old Title",
       newValue: "New Title",
       changed: true,
+    };
+    const unchangedFieldDiff = {
+      field: "actors" as const,
+      label: "演员",
+      oldValue: ["Actor A"],
+      newValue: ["Actor A"],
+      changed: false,
     };
     const pathDiff = {
       entryId: "entry-1",
@@ -191,6 +244,7 @@ describe("useMaintenanceStore", () => {
           entryId: "entry-1",
           status: "ready",
           fieldDiffs: [fieldDiff],
+          unchangedFieldDiffs: [unchangedFieldDiff],
           pathDiff,
         },
       ],
@@ -208,8 +262,56 @@ describe("useMaintenanceStore", () => {
       entryId: "entry-1",
       status: "processing",
       fieldDiffs: [fieldDiff],
+      unchangedFieldDiffs: [unchangedFieldDiff],
       pathDiff,
     });
+  });
+
+  it("clears previous execution results when a new preview is applied", () => {
+    useMaintenanceStore.getState().applyItemResult({
+      entryId: "entry-1",
+      status: "success",
+      fieldDiffs: [
+        {
+          field: "title",
+          label: "标题",
+          oldValue: "Old Title",
+          newValue: "Older Preview",
+          changed: true,
+        },
+      ],
+    });
+
+    useMaintenanceStore.getState().applyPreviewResult({
+      items: [
+        {
+          entryId: "entry-1",
+          status: "ready",
+          unchangedFieldDiffs: [
+            {
+              field: "title",
+              label: "标题",
+              oldValue: "Same Title",
+              newValue: "Same Title",
+              changed: false,
+            },
+          ],
+        },
+      ],
+      readyCount: 1,
+      blockedCount: 0,
+    });
+
+    expect(useMaintenanceStore.getState().itemResults).toEqual({});
+    expect(useMaintenanceStore.getState().previewResults["entry-1"]?.unchangedFieldDiffs).toEqual([
+      {
+        field: "title",
+        label: "标题",
+        oldValue: "Same Title",
+        newValue: "Same Title",
+        changed: false,
+      },
+    ]);
   });
 
   it("keeps stopped wording after an interrupted run becomes idle", () => {

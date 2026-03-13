@@ -20,7 +20,7 @@ import type { SourceMap } from "../aggregation/types";
 import type { OrganizePlan } from "../FileOrganizer";
 import type { FileScrapeProgress, FileScraperDependencies } from "../FileScraper";
 import { prepareCrawlerDataForNfo } from "../prepareCrawlerDataForNfo";
-import { diffCrawlerDataWithOptions } from "./diffCrawlerData";
+import { partitionCrawlerDataWithOptions } from "./diffCrawlerData";
 import { diffPaths } from "./diffPaths";
 import type { MaintenancePreset } from "./presets";
 
@@ -28,6 +28,7 @@ export interface MaintenanceProcessResult {
   scrapeResult: ScrapeResult;
   updatedEntry?: LocalScanEntry;
   fieldDiffs?: FieldDiff[];
+  unchangedFieldDiffs?: FieldDiff[];
   pathDiff?: PathDiff;
 }
 
@@ -36,6 +37,7 @@ export interface MaintenancePreviewFileResult {
   status: "ready" | "blocked";
   error?: string;
   fieldDiffs?: FieldDiff[];
+  unchangedFieldDiffs?: FieldDiff[];
   pathDiff?: PathDiff;
   proposedCrawlerData?: CrawlerData;
   imageAlternatives?: MaintenanceImageAlternatives;
@@ -44,6 +46,7 @@ export interface MaintenancePreviewFileResult {
 interface PreparedMaintenanceFile {
   crawlerData?: CrawlerData;
   fieldDiffs?: FieldDiff[];
+  unchangedFieldDiffs?: FieldDiff[];
   aggregationSources?: SourceMap;
   imageAlternatives: MaintenanceImageAlternatives;
   plan?: OrganizePlan;
@@ -95,7 +98,8 @@ export class MaintenanceFileScraper {
             progress,
             emitLogs: true,
           });
-      const { crawlerData, fieldDiffs, aggregationSources, imageAlternatives, plan, pathDiff } = prepared;
+      const { crawlerData, fieldDiffs, unchangedFieldDiffs, aggregationSources, imageAlternatives, plan, pathDiff } =
+        prepared;
       let preparedCrawlerData = crawlerData;
       let preparedActorPhotoPaths: string[] = [];
 
@@ -181,7 +185,7 @@ export class MaintenanceFileScraper {
         assets: resolvedAssets,
       };
 
-      return { scrapeResult: result, updatedEntry, fieldDiffs, pathDiff };
+      return { scrapeResult: result, updatedEntry, fieldDiffs, unchangedFieldDiffs, pathDiff };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Maintenance failed for ${fileInfo.filePath}: ${message}`);
@@ -205,6 +209,7 @@ export class MaintenanceFileScraper {
         entryId: entry.id,
         status: "ready",
         fieldDiffs: prepared.fieldDiffs,
+        unchangedFieldDiffs: prepared.unchangedFieldDiffs,
         pathDiff: prepared.pathDiff,
         proposedCrawlerData: prepared.crawlerData,
         imageAlternatives: prepared.imageAlternatives,
@@ -281,12 +286,12 @@ export class MaintenanceFileScraper {
       crawlerData = await this.deps.translateService.translateCrawlerData(crawlerData, config);
     }
 
-    const fieldDiffs =
+    const { fieldDiffs, unchangedFieldDiffs } =
       entry.crawlerData && crawlerData && steps.aggregate
-        ? diffCrawlerDataWithOptions(entry.crawlerData, crawlerData, {
+        ? partitionCrawlerDataWithOptions(entry.crawlerData, crawlerData, {
             includeTranslatedFields: config.translate.enableTranslation,
           })
-        : undefined;
+        : { fieldDiffs: undefined, unchangedFieldDiffs: undefined };
 
     if (options.progress) {
       this.setProgress(options.progress, 50);
@@ -311,6 +316,7 @@ export class MaintenanceFileScraper {
     return {
       crawlerData,
       fieldDiffs,
+      unchangedFieldDiffs,
       aggregationSources,
       imageAlternatives,
       plan,
@@ -335,12 +341,12 @@ export class MaintenanceFileScraper {
     }
 
     const crawlerData = committed.crawlerData ?? entry.crawlerData;
-    const fieldDiffs =
-      entry.crawlerData && crawlerData
-        ? diffCrawlerDataWithOptions(entry.crawlerData, crawlerData, {
+    const { fieldDiffs, unchangedFieldDiffs } =
+      entry.crawlerData && crawlerData && steps.aggregate
+        ? partitionCrawlerDataWithOptions(entry.crawlerData, crawlerData, {
             includeTranslatedFields: config.translate.enableTranslation,
           })
-        : undefined;
+        : { fieldDiffs: undefined, unchangedFieldDiffs: undefined };
 
     if (options.progress) {
       this.setProgress(options.progress, 50);
@@ -365,6 +371,7 @@ export class MaintenanceFileScraper {
     return {
       crawlerData,
       fieldDiffs,
+      unchangedFieldDiffs,
       imageAlternatives: committed.imageAlternatives ?? {},
       plan,
       pathDiff,

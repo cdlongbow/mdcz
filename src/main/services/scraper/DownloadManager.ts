@@ -19,7 +19,11 @@ const normalizeUrl = (input?: string): string | null => {
     return null;
   }
 
-  return trimmed;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+
+  return null;
 };
 
 const resolveExistingAsset = async (assetPath: string): Promise<string | undefined> => {
@@ -62,17 +66,31 @@ type SceneImageTask = { key: "sceneImages"; path: string; url: string };
 type ParallelResult<K extends string, TValue> = { key: K; path: string; success: boolean; value?: TValue };
 type ProbedImageCandidate = ProbeResult & { index: number; url: string };
 
-const getPrimaryFanartSampleUrl = (data: CrawlerData): string | undefined => {
-  return data.fanart_url ? undefined : (normalizeUrl(data.sample_images[0]) ?? undefined);
+const getPrimaryFanartFallbackUrl = (data: CrawlerData): string | undefined => {
+  if (data.fanart_url) {
+    return undefined;
+  }
+
+  return normalizeUrl(data.thumb_url) ?? undefined;
 };
 
-const getSceneImageUrls = (
+const getPrimaryFanartAlternativeUrls = (
   data: CrawlerData,
-  maxSceneImages: number,
-  reservePrimarySampleForFanart: boolean,
+  imageAlternatives: Partial<ImageAlternatives>,
 ): string[] => {
-  const sampleImages = reservePrimarySampleForFanart ? data.sample_images.slice(1) : data.sample_images;
-  return sampleImages
+  if (data.fanart_url) {
+    return imageAlternatives.fanart_url ?? [];
+  }
+
+  return [
+    getPrimaryFanartFallbackUrl(data),
+    ...(imageAlternatives.fanart_url ?? []),
+    ...(imageAlternatives.thumb_url ?? []),
+  ].filter((item): item is string => typeof item === "string");
+};
+
+const getSceneImageUrls = (data: CrawlerData, maxSceneImages: number): string[] => {
+  return data.sample_images
     .map((item) => normalizeUrl(item))
     .filter((item): item is string => !!item)
     .slice(0, maxSceneImages);
@@ -120,8 +138,6 @@ export class DownloadManager {
     const forceReplace = callbacks?.forceReplace ?? {};
     const primaryTasks = this.buildPrimaryImageTasks(outputDir, data, config, imageAlternatives);
     const pendingPrimaryTasks: PrimaryImageTask[] = [];
-    const primaryFanartSampleUrl = getPrimaryFanartSampleUrl(data);
-    let usedPrimarySampleForFanart = false;
 
     for (const task of primaryTasks) {
       const existingAsset = await resolveExistingAsset(task.path);
@@ -144,9 +160,6 @@ export class DownloadManager {
         const key = result.key as PrimaryImageKey;
         assets[key] = result.path;
         assets.downloaded.push(result.path);
-        if (key === "fanart" && result.value && result.value === primaryFanartSampleUrl) {
-          usedPrimarySampleForFanart = true;
-        }
       }
     }
 
@@ -165,7 +178,7 @@ export class DownloadManager {
       if (config.download.keepSceneImages && existingSceneImages.length > 0) {
         assets.sceneImages.push(...existingSceneImages);
       } else {
-        const urls = getSceneImageUrls(data, config.aggregation.behavior.maxSceneImages, usedPrimarySampleForFanart);
+        const urls = getSceneImageUrls(data, config.aggregation.behavior.maxSceneImages);
 
         if (urls.length === 0) {
           assets.sceneImages.push(...existingSceneImages);
@@ -283,9 +296,7 @@ export class DownloadManager {
       config.download.downloadFanart,
       config.download.keepFanart,
       data.fanart_url,
-      [getPrimaryFanartSampleUrl(data), ...(imageAlternatives.fanart_url ?? [])].filter(
-        (item): item is string => typeof item === "string",
-      ),
+      getPrimaryFanartAlternativeUrls(data, imageAlternatives),
       join(outputDir, "fanart.jpg"),
     );
 

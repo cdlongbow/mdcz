@@ -14,8 +14,11 @@ const IMAGE_ASSET_FIELD_MAP = {
   poster_url: "poster",
   fanart_url: "fanart",
 } as const satisfies Partial<Record<FieldDiff["field"], keyof LocalScanEntry["assets"]>>;
+type MaintenanceImageField = keyof typeof IMAGE_ASSET_FIELD_MAP;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+const isMaintenanceImageField = (field: FieldDiff["field"]): field is MaintenanceImageField =>
+  field in IMAGE_ASSET_FIELD_MAP;
 
 const cloneValue = <T>(value: T): T => {
   if (Array.isArray(value)) {
@@ -77,12 +80,48 @@ const getMaintenanceImageAssetPath = (entry: LocalScanEntry | undefined, field: 
   return typeof assetValue === "string" ? assetValue : "";
 };
 
+const dedupeImageCandidates = (values: Array<string | undefined>): string[] => {
+  const seen = new Set<string>();
+  const candidates: string[] = [];
+
+  for (const value of values) {
+    const trimmed = typeof value === "string" ? value.trim() : "";
+    if (!trimmed || seen.has(trimmed)) {
+      continue;
+    }
+
+    seen.add(trimmed);
+    candidates.push(trimmed);
+  }
+
+  return candidates;
+};
+
+const resolveMaintenanceImageFieldSrc = (
+  entry: LocalScanEntry | undefined,
+  preview: MaintenancePreviewItem | undefined,
+  field: MaintenanceImageField,
+  side: MaintenanceFieldSelectionSide,
+): string => {
+  return resolveMaintenanceDiffImageSrc(
+    entry,
+    {
+      field,
+      label: "",
+      oldValue: entry?.crawlerData?.[field],
+      newValue: preview?.proposedCrawlerData?.[field],
+      changed: false,
+    },
+    side,
+  );
+};
+
 export const resolveMaintenanceDiffImageSrc = (
   entry: LocalScanEntry | undefined,
   diff: FieldDiff,
   side: MaintenanceFieldSelectionSide,
 ): string => {
-  if (!(diff.field in IMAGE_ASSET_FIELD_MAP)) {
+  if (!isMaintenanceImageField(diff.field)) {
     return "";
   }
 
@@ -110,6 +149,38 @@ export const resolveMaintenanceDiffImageSrc = (
   }
 
   return rawValue;
+};
+
+export const resolveMaintenanceDiffImageOption = (
+  entry: LocalScanEntry | undefined,
+  preview: MaintenancePreviewItem | undefined,
+  diff: FieldDiff,
+  side: MaintenanceFieldSelectionSide,
+): { src: string; fallbackSrcs: string[] } => {
+  const src = resolveMaintenanceDiffImageSrc(entry, diff, side);
+
+  if (!isMaintenanceImageField(diff.field)) {
+    return { src, fallbackSrcs: [] };
+  }
+
+  const fieldAlternatives = side === "new" ? (preview?.imageAlternatives?.[diff.field] ?? []) : [];
+
+  if (diff.field !== "fanart_url") {
+    return {
+      src,
+      fallbackSrcs: dedupeImageCandidates(fieldAlternatives).filter((candidate) => candidate !== src),
+    };
+  }
+
+  const thumbSrc = resolveMaintenanceImageFieldSrc(entry, preview, "thumb_url", side);
+  const thumbAlternatives = side === "new" ? (preview?.imageAlternatives?.thumb_url ?? []) : [];
+
+  return {
+    src,
+    fallbackSrcs: dedupeImageCandidates([...fieldAlternatives, thumbSrc, ...thumbAlternatives]).filter(
+      (candidate) => candidate !== src,
+    ),
+  };
 };
 
 export const getDefaultMaintenanceFieldSelection = (diff: FieldDiff): MaintenanceFieldSelectionSide => {

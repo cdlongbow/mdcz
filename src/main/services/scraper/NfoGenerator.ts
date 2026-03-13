@@ -116,14 +116,13 @@ const buildFanartNode = (
     return undefined;
   }
 
-  const primaryFanartUrl = data.fanart_url || data.sample_images[0] || data.thumb_url;
+  const primaryFanartUrl = data.fanart_url || data.thumb_url;
   if (!primaryFanartUrl) {
     return undefined;
   }
 
   const thumbs: Array<Record<string, unknown>> = [{ "#text": primaryFanartUrl }];
-  const extraSampleImages = data.fanart_url ? data.sample_images : data.sample_images.slice(1);
-  for (const imageUrl of extraSampleImages.map((value) => value.trim()).filter((value) => value.length > 0)) {
+  for (const imageUrl of data.sample_images.map((value) => value.trim()).filter((value) => value.length > 0)) {
     thumbs.push({ "#text": imageUrl });
   }
 
