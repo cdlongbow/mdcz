@@ -393,6 +393,73 @@ describe("DownloadManager keep flags", () => {
     await expect(readFile(join(root, "thumb.jpg"), "utf8")).resolves.toBe("old-thumb");
   });
 
+  it("keeps downloading primary image candidates until it finds the highest-resolution poster and thumb", async () => {
+    const { root, manager, networkClient } = await createDownloadSubject();
+    networkClient.probe.mockImplementation(
+      async (url: string): Promise<ProbeResult> => ({
+        ok: true,
+        status: 200,
+        contentLength: url.includes("-low.") ? 10_000 : 1_000,
+        resolvedUrl: url,
+      }),
+    );
+    vi.spyOn(imageUtils, "validateImage").mockImplementation(async (filePath: string) => {
+      const content = await readFile(filePath, "utf8");
+      if (content.includes("thumb-low")) {
+        return { valid: true, width: 800, height: 1_200 };
+      }
+      if (content.includes("thumb-high")) {
+        return { valid: true, width: 1_600, height: 2_400 };
+      }
+      if (content.includes("poster-low")) {
+        return { valid: true, width: 600, height: 900 };
+      }
+      if (content.includes("poster-high")) {
+        return { valid: true, width: 1_200, height: 1_800 };
+      }
+
+      return { valid: false, width: 0, height: 0, reason: "parse_failed" };
+    });
+
+    const assets = await manager.downloadAll(
+      root,
+      createCrawlerData({
+        thumb_url: "https://example.com/thumb-low.jpg",
+        poster_url: "https://example.com/poster-low.jpg",
+      }),
+      createDownloadConfig({
+        keepThumb: false,
+        keepPoster: false,
+        downloadFanart: false,
+        downloadSceneImages: false,
+        downloadTrailer: false,
+      }),
+      {
+        thumb_url: ["https://cdn.example.com/thumb-high.jpg"],
+        poster_url: ["https://cdn.example.com/poster-high.jpg"],
+      },
+    );
+
+    expect(assets.thumb).toBe(join(root, "thumb.jpg"));
+    expect(assets.poster).toBe(join(root, "poster.jpg"));
+    await expect(readFile(join(root, "thumb.jpg"), "utf8")).resolves.toBe(
+      "downloaded:https://cdn.example.com/thumb-high.jpg",
+    );
+    await expect(readFile(join(root, "poster.jpg"), "utf8")).resolves.toBe(
+      "downloaded:https://cdn.example.com/poster-high.jpg",
+    );
+    expect(networkClient.probe).toHaveBeenCalledTimes(4);
+    expect(networkClient.download).toHaveBeenCalledTimes(4);
+    expect(networkClient.download.mock.calls.map(([url]) => url)).toEqual(
+      expect.arrayContaining([
+        "https://example.com/thumb-low.jpg",
+        "https://cdn.example.com/thumb-high.jpg",
+        "https://example.com/poster-low.jpg",
+        "https://cdn.example.com/poster-high.jpg",
+      ]),
+    );
+  });
+
   it("replaces the scene image set when keepSceneImages is disabled", async () => {
     const { root, manager } = await createDownloadSubject({
       "extrafanart/fanart1.jpg": "old-1",

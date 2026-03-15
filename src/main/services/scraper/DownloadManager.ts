@@ -72,6 +72,13 @@ type PrimaryImageKey = keyof Pick<DownloadedAssets, "thumb" | "poster" | "fanart
 type PrimaryImageTask = { key: PrimaryImageKey; candidates: string[]; path: string; keepExisting: boolean };
 type ParallelResult<K extends string, TValue> = { key: K; path: string; success: boolean; value?: TValue };
 type ProbedImageCandidate = ProbeResult & { index: number; url: string };
+type DownloadedImageCandidate = {
+  url: string;
+  path: string;
+  width: number;
+  height: number;
+  rank: number;
+};
 interface DownloadManagerOptions {
   imageHostCooldownStore?: PersistentCooldownStore;
 }
@@ -593,15 +600,54 @@ export class DownloadManager {
       return undefined;
     }
 
-    for (const url of await this.orderImageCandidatesByProbe(candidates, signal)) {
+    let bestCandidate: DownloadedImageCandidate | null = null;
+    const tempPaths = new Set<string>();
+
+    try {
+      for (const [rank, url] of (await this.orderImageCandidatesByProbe(candidates, signal)).entries()) {
+        throwIfAborted(signal);
+        const tempPath = `${outputPath}.candidate-${rank + 1}.part`;
+        const candidate = await this.downloadValidatedImageCandidate(url, tempPath, { signal });
+        if (!candidate) {
+          continue;
+        }
+
+        tempPaths.add(candidate.path);
+        const downloadedCandidate: DownloadedImageCandidate = {
+          url,
+          path: candidate.path,
+          width: candidate.width,
+          height: candidate.height,
+          rank,
+        };
+
+        if (!bestCandidate || this.isHigherResolutionCandidate(downloadedCandidate, bestCandidate)) {
+          if (bestCandidate) {
+            await unlink(bestCandidate.path).catch(() => undefined);
+            tempPaths.delete(bestCandidate.path);
+          }
+          bestCandidate = downloadedCandidate;
+          continue;
+        }
+
+        await unlink(downloadedCandidate.path).catch(() => undefined);
+        tempPaths.delete(downloadedCandidate.path);
+      }
+
+      if (!bestCandidate) {
+        return undefined;
+      }
+
       throwIfAborted(signal);
-      const downloadedPath = await this.downloadAndValidateImage(url, outputPath, { signal });
-      if (downloadedPath) {
-        return url;
+      await unlink(outputPath).catch(() => undefined);
+      await rename(bestCandidate.path, outputPath);
+      tempPaths.delete(bestCandidate.path);
+      return bestCandidate.url;
+    } finally {
+      for (const tempPath of tempPaths) {
+        await unlink(tempPath).catch(() => undefined);
       }
     }
-
-    return undefined;
   }
 
   private async downloadAndValidateImage(
@@ -609,19 +655,29 @@ export class DownloadManager {
     outputPath: string,
     options: { timeoutMs?: number; signal?: AbortSignal } = {},
   ): Promise<string | null> {
+    const candidate = await this.downloadValidatedImageCandidate(url, outputPath, options);
+    return candidate?.path ?? null;
+  }
+
+  private async downloadValidatedImageCandidate(
+    url: string,
+    outputPath: string,
+    options: { timeoutMs?: number; signal?: AbortSignal } = {},
+  ): Promise<{ path: string; width: number; height: number } | null> {
     throwIfAborted(options.signal);
-    const tempPath = `${outputPath}.part`;
-    const downloadedPath = await this.safeDownload(url, tempPath, options);
+    const downloadedPath = await this.safeDownload(url, outputPath, options);
     if (!downloadedPath) {
       return null;
     }
 
     try {
-      const validation = await validateImage(tempPath);
+      const validation = await validateImage(downloadedPath);
       if (validation.valid) {
-        await unlink(outputPath).catch(() => undefined);
-        await rename(tempPath, outputPath);
-        return outputPath;
+        return {
+          path: downloadedPath,
+          width: validation.width,
+          height: validation.height,
+        };
       }
 
       this.logger.warn(`Image invalid (${validation.reason ?? "parse_failed"}): ${url}`);
@@ -630,8 +686,30 @@ export class DownloadManager {
       this.logger.warn(`Image validation failed for ${url}: ${message}`);
     }
 
-    await unlink(tempPath).catch(() => undefined);
+    await unlink(downloadedPath).catch(() => undefined);
     return null;
+  }
+
+  private isHigherResolutionCandidate(
+    candidate: DownloadedImageCandidate,
+    currentBest: DownloadedImageCandidate,
+  ): boolean {
+    const candidatePixels = candidate.width * candidate.height;
+    const bestPixels = currentBest.width * currentBest.height;
+
+    if (candidatePixels !== bestPixels) {
+      return candidatePixels > bestPixels;
+    }
+
+    if (candidate.width !== currentBest.width) {
+      return candidate.width > currentBest.width;
+    }
+
+    if (candidate.height !== currentBest.height) {
+      return candidate.height > currentBest.height;
+    }
+
+    return candidate.rank < currentBest.rank;
   }
 
   private async orderImageCandidatesByProbe(candidates: string[], signal?: AbortSignal): Promise<string[]> {
