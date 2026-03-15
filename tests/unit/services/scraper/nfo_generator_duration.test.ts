@@ -191,7 +191,7 @@ describe("NfoGenerator", () => {
       }),
       {
         videoMeta: {
-          durationSeconds: 3600,
+          durationSeconds: 3600.9,
           width: 1920,
           height: 1080,
           codec: "h264",
@@ -208,6 +208,12 @@ describe("NfoGenerator", () => {
     expect(xml).toContain("<height>1080</height>");
     expect(xml).toContain("<durationinseconds>3600</durationinseconds>");
     expect(xml).toContain("<bitrate>8000000</bitrate>");
+  });
+
+  it("writes a standards-compliant uniqueid attribute for Jellyfin", () => {
+    const xml = new NfoGenerator().buildXml(createCrawlerData());
+
+    expect(xml).toContain('<uniqueid type="dmm" default="true">ABC-123</uniqueid>');
   });
 
   it("uses thumb artwork as fallback fanart and persists sample image urls under mdcz", () => {

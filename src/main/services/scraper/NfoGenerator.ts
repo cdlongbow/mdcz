@@ -11,6 +11,7 @@ const builder = new XMLBuilder({
   ignoreAttributes: false,
   format: true,
   commentPropName: "#comment",
+  suppressBooleanAttributes: false,
 });
 
 const OUTLINE_MAX_CHARS = 200;
@@ -101,7 +102,7 @@ const buildVideoNode = (videoMeta: VideoMeta | undefined): Record<string, unknow
     video.height = videoMeta.height;
   }
   if (Number.isFinite(videoMeta.durationSeconds)) {
-    video.durationinseconds = videoMeta.durationSeconds;
+    video.durationinseconds = Math.floor(videoMeta.durationSeconds);
   }
   if (videoMeta.bitrate !== undefined && Number.isFinite(videoMeta.bitrate)) {
     video.bitrate = videoMeta.bitrate;
