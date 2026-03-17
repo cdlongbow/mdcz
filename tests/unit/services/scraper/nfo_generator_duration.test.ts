@@ -47,31 +47,34 @@ describe("NfoGenerator", () => {
     );
   });
 
-  it("uses crawler duration when local video metadata is unavailable", () => {
-    const xml = new NfoGenerator().buildXml(
-      createCrawlerData({
-        durationSeconds: 5400,
-      }),
-    );
-
-    expect(xml).toContain("<runtime>90</runtime>");
-  });
-
-  it("prefers local video metadata duration over crawler duration", () => {
-    const xml = new NfoGenerator().buildXml(
-      createCrawlerData({
-        durationSeconds: 5400,
-      }),
+  it("writes runtime from the highest-priority duration source", () => {
+    const cases = [
       {
-        videoMeta: {
-          durationSeconds: 3600,
-          width: 1920,
-          height: 1080,
-        },
+        input: createCrawlerData({
+          durationSeconds: 5400,
+        }),
+        options: undefined,
+        expectedRuntime: 90,
       },
-    );
+      {
+        input: createCrawlerData({
+          durationSeconds: 5400,
+        }),
+        options: {
+          videoMeta: {
+            durationSeconds: 3600,
+            width: 1920,
+            height: 1080,
+          },
+        },
+        expectedRuntime: 60,
+      },
+    ];
 
-    expect(xml).toContain("<runtime>60</runtime>");
+    for (const { input, options, expectedRuntime } of cases) {
+      const xml = new NfoGenerator().buildXml(input, options);
+      expect(xml).toContain(`<runtime>${expectedRuntime}</runtime>`);
+    }
   });
 
   it("prefers local assets and preserves actor photos in the generated XML", () => {
@@ -134,34 +137,20 @@ describe("NfoGenerator", () => {
     expect(xml).not.toContain("<tag>");
   });
 
-  it("round-trips Jellyfin-supported set and release date fields", () => {
-    const xml = new NfoGenerator().buildXml(
+  it("round-trips release metadata and derives year only when available", () => {
+    const releaseXml = new NfoGenerator().buildXml(
       createCrawlerData({
         series: "Collection",
         release_date: "2024-01-02",
       }),
     );
+    const releaseParsed = parseNfo(releaseXml);
+    expect(releaseParsed.series).toBe("Collection");
+    expect(releaseParsed.release_date).toBe("2024-01-02");
+    expect(releaseXml).toContain("<year>2024</year>");
 
-    const parsed = parseNfo(xml);
-
-    expect(parsed.series).toBe("Collection");
-    expect(parsed.release_date).toBe("2024-01-02");
-  });
-
-  it("writes year from release_date when available", () => {
-    const xml = new NfoGenerator().buildXml(
-      createCrawlerData({
-        release_date: "2024-01-02",
-      }),
-    );
-
-    expect(xml).toContain("<year>2024</year>");
-  });
-
-  it("omits year when release_date is missing", () => {
-    const xml = new NfoGenerator().buildXml(createCrawlerData());
-
-    expect(xml).not.toContain("<year>");
+    const missingYearXml = new NfoGenerator().buildXml(createCrawlerData());
+    expect(missingYearXml).not.toContain("<year>");
   });
 
   it("preserves local poster, cover, and trailer references when parsed back", () => {
@@ -223,7 +212,6 @@ describe("NfoGenerator", () => {
 
   it("writes a standards-compliant uniqueid attribute for Jellyfin", () => {
     const xml = new NfoGenerator().buildXml(createCrawlerData());
-
     expect(xml).toContain('<uniqueid type="dmm" default="true">ABC-123</uniqueid>');
   });
 

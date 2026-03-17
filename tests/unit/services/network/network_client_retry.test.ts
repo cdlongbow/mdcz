@@ -61,157 +61,190 @@ describe("NetworkClient retry policy", () => {
     sleepMock.mockClear();
   });
 
-  it("does not retry non-429 responses", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response("blocked", {
-        status: 403,
-        statusText: "Forbidden",
-      }),
-    );
+  it("does not retry unretryable failures", async () => {
+    const cases = [
+      {
+        setup: () => {
+          fetchMock.mockResolvedValueOnce(
+            new Response("blocked", {
+              status: 403,
+              statusText: "Forbidden",
+            }),
+          );
+        },
+        expectedError: "HTTP 403",
+      },
+      {
+        setup: () => {
+          fetchMock.mockResolvedValueOnce(
+            new Response("rate-limited", {
+              status: 429,
+              statusText: "Too Many Requests",
+            }),
+          );
+        },
+        expectedError: "HTTP 429",
+      },
+      {
+        setup: () => {
+          fetchMock.mockRejectedValueOnce(new Error("socket hang up"));
+        },
+        expectedError: "socket hang up",
+      },
+    ];
 
-    const client = new NetworkClient();
-    await expect(client.getText("https://example.com/blocked")).rejects.toThrow("HTTP 403");
+    for (const { setup, expectedError } of cases) {
+      fetchMock.mockReset();
+      sleepMock.mockClear();
+      setup();
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(sleepMock).not.toHaveBeenCalled();
+      const client = new NetworkClient();
+      await expect(client.getText("https://example.com/failure")).rejects.toThrow(expectedError);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(sleepMock).not.toHaveBeenCalled();
+    }
   });
 
-  it("retries once for 429 when Retry-After exists and caps wait at 15s", async () => {
-    fetchMock
-      .mockResolvedValueOnce(
-        new Response("rate-limited", {
-          status: 429,
-          statusText: "Too Many Requests",
-          headers: {
-            "Retry-After": "60",
-          },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response("ok", {
+  it("retries supported throttling and transient server failures", async () => {
+    const cases = [
+      {
+        setup: () => {
+          fetchMock
+            .mockResolvedValueOnce(
+              new Response("rate-limited", {
+                status: 429,
+                statusText: "Too Many Requests",
+                headers: {
+                  "Retry-After": "60",
+                },
+              }),
+            )
+            .mockResolvedValueOnce(
+              new Response("ok", {
+                status: 200,
+              }),
+            );
+        },
+        client: () => new NetworkClient(),
+        expectedBody: "ok",
+        expectedSleepCalls: [15_000],
+        expectedFetchCalls: 2,
+      },
+      {
+        setup: () => {
+          fetchMock
+            .mockResolvedValueOnce(
+              new Response("temporary-down-1", {
+                status: 503,
+                statusText: "Service Unavailable",
+              }),
+            )
+            .mockResolvedValueOnce(
+              new Response("temporary-down-2", {
+                status: 503,
+                statusText: "Service Unavailable",
+              }),
+            )
+            .mockResolvedValueOnce(
+              new Response("ok", {
+                status: 200,
+              }),
+            );
+        },
+        client: () =>
+          new NetworkClient({
+            getRetryCount: () => 2,
+          }),
+        expectedBody: "ok",
+        expectedSleepCalls: [1_000, 2_000],
+        expectedFetchCalls: 3,
+      },
+    ];
+
+    for (const { setup, client, expectedBody, expectedSleepCalls, expectedFetchCalls } of cases) {
+      fetchMock.mockReset();
+      sleepMock.mockClear();
+      setup();
+
+      await expect(client().getText("https://example.com/retryable")).resolves.toBe(expectedBody);
+
+      expect(fetchMock).toHaveBeenCalledTimes(expectedFetchCalls);
+      expect(sleepMock).toHaveBeenCalledTimes(expectedSleepCalls.length);
+      expectedSleepCalls.forEach((delay, index) => {
+        expect(sleepMock).toHaveBeenNthCalledWith(index + 1, delay);
+      });
+    }
+  });
+
+  it("captures image dimensions from ranged probes", async () => {
+    const cases = [
+      {
+        setup: () => {
+          const { response: initialResponse } = createProbeResponse(JPEG_PROBE_BYTES.subarray(0, 20), {
+            status: 206,
+            headers: {
+              "Content-Type": "image/jpeg",
+              "Content-Length": "20",
+              "Content-Range": "bytes 0-19/123456",
+            },
+          });
+          const { response: retryResponse } = createProbeResponse(JPEG_PROBE_BYTES, {
+            status: 206,
+            headers: {
+              "Content-Type": "image/jpeg",
+              "Content-Length": String(JPEG_PROBE_BYTES.length),
+              "Content-Range": `bytes 0-${JPEG_PROBE_BYTES.length - 1}/123456`,
+            },
+          });
+          fetchMock.mockResolvedValueOnce(initialResponse).mockResolvedValueOnce(retryResponse);
+        },
+        url: "https://example.com/poster.jpg",
+        expectedResult: {
+          ok: true,
+          status: 206,
+          contentLength: 123456,
+          width: 1920,
+          height: 1080,
+        },
+        expectedRanges: ["bytes=0-65535", "bytes=0-262143"],
+      },
+      {
+        setup: () => {
+          const { response } = createProbeResponse(WEBP_PROBE_BYTES, {
+            status: 200,
+            headers: {
+              "Content-Type": "image/webp",
+              "Content-Length": String(WEBP_PROBE_BYTES.length),
+            },
+          });
+          fetchMock.mockResolvedValueOnce(response);
+        },
+        url: "https://example.com/poster.webp",
+        expectedResult: {
+          ok: true,
           status: 200,
-        }),
-      );
-
-    const client = new NetworkClient();
-    await expect(client.getText("https://example.com/rate-limited")).resolves.toBe("ok");
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(sleepMock).toHaveBeenCalledTimes(1);
-    expect(sleepMock).toHaveBeenCalledWith(15_000);
-  });
-
-  it("does not retry 429 without Retry-After", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response("rate-limited", {
-        status: 429,
-        statusText: "Too Many Requests",
-      }),
-    );
-
-    const client = new NetworkClient();
-    await expect(client.getText("https://example.com/rate-limited")).rejects.toThrow("HTTP 429");
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(sleepMock).not.toHaveBeenCalled();
-  });
-
-  it("does not retry thrown request errors", async () => {
-    fetchMock.mockRejectedValueOnce(new Error("socket hang up"));
-
-    const client = new NetworkClient();
-    await expect(client.getText("https://example.com/unreachable")).rejects.toThrow("socket hang up");
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(sleepMock).not.toHaveBeenCalled();
-  });
-
-  it("retries retryable 5xx responses based on configured retry count", async () => {
-    fetchMock
-      .mockResolvedValueOnce(
-        new Response("temporary-down-1", {
-          status: 503,
-          statusText: "Service Unavailable",
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response("temporary-down-2", {
-          status: 503,
-          statusText: "Service Unavailable",
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response("ok", {
-          status: 200,
-        }),
-      );
-
-    const client = new NetworkClient({
-      getRetryCount: () => 2,
-    });
-    await expect(client.getText("https://example.com/transient-503")).resolves.toBe("ok");
-
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(sleepMock).toHaveBeenCalledTimes(2);
-    expect(sleepMock).toHaveBeenNthCalledWith(1, 1000);
-    expect(sleepMock).toHaveBeenNthCalledWith(2, 2000);
-  });
-
-  it("captures image dimensions from a direct ranged GET and retries with a larger JPEG probe window when needed", async () => {
-    const { response: initialResponse } = createProbeResponse(JPEG_PROBE_BYTES.subarray(0, 20), {
-      status: 206,
-      headers: {
-        "Content-Type": "image/jpeg",
-        "Content-Length": "20",
-        "Content-Range": "bytes 0-19/123456",
+          contentLength: WEBP_PROBE_BYTES.length,
+          width: 640,
+          height: 360,
+        },
+        expectedRanges: ["bytes=0-65535"],
       },
-    });
-    const { response: retryResponse } = createProbeResponse(JPEG_PROBE_BYTES, {
-      status: 206,
-      headers: {
-        "Content-Type": "image/jpeg",
-        "Content-Length": String(JPEG_PROBE_BYTES.length),
-        "Content-Range": `bytes 0-${JPEG_PROBE_BYTES.length - 1}/123456`,
-      },
-    });
-    fetchMock.mockResolvedValueOnce(initialResponse).mockResolvedValueOnce(retryResponse);
+    ];
 
-    const client = new NetworkClient();
-    await expect(client.probe("https://example.com/poster.jpg", { captureImageSize: true })).resolves.toMatchObject({
-      ok: true,
-      status: 206,
-      contentLength: 123456,
-      width: 1920,
-      height: 1080,
-    });
+    for (const { setup, url, expectedResult, expectedRanges } of cases) {
+      fetchMock.mockReset();
+      sleepMock.mockClear();
+      setup();
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("GET");
-    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("range")).toBe("bytes=0-65535");
-    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe("GET");
-    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("range")).toBe("bytes=0-262143");
-  });
+      const client = new NetworkClient();
+      await expect(client.probe(url, { captureImageSize: true })).resolves.toMatchObject(expectedResult);
 
-  it("captures image dimensions from a WebP probe response without a JPEG retry", async () => {
-    const { response } = createProbeResponse(WEBP_PROBE_BYTES, {
-      status: 200,
-      headers: {
-        "Content-Type": "image/webp",
-        "Content-Length": String(WEBP_PROBE_BYTES.length),
-      },
-    });
-    fetchMock.mockResolvedValueOnce(response);
-
-    const client = new NetworkClient();
-    await expect(client.probe("https://example.com/poster.webp", { captureImageSize: true })).resolves.toMatchObject({
-      ok: true,
-      status: 200,
-      contentLength: WEBP_PROBE_BYTES.length,
-      width: 640,
-      height: 360,
-    });
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("range")).toBe("bytes=0-65535");
+      expect(fetchMock).toHaveBeenCalledTimes(expectedRanges.length);
+      expectedRanges.forEach((range, index) => {
+        expect(fetchMock.mock.calls[index]?.[1]?.method).toBe("GET");
+        expect(new Headers(fetchMock.mock.calls[index]?.[1]?.headers).get("range")).toBe(range);
+      });
+    }
   });
 });

@@ -160,76 +160,60 @@ function buildV030Config(overrides: Record<string, unknown> = {}): Record<string
   };
 }
 
+const migrate = (raw = buildV030Config()) => {
+  const result = runMigrations(raw);
+  return {
+    raw,
+    result,
+    parsed: configurationSchema.parse(raw),
+  };
+};
+
 describe("Configuration migrations", () => {
   describe("v0.3.0 → v0.4.0", () => {
-    it("renames download.downloadCover → downloadThumb", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
+    it("renames and relocates legacy fields", () => {
+      const { raw } = migrate();
 
       const download = raw.download as Record<string, unknown>;
+      const paths = raw.paths as Record<string, unknown>;
+      const fieldPriorities = (raw.aggregation as Record<string, unknown>).fieldPriorities as Record<string, unknown>;
+
       expect(download.downloadThumb).toBe(true);
+      expect(download.keepThumb).toBe(false);
       expect(download).not.toHaveProperty("downloadCover");
-    });
-
-    it("renames download.keepCover → keepThumb", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
-
-      const download = raw.download as Record<string, unknown>;
-      expect(download.keepThumb).toBe(false); // was set to false in fixture
       expect(download).not.toHaveProperty("keepCover");
-    });
 
-    it("splits server into emby and moves actorPhotoFolder to paths", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
-
-      // server should be deleted
       expect(raw).not.toHaveProperty("server");
-
-      // emby should have server's values
-      const emby = raw.emby as Record<string, unknown>;
-      expect(emby.url).toBe("http://192.168.1.100:8096");
-      expect(emby.apiKey).toBe("my-api-key");
-      expect(emby.userId).toBe("");
-
-      // jellyfin should remain untouched so current defaults can fill it
-      expect(raw).not.toHaveProperty("jellyfin");
-
-      // actorPhotoFolder should be moved to paths
-      const paths = raw.paths as Record<string, unknown>;
-      expect(paths.actorPhotoFolder).toBe("/photos");
-    });
-
-    it("sets actorPhotoFolder to 'actor_photo' when server.actorPhotoFolder is empty", () => {
-      const raw = buildV030Config({
-        server: { url: "", apiKey: "", userId: "", actorPhotoFolder: "" },
+      expect(raw.emby).toEqual({
+        url: "http://192.168.1.100:8096",
+        apiKey: "my-api-key",
+        userId: "",
       });
-      runMigrations(raw);
+      expect(raw).not.toHaveProperty("jellyfin");
+      expect(paths.actorPhotoFolder).toBe("/photos");
 
-      const paths = raw.paths as Record<string, unknown>;
-      expect(paths.actorPhotoFolder).toBe("actor_photo");
+      expect(fieldPriorities.thumb_url).toEqual(defaultConfiguration.aggregation.fieldPriorities.thumb_url);
+      expect(fieldPriorities).not.toHaveProperty("cover_url");
     });
 
-    it("renames fieldPriorities.cover_url → thumb_url", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
-
-      const fp = (raw.aggregation as Record<string, unknown>).fieldPriorities as Record<string, unknown>;
-      expect(fp.thumb_url).toEqual(defaultConfiguration.aggregation.fieldPriorities.thumb_url);
-      expect(fp).not.toHaveProperty("cover_url");
-    });
-
-    it("changes sceneImagesFolder from 'samples' to 'extrafanart'", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
-
+    it("normalizes legacy defaults to the current defaults", () => {
+      const { raw, parsed } = migrate();
       const paths = raw.paths as Record<string, unknown>;
+      const scrape = raw.scrape as Record<string, unknown>;
+
       expect(paths.sceneImagesFolder).toBe("extrafanart");
+      expect(scrape.enabledSites).toEqual(defaultConfiguration.scrape.enabledSites);
+      expect(scrape.siteOrder).toEqual(defaultConfiguration.scrape.siteOrder);
+      expect(parsed.aggregation.fieldPriorities).toEqual(defaultConfiguration.aggregation.fieldPriorities);
     });
 
-    it("preserves custom sceneImagesFolder when not 'samples'", () => {
+    it("preserves customized values instead of resetting them", () => {
       const raw = buildV030Config({
+        scrape: {
+          enabledSites: ["dmm"],
+          siteOrder: ["dmm"],
+        },
+        server: { url: "", apiKey: "", userId: "", actorPhotoFolder: "" },
         paths: {
           mediaPath: "/media",
           softlinkPath: "softlink",
@@ -239,88 +223,56 @@ describe("Configuration migrations", () => {
           configDirectory: "config",
         },
       });
-      runMigrations(raw);
+      const fieldPriorities = (raw.aggregation as Record<string, unknown>).fieldPriorities as Record<string, string[]>;
+      fieldPriorities.title = ["javdb", "dmm"];
+      fieldPriorities.rating = ["javdb"];
 
-      const paths = raw.paths as Record<string, unknown>;
-      expect(paths.sceneImagesFolder).toBe("my_custom_folder");
-    });
+      const parsed = migrate(raw).parsed;
 
-    it("normalizes legacy enabledSites and siteOrder defaults to include avbase", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
-
-      const scrape = raw.scrape as Record<string, unknown>;
-      expect(scrape.enabledSites).toEqual(defaultConfiguration.scrape.enabledSites);
-      expect(scrape.siteOrder).toEqual(defaultConfiguration.scrape.siteOrder);
-    });
-
-    it("normalizes legacy fieldPriorities defaults to the current defaults", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
-
-      const parsed = configurationSchema.parse(raw);
-      expect(parsed.aggregation.fieldPriorities).toEqual(defaultConfiguration.aggregation.fieldPriorities);
-    });
-
-    it("preserves customized fieldPriorities arrays", () => {
-      const raw = buildV030Config();
-      const fp = (raw.aggregation as Record<string, unknown>).fieldPriorities as Record<string, string[]>;
-      fp.title = ["javdb", "dmm"];
-      fp.rating = ["javdb"];
-
-      runMigrations(raw);
-
-      const parsed = configurationSchema.parse(raw);
+      expect(parsed.scrape.enabledSites).toEqual(["dmm"]);
+      expect(parsed.scrape.siteOrder).toEqual(["dmm"]);
+      expect(parsed.paths.sceneImagesFolder).toBe("my_custom_folder");
+      expect(parsed.paths.actorPhotoFolder).toBe("actor_photo");
       expect(parsed.aggregation.fieldPriorities.title).toEqual(["javdb", "dmm"]);
       expect(parsed.aggregation.fieldPriorities.rating).toEqual(["javdb"]);
     });
 
-    it("preserves customized enabledSites and siteOrder", () => {
-      const raw = buildV030Config();
-      (raw.scrape as Record<string, unknown>).enabledSites = ["dmm"];
-      (raw.scrape as Record<string, unknown>).siteOrder = ["dmm"];
-      runMigrations(raw);
-
-      const scrape = raw.scrape as Record<string, unknown>;
-      expect(scrape.enabledSites).toEqual(["dmm"]);
-      expect(scrape.siteOrder).toEqual(["dmm"]);
-    });
-
-    it("fixes folderTemplate when successFileMove is enabled and {number} is missing", () => {
-      const raw = buildV030Config({
-        naming: {
-          folderTemplate: "{actor}",
-          fileTemplate: "{number}",
+    it("updates folderTemplate only when successFileMove requires {number}", () => {
+      const cases = [
+        {
+          raw: buildV030Config({
+            naming: {
+              folderTemplate: "{actor}",
+              fileTemplate: "{number}",
+            },
+          }),
+          expected: "{actor}/{number}",
         },
-      });
-
-      runMigrations(raw);
-
-      expect((raw.naming as Record<string, unknown>).folderTemplate).toBe("{actor}/{number}");
-    });
-
-    it("preserves folderTemplate when successFileMove is disabled", () => {
-      const raw = buildV030Config({
-        naming: {
-          folderTemplate: "{actor}",
-          fileTemplate: "{number}",
+        {
+          raw: buildV030Config({
+            naming: {
+              folderTemplate: "{actor}",
+              fileTemplate: "{number}",
+            },
+            behavior: {
+              successFileMove: false,
+            },
+          }),
+          expected: "{actor}",
         },
-        behavior: {
-          successFileMove: false,
-        },
-      });
+      ];
 
-      runMigrations(raw);
-
-      expect((raw.naming as Record<string, unknown>).folderTemplate).toBe("{actor}");
+      for (const { raw, expected } of cases) {
+        migrate(raw);
+        expect((raw.naming as Record<string, unknown>).folderTemplate).toBe(expected);
+      }
     });
   });
 
   describe("migrator behavior", () => {
     it("skips migration for current version", () => {
       const raw = buildV030Config();
-      raw.configVersion = 1; // already at latest
-      // Remove v0.3.0 fields that won't exist after migrating to v0.4.0
+      raw.configVersion = 1;
       delete (raw.download as Record<string, unknown>).downloadCover;
       delete (raw.download as Record<string, unknown>).keepCover;
       delete raw.server;
@@ -329,25 +281,25 @@ describe("Configuration migrations", () => {
       raw.emby = { url: "http://192.168.1.100:8096", apiKey: "my-api-key", userId: "" };
 
       const result = runMigrations(raw);
-      expect(result.migrated).toBe(false);
-      expect(result.applied).toHaveLength(0);
+
+      expect(result).toEqual({
+        migrated: false,
+        fromVersion: 1,
+        toVersion: 1,
+        applied: [],
+      });
     });
 
-    it("stamps configVersion after migration", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
+    it("stamps configVersion and returns migration metadata", () => {
+      const { raw, result } = migrate();
 
       expect(raw.configVersion).toBe(1);
-    });
-
-    it("returns migration metadata", () => {
-      const raw = buildV030Config();
-      const result = runMigrations(raw);
-
-      expect(result.migrated).toBe(true);
-      expect(result.fromVersion).toBe(0);
-      expect(result.toVersion).toBe(1);
-      expect(result.applied).toEqual(["v0.3.0 → v0.4.0"]);
+      expect(result).toEqual({
+        migrated: true,
+        fromVersion: 0,
+        toVersion: 1,
+        applied: ["v0.3.0 → v0.4.0"],
+      });
     });
 
     it("rejects config versions newer than the current app supports", () => {
@@ -359,11 +311,8 @@ describe("Configuration migrations", () => {
     });
 
     it("migrated v0.3.0 config passes Zod schema validation", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
-
-      const parsed = configurationSchema.safeParse(raw);
-      expect(parsed.success).toBe(true);
+      const { raw } = migrate();
+      expect(configurationSchema.safeParse(raw).success).toBe(true);
     });
   });
 });

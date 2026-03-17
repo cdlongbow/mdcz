@@ -2,14 +2,14 @@ import { getProperty, isRecord, isString, setProperty, toArray, toErrorMessage }
 import { describe, expect, it } from "vitest";
 
 describe("toErrorMessage", () => {
-  it("extracts message from Error", () => {
-    expect(toErrorMessage(new Error("boom"))).toBe("boom");
-  });
-
-  it("summarizes impit connect errors from upstream ConnectError messages", () => {
-    expect(
-      toErrorMessage(
-        new Error(`ConnectError: Failed to connect to the server.
+  it("covers native, impit, string, and primitive errors", () => {
+    const cases = [
+      {
+        input: new Error("boom"),
+        expected: "boom",
+      },
+      {
+        input: new Error(`ConnectError: Failed to connect to the server.
 Reason: hyper_util::client::legacy::Error(
     Connect,
     Custom {
@@ -20,95 +20,125 @@ Reason: hyper_util::client::legacy::Error(
         },
     },
 )`),
-      ),
-    ).toBe("ConnectError: tls handshake eof");
-  });
-
-  it("summarizes impit connect errors when wrapped with an impit prefix", () => {
-    expect(
-      toErrorMessage(`impit error: Failed to connect to the server.
+        expected: "ConnectError: tls handshake eof",
+      },
+      {
+        input: `impit error: Failed to connect to the server.
 Reason: Custom {
     message: "Operation not permitted",
-}`),
-    ).toBe("ConnectError: Operation not permitted");
-  });
+}`,
+        expected: "ConnectError: Operation not permitted",
+      },
+      {
+        input: "just a string",
+        expected: "just a string",
+      },
+      {
+        input: 42,
+        expected: "42",
+      },
+      {
+        input: null,
+        expected: "null",
+      },
+    ];
 
-  it("returns string errors directly", () => {
-    expect(toErrorMessage("just a string")).toBe("just a string");
-  });
-
-  it("converts other types to string", () => {
-    expect(toErrorMessage(42)).toBe("42");
-    expect(toErrorMessage(null)).toBe("null");
+    for (const { input, expected } of cases) {
+      expect(toErrorMessage(input)).toBe(expected);
+    }
   });
 });
 
 describe("toArray", () => {
-  it("returns empty array for undefined", () => {
-    expect(toArray(undefined)).toEqual([]);
-  });
+  it("normalizes undefined, arrays, and singleton values", () => {
+    const cases = [
+      { input: undefined, expected: [] },
+      { input: [1, 2], expected: [1, 2] },
+      { input: "hello", expected: ["hello"] },
+    ];
 
-  it("returns array as-is", () => {
-    expect(toArray([1, 2])).toEqual([1, 2]);
-  });
-
-  it("wraps single value in array", () => {
-    expect(toArray("hello")).toEqual(["hello"]);
-  });
-});
-
-describe("isRecord", () => {
-  it("returns true for plain objects", () => {
-    expect(isRecord({})).toBe(true);
-    expect(isRecord({ a: 1 })).toBe(true);
-  });
-
-  it("returns false for non-objects", () => {
-    expect(isRecord(null)).toBe(false);
-    expect(isRecord([])).toBe(false);
-    expect(isRecord("string")).toBe(false);
+    for (const { input, expected } of cases) {
+      expect(toArray(input)).toEqual(expected);
+    }
   });
 });
 
-describe("isString", () => {
-  it("isString detects strings", () => {
-    expect(isString("")).toBe(true);
-    expect(isString("hello")).toBe(true);
-    expect(isString(42)).toBe(false);
-    expect(isString(null)).toBe(false);
+describe("type guards", () => {
+  it("distinguishes plain objects and strings from unsupported values", () => {
+    const cases = [
+      { guard: isRecord, input: [{}, { a: 1 }], expected: true },
+      { guard: isRecord, input: [null, [], "string"], expected: false },
+      { guard: isString, input: ["", "hello"], expected: true },
+      { guard: isString, input: [42, null], expected: false },
+    ];
+
+    for (const { guard, input, expected } of cases) {
+      for (const value of input) {
+        expect(guard(value)).toBe(expected);
+      }
+    }
   });
 });
 
 describe("getProperty", () => {
-  it("reads nested paths", () => {
-    expect(getProperty({ a: { b: { c: 42 } } }, "a.b.c")).toBe(42);
-  });
+  it("reads nested values and falls back when the path is missing or invalid", () => {
+    const cases = [
+      {
+        input: { a: { b: { c: 42 } } },
+        path: "a.b.c",
+        defaultValue: undefined,
+        expected: 42,
+      },
+      {
+        input: { a: 1 },
+        path: "b.c",
+        defaultValue: "fallback",
+        expected: "fallback",
+      },
+      {
+        input: null,
+        path: "a",
+        defaultValue: "default",
+        expected: "default",
+      },
+    ];
 
-  it("returns defaultValue for missing paths", () => {
-    expect(getProperty({ a: 1 }, "b.c", "fallback")).toBe("fallback");
-  });
-
-  it("returns defaultValue for non-objects", () => {
-    expect(getProperty(null, "a", "default")).toBe("default");
+    for (const { input, path, defaultValue, expected } of cases) {
+      expect(getProperty(input, path, defaultValue)).toBe(expected);
+    }
   });
 });
 
 describe("setProperty", () => {
-  it("sets a nested property, creating intermediates", () => {
-    const obj: Record<string, unknown> = {};
-    setProperty(obj, "a.b.c", 42);
-    expect(getProperty(obj, "a.b.c")).toBe(42);
-  });
+  it("creates and overwrites nested paths as needed", () => {
+    const cases = [
+      {
+        initial: {},
+        path: "a.b.c",
+        value: 42,
+        expectedPath: "a.b.c",
+        expected: 42,
+      },
+      {
+        initial: { a: { b: 1 } },
+        path: "a.b",
+        value: 2,
+        expectedPath: "a.b",
+        expected: 2,
+      },
+      {
+        initial: { a: "not an object" },
+        path: "a.b",
+        value: 3,
+        expectedPath: "a.b",
+        expected: 3,
+      },
+    ];
 
-  it("overwrites existing values", () => {
-    const obj: Record<string, unknown> = { a: { b: 1 } };
-    setProperty(obj, "a.b", 2);
-    expect(getProperty(obj, "a.b")).toBe(2);
-  });
-
-  it("creates intermediate objects when path crosses non-objects", () => {
-    const obj: Record<string, unknown> = { a: "not an object" };
-    setProperty(obj, "a.b", 3);
-    expect(getProperty(obj, "a.b")).toBe(3);
+    for (const { initial, path, value, expectedPath, expected } of cases) {
+      const obj = structuredClone(initial) as Record<string, unknown>;
+      setProperty(obj, path, value);
+      expect(getProperty(obj, expectedPath)).toBe(expected);
+    }
   });
 });
