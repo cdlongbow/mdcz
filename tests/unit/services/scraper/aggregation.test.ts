@@ -153,6 +153,8 @@ describe("FieldAggregator", () => {
       const { data, imageAlternatives, sources } = aggregator.aggregate(results);
       expect(data.sample_images).toEqual(["https://a.jpg", "https://b.jpg"]);
       expect(imageAlternatives.sample_images).toEqual([["https://b.jpg", "https://c.jpg"]]);
+      expect(imageAlternatives.sample_images_source).toBe(Website.DMM);
+      expect(imageAlternatives.sample_image_sources).toEqual([Website.JAVDB]);
       expect(sources.sample_images).toBe(Website.DMM);
     });
 

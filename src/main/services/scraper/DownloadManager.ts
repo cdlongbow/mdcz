@@ -12,6 +12,7 @@ import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient, ProbeResult } from "@main/services/network";
 import { pathExists } from "@main/utils/file";
 import { validateImage } from "@main/utils/image";
+import type { Website } from "@shared/enums";
 import type { CrawlerData, DownloadedAssets, MaintenanceAssetDecisions } from "@shared/types";
 import { isAbortError, throwIfAborted } from "./abort";
 import type { ImageAlternatives } from "./aggregation";
@@ -81,6 +82,7 @@ type ParallelResult<K extends string, TValue> = { key: K; path: string; success:
 type ProbedImageCandidate = ProbeResult & { index: number; url: string };
 type ProbedImageCandidateWithDimensions = ProbedImageCandidate & { width: number; height: number };
 type SceneImageCandidate = { index: number; url: string; host: string | null };
+type SceneImageSet = { urls: string[]; source?: Website };
 type ImageDownloadSkipReason = "host_cooldown" | "download_failed" | "invalid_image";
 type SafeDownloadResult =
   | { status: "downloaded"; path: string }
@@ -150,14 +152,25 @@ const getSceneImageSets = (
   data: CrawlerData,
   imageAlternatives: Partial<ImageAlternatives>,
   maxSceneImages: number,
-): string[][] => {
+): SceneImageSet[] => {
   if (maxSceneImages <= 0) {
     return [];
   }
 
   const seenSets = new Set<string>();
-  const sets: string[][] = [];
-  for (const values of [data.sample_images, ...(imageAlternatives.sample_images ?? [])]) {
+  const sets: SceneImageSet[] = [];
+  const candidates: SceneImageSet[] = [
+    {
+      urls: data.sample_images,
+      source: imageAlternatives.sample_images_source,
+    },
+    ...(imageAlternatives.sample_images ?? []).map((urls, index) => ({
+      urls,
+      source: imageAlternatives.sample_image_sources?.[index],
+    })),
+  ];
+  for (const candidate of candidates) {
+    const values = candidate.urls;
     const urls = getNormalizedSceneImageUrls(Array.isArray(values) ? values : []).slice(0, maxSceneImages);
     if (urls.length === 0) {
       continue;
@@ -169,7 +182,10 @@ const getSceneImageSets = (
     }
 
     seenSets.add(signature);
-    sets.push(urls);
+    sets.push({
+      urls,
+      source: candidate.source,
+    });
   }
 
   return sets;
@@ -181,6 +197,16 @@ const getUrlHost = (url: string): string | null => {
   } catch {
     return null;
   }
+};
+
+const formatSceneImageSetDetails = (sceneImageSet: SceneImageSet): string => {
+  const hosts = Array.from(
+    new Set(sceneImageSet.urls.map((url) => getUrlHost(url)).filter((host): host is string => Boolean(host))),
+  );
+  const source = sceneImageSet.source ?? "unknown";
+  const firstHost = hosts[0] ?? "unknown";
+  const hostDetail = hosts.length <= 1 ? firstHost : `${firstHost}; ${hosts.length} hosts`;
+  return `source=${source}, firstHost=${hostDetail}`;
 };
 
 const parseHttpStatus = (message?: string): number | null => {
@@ -477,7 +503,7 @@ export class DownloadManager {
   private async downloadSceneImageSets(
     outputDir: string,
     sceneFolder: string,
-    sceneImageSets: string[][],
+    sceneImageSets: SceneImageSet[],
     targetSceneCount: number,
     maxConcurrent: number,
     dedupeAgainstPaths: string[],
@@ -489,17 +515,19 @@ export class DownloadManager {
 
     let bestPaths: DownloadedSceneImage[] = [];
 
-    for (const [setIndex, urls] of sceneImageSets.entries()) {
+    for (const [setIndex, sceneImageSet] of sceneImageSets.entries()) {
       throwIfAborted(callbacks?.signal);
+      const urls = sceneImageSet.urls;
+      const setDetails = formatSceneImageSetDetails(sceneImageSet);
       const attemptedUrls = this.filterSceneImageUrlsByHostCooldown(urls.slice(0, targetSceneCount));
       if (attemptedUrls.length === 0) {
         this.logger.info(
-          `Skipping scene image set ${setIndex + 1}/${sceneImageSets.length}: all image hosts are cooling down`,
+          `Skipping scene image set ${setIndex + 1}/${sceneImageSets.length} (${setDetails}): all image hosts are cooling down`,
         );
         continue;
       }
       this.logger.info(
-        `Trying scene image set ${setIndex + 1}/${sceneImageSets.length} with ${attemptedUrls.length} image(s)`,
+        `Trying scene image set ${setIndex + 1}/${sceneImageSets.length} (${setDetails}) with ${attemptedUrls.length} image(s)`,
       );
 
       const downloadedPaths = await this.downloadSceneImageSet(
@@ -525,7 +553,7 @@ export class DownloadManager {
 
       callbacks?.onSceneProgress?.(0, attemptedUrls.length);
       this.logger.info(
-        `Scene image set ${setIndex + 1}/${sceneImageSets.length} incomplete (${downloadedPaths.length}/${attemptedUrls.length}); trying next set`,
+        `Scene image set ${setIndex + 1}/${sceneImageSets.length} (${setDetails}) incomplete (${downloadedPaths.length}/${attemptedUrls.length}); trying next set`,
       );
     }
 

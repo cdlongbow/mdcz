@@ -8,6 +8,8 @@ export interface ImageAlternatives {
   thumb_url: string[];
   poster_url: string[];
   sample_images: string[][];
+  sample_images_source?: Website;
+  sample_image_sources?: Website[];
 }
 
 /** Result of aggregating crawler data from multiple sources. */

@@ -23,6 +23,10 @@ const normalizeUrl = (input?: string): string | null => {
 const cloneSampleImageAlternatives = (sets: ImageAlternatives["sample_images"] | undefined): string[][] =>
   (sets ?? []).map((urls) => [...urls]);
 
+const cloneSampleImageAlternativeSources = (
+  sources: ImageAlternatives["sample_image_sources"] | undefined,
+): Website[] => [...(sources ?? [])];
+
 const expandDmmPrimaryImageAlternatives = (
   primaryUrl: string | undefined,
   alternatives: string[] | undefined,
@@ -76,12 +80,14 @@ const isDmmPrimaryImageSource = (
 export const prepareImageAlternativesForDownload = (
   data: Pick<CrawlerData, "number" | "website" | "thumb_url" | "poster_url">,
   imageAlternatives: Partial<ImageAlternatives> = {},
-  sources?: Pick<SourceMap, "thumb_url" | "poster_url">,
+  sources?: Pick<SourceMap, "thumb_url" | "poster_url" | "sample_images">,
 ): Partial<ImageAlternatives> => {
   const prepared: Partial<ImageAlternatives> = {
     thumb_url: [...(imageAlternatives.thumb_url ?? [])],
     poster_url: [...(imageAlternatives.poster_url ?? [])],
     sample_images: cloneSampleImageAlternatives(imageAlternatives.sample_images),
+    sample_images_source: imageAlternatives.sample_images_source ?? sources?.sample_images,
+    sample_image_sources: cloneSampleImageAlternativeSources(imageAlternatives.sample_image_sources),
   };
 
   return {

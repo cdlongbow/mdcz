@@ -31,12 +31,14 @@ type ResolvedField = {
   source?: Website;
   alternatives?: string[];
   sampleImageAlternatives?: string[][];
+  sampleImageAlternativeSources?: Website[];
 };
 
 const EMPTY_IMAGE_ALTERNATIVES: ImageAlternatives = {
   thumb_url: [],
   poster_url: [],
   sample_images: [],
+  sample_image_sources: [],
 };
 
 type PrimaryImageAlternativeField = "thumb_url" | "poster_url";
@@ -84,6 +86,8 @@ export class FieldAggregator {
         imageAlternatives[field] = result.alternatives ?? [];
       } else if (field === "sample_images") {
         imageAlternatives.sample_images = result.sampleImageAlternatives ?? [];
+        imageAlternatives.sample_images_source = result.source;
+        imageAlternatives.sample_image_sources = result.sampleImageAlternativeSources ?? [];
       }
       if (result.value !== undefined && result.value !== null) {
         sources[field] = result.source;
@@ -198,6 +202,7 @@ export class FieldAggregator {
 
   private firstNonEmptySampleImages(entries: SourceEntry[]): ResolvedField {
     const alternatives: string[][] = [];
+    const alternativeSources: Website[] = [];
     const seenSets = new Set<string>();
     let winner: string[] | undefined;
     let source: Website | undefined;
@@ -222,12 +227,14 @@ export class FieldAggregator {
 
       seenSets.add(signature);
       alternatives.push(urls);
+      alternativeSources.push(entry.site);
     }
 
     return {
       value: winner,
       source,
       sampleImageAlternatives: alternatives,
+      sampleImageAlternativeSources: alternativeSources,
     };
   }
 
