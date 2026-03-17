@@ -69,17 +69,41 @@ const resolveUrl = (baseUrl: string, value: string | undefined): string | undefi
   return new URL(normalized, baseUrl).toString();
 };
 
+interface HtmlLoadResult {
+  html: string;
+  warnings: string[];
+}
+
+const isChallengePage = (html: string): boolean => {
+  return (
+    html.includes("少々お待ちください") &&
+    (html.includes("リクエストが確認されるまでお待ちください") || html.includes("wsidchk"))
+  );
+};
+
 const getHtml = async (
   networkClient: NetworkClient,
   url: string,
   headers: Record<string, string> = {},
-): Promise<string> => {
-  return networkClient.getText(url, {
+): Promise<HtmlLoadResult> => {
+  const html = await networkClient.getText(url, {
     headers: {
       ...DEFAULT_AVJOHO_HEADERS,
       ...headers,
     },
   });
+
+  if (!isChallengePage(html)) {
+    return {
+      html,
+      warnings: [],
+    };
+  }
+
+  return {
+    html,
+    warnings: [`AVJOHO returned a browser challenge page for ${url}`],
+  };
 };
 
 const readProfileFields = (html: string): Map<string, string> => {
@@ -139,8 +163,8 @@ const findDetailUrl = async (
   networkClient: NetworkClient,
   baseUrl: string,
   queryName: string,
-): Promise<string | undefined> => {
-  const html = await getHtml(networkClient, buildUrl(baseUrl, "/", { s: queryName }));
+): Promise<{ detailUrl?: string; warnings: string[] }> => {
+  const { html, warnings } = await getHtml(networkClient, buildUrl(baseUrl, "/", { s: queryName }));
   const $ = load(html);
   let detailUrl: string | undefined;
 
@@ -160,7 +184,10 @@ const findDetailUrl = async (
     }
   });
 
-  return detailUrl;
+  return {
+    detailUrl,
+    warnings,
+  };
 };
 
 const parseDetailProfile = (baseUrl: string, html: string) => {
@@ -219,13 +246,19 @@ export class AvjohoActorSource implements BaseActorSource {
 
   async lookup(_configuration: Configuration, query: ActorLookupQuery): Promise<ActorSourceResult> {
     try {
+      const warnings: string[] = [];
+
       for (const searchName of toUniqueActorNames([query.name, ...(query.aliases ?? [])], normalizeText)) {
-        const detailUrl = await findDetailUrl(this.deps.networkClient, this.baseUrl, searchName);
+        const searchResult = await findDetailUrl(this.deps.networkClient, this.baseUrl, searchName);
+        warnings.push(...searchResult.warnings);
+        const detailUrl = searchResult.detailUrl;
         if (!detailUrl) {
           continue;
         }
 
-        const detailHtml = await getHtml(this.deps.networkClient, detailUrl);
+        const detailResult = await getHtml(this.deps.networkClient, detailUrl);
+        warnings.push(...detailResult.warnings);
+        const detailHtml = detailResult.html;
         const profile = parseDetailProfile(this.baseUrl, detailHtml);
         if (!profile) {
           continue;
@@ -248,7 +281,7 @@ export class AvjohoActorSource implements BaseActorSource {
             cup_size: profile.cup_size,
             photo_url: profile.photo_url,
           },
-          warnings: [],
+          warnings,
           sourceHints: profile.sourceHints,
         };
       }
@@ -256,7 +289,7 @@ export class AvjohoActorSource implements BaseActorSource {
       return {
         source: this.name,
         success: true,
-        warnings: [],
+        warnings,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -116,15 +116,15 @@ const getMetaSocials = (meta: unknown): AvbaseTalentSocial[] => {
 };
 
 const buildDescription = (profile: unknown, meta: unknown): string | undefined => {
-  const parts: string[] = [];
+  const sections: string[] = [];
   const profileText = toNonEmptyString(profile);
   if (profileText) {
-    parts.push(profileText);
+    sections.push(profileText);
   }
 
   const hobby = getMetaString(meta, ["basic_info.hobby", "hobby"]);
   if (hobby) {
-    parts.push(`趣味: ${hobby}`);
+    sections.push(`趣味: ${hobby}`);
   }
 
   const socials = getMetaSocials(meta)
@@ -135,12 +135,12 @@ const buildDescription = (profile: unknown, meta: unknown): string | undefined =
     })
     .filter((entry): entry is string => Boolean(entry));
   if (socials.length > 0) {
-    parts.push(`SNS: ${socials.join(", ")}`);
+    sections.push(`SNS:\n${socials.join("\n")}`);
   }
 
   const wikipedia = getMetaString(meta, ["wikipedia"]);
   if (wikipedia) {
-    parts.push(`Wikipedia: ${wikipedia}`);
+    sections.push(`Wikipedia: ${wikipedia}`);
   }
 
   if (isRecord(meta)) {
@@ -151,12 +151,12 @@ const buildDescription = (profile: unknown, meta: unknown): string | undefined =
 
       const normalized = toNonEmptyString(value);
       if (normalized) {
-        parts.push(`${key}: ${normalized}`);
+        sections.push(`${key}: ${normalized}`);
       }
     }
   }
 
-  return parts.length > 0 ? parts.join("\n") : undefined;
+  return sections.length > 0 ? sections.join("\n\n") : undefined;
 };
 
 const pickActorPhoto = (baseUrl: string, actors: AvbaseTalentActor[]): string | undefined => {
