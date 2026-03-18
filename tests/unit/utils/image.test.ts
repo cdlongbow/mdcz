@@ -2,58 +2,96 @@ import { describe, expect, it } from "vitest";
 import { buildImageSourceCandidates, getImageSrc, normalizeImageSourcePath } from "@/utils/image";
 
 describe("image utils", () => {
-  it("prefers remote source and keeps local fallback", () => {
-    const result = buildImageSourceCandidates({
-      remotePath: "https://img.example.com/poster.jpg",
-      outputPath: "/tmp/out",
-      fileName: "poster.jpg",
-    });
+  it("builds remote, sibling-local, and empty image source candidates", () => {
+    const cases = [
+      {
+        input: {
+          remotePath: "https://img.example.com/poster.jpg",
+          outputPath: "/tmp/out",
+          fileName: "poster.jpg",
+        },
+        expected: {
+          primary: "https://img.example.com/poster.jpg",
+          fallback: "/tmp/out/poster.jpg",
+        },
+      },
+      {
+        input: {
+          filePath: "D:\\videos\\MIDE-001.mp4",
+          fileName: "thumb.jpg",
+        },
+        expected: {
+          primary: "D:\\videos\\thumb.jpg",
+          fallback: "D:\\videos\\thumb.jpg",
+        },
+      },
+      {
+        input: {
+          fileName: "poster.jpg",
+        },
+        expected: {
+          primary: "",
+          fallback: "",
+        },
+      },
+    ];
 
-    expect(result.primary).toBe("https://img.example.com/poster.jpg");
-    expect(result.fallback).toBe("/tmp/out/poster.jpg");
+    for (const { input, expected } of cases) {
+      expect(buildImageSourceCandidates(input)).toEqual(expected);
+    }
   });
 
-  it("builds sibling fallback when output path is missing", () => {
-    const result = buildImageSourceCandidates({
-      filePath: "D:\\videos\\MIDE-001.mp4",
-      fileName: "thumb.jpg",
-    });
+  it("normalizes wrapped local image paths from file and crop endpoints", () => {
+    const cases = [
+      {
+        input: "http://localhost/api/v1/files/image?path=%2Ftmp%2Fcovers%2Fposter.jpg",
+        expected: "/tmp/covers/poster.jpg",
+      },
+      {
+        input: "http://localhost/api/v1/crop/image?path=%2Ftmp%2Fcovers%2Fposter%201.jpg",
+        expected: "/tmp/covers/poster 1.jpg",
+      },
+    ];
 
-    expect(result.primary).toBe("D:\\videos\\thumb.jpg");
-    expect(result.fallback).toBe("D:\\videos\\thumb.jpg");
+    for (const { input, expected } of cases) {
+      expect(normalizeImageSourcePath(input)).toBe(expected);
+    }
   });
 
-  it("extracts local path from file-api wrapper url", () => {
-    const wrapped = "http://localhost/api/v1/files/image?path=%2Ftmp%2Fcovers%2Fposter.jpg";
+  it("keeps supported remote sources and converts local paths to local-file urls", () => {
+    const cases = [
+      {
+        input: "https://img.example.com/thumb.jpg",
+        expected: "https://img.example.com/thumb.jpg",
+      },
+      {
+        input: "data:image/png;base64,AAAA",
+        expected: "data:image/png;base64,AAAA",
+      },
+      {
+        input: "blob:https://localhost/abc",
+        expected: "blob:https://localhost/abc",
+      },
+      {
+        input: "C:\\covers\\poster.jpg",
+        expected: "local-file:///C:/covers/poster.jpg",
+      },
+      {
+        input: "/home/user/covers/poster.jpg",
+        expected: "local-file:///home/user/covers/poster.jpg",
+      },
+      {
+        input: "javascript:void(0)",
+        expected: "",
+      },
+      {
+        input: "about:blank",
+        expected: "",
+      },
+    ];
 
-    expect(normalizeImageSourcePath(wrapped)).toBe("/tmp/covers/poster.jpg");
-  });
-
-  it("extracts and decodes local path from crop wrapper url", () => {
-    const wrapped = "http://localhost/api/v1/crop/image?path=%2Ftmp%2Fcovers%2Fposter%201.jpg";
-
-    expect(normalizeImageSourcePath(wrapped)).toBe("/tmp/covers/poster 1.jpg");
-  });
-
-  it("returns empty candidates when no remote or local source exists", () => {
-    const result = buildImageSourceCandidates({
-      fileName: "poster.jpg",
-    });
-
-    expect(result.primary).toBe("");
-    expect(result.fallback).toBe("");
-  });
-
-  it("keeps remote urls unchanged and converts local paths to local-file urls", () => {
-    expect(getImageSrc("https://img.example.com/thumb.jpg")).toBe("https://img.example.com/thumb.jpg");
-    expect(getImageSrc("data:image/png;base64,AAAA")).toBe("data:image/png;base64,AAAA");
-    expect(getImageSrc("blob:https://localhost/abc")).toBe("blob:https://localhost/abc");
-    expect(getImageSrc("C:\\covers\\poster.jpg")).toBe("local-file:///C:/covers/poster.jpg");
-    expect(getImageSrc("/home/user/covers/poster.jpg")).toBe("local-file:///home/user/covers/poster.jpg");
-  });
-
-  it("drops unsupported explicit schemes instead of treating them as file paths", () => {
-    expect(getImageSrc("javascript:void(0)")).toBe("");
-    expect(getImageSrc("about:blank")).toBe("");
+    for (const { input, expected } of cases) {
+      expect(getImageSrc(input)).toBe(expected);
+    }
   });
 });

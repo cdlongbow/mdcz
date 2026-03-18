@@ -5,79 +5,69 @@ import { describe, expect, it } from "vitest";
 import { FixtureNetworkClient, withGateway } from "./fixtures";
 
 describe("DmmTvCrawler", () => {
-  it("prefers 1-prefixed detail id for non-prefixed numbers", async () => {
-    const number = "STARS-804";
-    const preferredDetailUrl = "https://video.dmm.co.jp/av/content/?id=1stars00804";
+  it("resolves detail ids for prefixed and non-prefixed numbers", async () => {
+    const cases = [
+      {
+        number: "STARS-804",
+        detailUrl: "https://video.dmm.co.jp/av/content/?id=1stars00804",
+        detailHtml: `
+          <html><body>
+            <h1 id="title"><span>DMM TV STARS Preferred</span></h1>
+            <table>
+              <tr><th>出演者</th><td><a>Actor Preferred</a></td></tr>
+              <tr><th>ジャンル</th><td><a>Tag Preferred</a></td></tr>
+            </table>
+          </body></html>
+        `,
+        assert: (response: Awaited<ReturnType<DmmTvCrawler["crawl"]>>, networkClient: FixtureNetworkClient) => {
+          if (!response.result.success) {
+            throw new Error("expected success");
+          }
+          const detailRequests = networkClient.requests
+            .map((request) => request.url)
+            .filter((url) => url.includes("video.dmm.co.jp/av/content/?id="));
+          expect(detailRequests[0]).toBe("https://video.dmm.co.jp/av/content/?id=1stars00804");
+        },
+      },
+      {
+        number: "1STARS-804",
+        detailUrl: "https://video.dmm.co.jp/av/content/?id=1stars00804",
+        detailHtml: `
+          <html><body>
+            <h1 id="title"><span>DMM TV STARS</span></h1>
+            <table>
+              <tr><th>出演者</th><td><a>Actor STARS</a></td></tr>
+              <tr><th>ジャンル</th><td><a>Tag STARS</a></td></tr>
+            </table>
+          </body></html>
+        `,
+        assert: (response: Awaited<ReturnType<DmmTvCrawler["crawl"]>>, networkClient: FixtureNetworkClient) => {
+          if (!response.result.success) {
+            throw new Error("expected success");
+          }
+          expect(response.result.data.title).toBe("DMM TV STARS");
+          expect(response.result.data.actors).toEqual(["Actor STARS"]);
+          expect(response.result.data.genres).toEqual(["Tag STARS"]);
+          const detailRequest = networkClient.requests.find(
+            (request) => request.url === "https://video.dmm.co.jp/av/content/?id=1stars00804",
+          );
+          expect(detailRequest?.headers.get("accept-language")).toBe("ja-JP,ja;q=0.9");
+        },
+      },
+    ];
 
-    const fixtures = new Map<string, unknown>([
-      [
-        preferredDetailUrl,
-        `<html><body>
-          <h1 id="title"><span>DMM TV STARS Preferred</span></h1>
-          <table>
-            <tr><th>出演者</th><td><a>Actor Preferred</a></td></tr>
-            <tr><th>ジャンル</th><td><a>Tag Preferred</a></td></tr>
-          </table>
-        </body></html>`,
-      ],
-    ]);
+    for (const { number, detailUrl, detailHtml, assert } of cases) {
+      const networkClient = new FixtureNetworkClient(new Map<string, unknown>([[detailUrl, detailHtml]]));
+      const crawler = new DmmTvCrawler(withGateway(networkClient));
 
-    const networkClient = new FixtureNetworkClient(fixtures);
-    const crawler = new DmmTvCrawler(withGateway(networkClient));
+      const response = await crawler.crawl({
+        number,
+        site: Website.DMM_TV,
+      });
 
-    const response = await crawler.crawl({
-      number,
-      site: Website.DMM_TV,
-    });
-
-    expect(response.result.success).toBe(true);
-    if (!response.result.success) {
-      throw new Error("expected success");
+      expect(response.result.success).toBe(true);
+      assert(response, networkClient);
     }
-
-    const detailRequests = networkClient.requests
-      .map((request) => request.url)
-      .filter((url) => url.includes("video.dmm.co.jp/av/content/?id="));
-    expect(detailRequests[0]).toBe(preferredDetailUrl);
-  });
-
-  it("normalizes leading-digit prefixes and falls back to padded video id", async () => {
-    const number = "1STARS-804";
-    const detailUrl = "https://video.dmm.co.jp/av/content/?id=1stars00804";
-
-    const fixtures = new Map<string, unknown>([
-      [
-        detailUrl,
-        `<html><body>
-          <h1 id="title"><span>DMM TV STARS</span></h1>
-          <table>
-            <tr><th>出演者</th><td><a>Actor STARS</a></td></tr>
-            <tr><th>ジャンル</th><td><a>Tag STARS</a></td></tr>
-          </table>
-        </body></html>`,
-      ],
-    ]);
-
-    const networkClient = new FixtureNetworkClient(fixtures);
-
-    const crawler = new DmmTvCrawler(withGateway(networkClient));
-
-    const response = await crawler.crawl({
-      number,
-      site: Website.DMM_TV,
-    });
-
-    expect(response.result.success).toBe(true);
-    if (!response.result.success) {
-      throw new Error("expected success");
-    }
-
-    expect(response.result.data.title).toBe("DMM TV STARS");
-    expect(response.result.data.actors).toEqual(["Actor STARS"]);
-    expect(response.result.data.genres).toEqual(["Tag STARS"]);
-
-    const dmmTvDetailRequest = networkClient.requests.find((request) => request.url === detailUrl);
-    expect(dmmTvDetailRequest?.headers.get("accept-language")).toBe("ja-JP,ja;q=0.9");
   });
 
   it("classifies login-wall detail pages", async () => {

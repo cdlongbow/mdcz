@@ -2,31 +2,34 @@ import { normalizeCode, normalizeText } from "@main/utils/normalization";
 import { describe, expect, it } from "vitest";
 
 describe("normalizeCode", () => {
-  it("returns empty string for null/undefined/empty", () => {
-    expect(normalizeCode(null)).toBe("");
-    expect(normalizeCode(undefined)).toBe("");
-    expect(normalizeCode("")).toBe("");
-  });
+  it("normalizes empty, separated, and repeated-separator code inputs", () => {
+    const cases = [
+      { input: null, expected: "" },
+      { input: undefined, expected: "" },
+      { input: "", expected: "" },
+      { input: "abc-123", expected: "ABC123" },
+      { input: "  abc_def  ", expected: "ABCDEF" },
+      { input: "ABC 123", expected: "ABC123" },
+      { input: "a--b__c  d", expected: "ABCD" },
+    ];
 
-  it("removes separators and uppercases", () => {
-    expect(normalizeCode("abc-123")).toBe("ABC123");
-    expect(normalizeCode("  abc_def  ")).toBe("ABCDEF");
-    expect(normalizeCode("ABC 123")).toBe("ABC123");
-  });
-
-  it("handles multiple consecutive separators", () => {
-    expect(normalizeCode("a--b__c  d")).toBe("ABCD");
+    for (const { input, expected } of cases) {
+      expect(normalizeCode(input)).toBe(expected);
+    }
   });
 });
 
 describe("normalizeText", () => {
-  it("returns empty string for null/undefined", () => {
-    expect(normalizeText(null)).toBe("");
-    expect(normalizeText(undefined)).toBe("");
-  });
+  it("returns empty for missing values and collapses whitespace for text", () => {
+    const cases = [
+      { input: null, expected: "" },
+      { input: undefined, expected: "" },
+      { input: "  hello   world  ", expected: "hello world" },
+      { input: "a\t\nb", expected: "a b" },
+    ];
 
-  it("collapses whitespace and trims", () => {
-    expect(normalizeText("  hello   world  ")).toBe("hello world");
-    expect(normalizeText("a\t\nb")).toBe("a b");
+    for (const { input, expected } of cases) {
+      expect(normalizeText(input)).toBe(expected);
+    }
   });
 });
