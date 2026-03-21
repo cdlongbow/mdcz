@@ -4,7 +4,8 @@ import type { ServiceContainer } from "@main/container";
 import { loggerService } from "@main/services/LoggerService";
 import { nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { toErrorMessage } from "@main/utils/common";
-import { parseNfo } from "@main/utils/nfo";
+import { pathExists } from "@main/utils/file";
+import { parseNfo, parseNfoSnapshot } from "@main/utils/nfo";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
 import type { CrawlerData } from "@shared/types";
@@ -156,7 +157,10 @@ export const createFileHandlers = (
           if (!nfoPath || !data) {
             throw createIpcError(IpcErrorCode.FILE_WRITE_ERROR, "NFO path and data are required");
           }
-          await nfoGenerator.writeNfo(nfoPath, data);
+          const existingSnapshot = (await pathExists(nfoPath))
+            ? parseNfoSnapshot(await readFile(nfoPath, "utf8")).localState
+            : undefined;
+          await nfoGenerator.writeNfo(nfoPath, data, { localState: existingSnapshot });
           return { success: true as const };
         } catch (error) {
           throw asSerializableIpcError(error);

@@ -345,7 +345,7 @@ export class AggregationService {
     fieldAggregator: FieldAggregator,
     config: Configuration,
   ): boolean {
-    if (config.download.downloadSceneImages || config.download.downloadNfo) {
+    if (config.download.downloadSceneImages || config.download.generateNfo) {
       return false;
     }
 

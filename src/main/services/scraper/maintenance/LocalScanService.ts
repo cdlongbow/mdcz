@@ -3,7 +3,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
 import { loggerService } from "@main/services/LoggerService";
 import { listVideoFiles } from "@main/utils/file";
-import { parseNfo } from "@main/utils/nfo";
+import { parseNfoSnapshot } from "@main/utils/nfo";
 import type { CrawlerData, DiscoveredAssets, LocalScanEntry } from "@shared/types";
 import { resolveFileInfoWithSubtitles } from "../fileInfoWithSubtitles";
 import { isGeneratedSidecarVideo } from "../generatedSidecarVideos";
@@ -73,7 +73,7 @@ export class LocalScanService {
 
     for (const videoPath of videoFiles) {
       try {
-        const entry = await this.scanSingleVideo(videoPath, sceneImagesFolder);
+        const entry = await this.scanVideo(videoPath, sceneImagesFolder);
         entries.push(entry);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -86,18 +86,21 @@ export class LocalScanService {
   }
 
   /** Scan a single video file and discover its NFO and assets. */
-  private async scanSingleVideo(videoPath: string, sceneImagesFolder: string): Promise<LocalScanEntry> {
+  async scanVideo(videoPath: string, sceneImagesFolder: string): Promise<LocalScanEntry> {
     const { fileInfo } = await resolveFileInfoWithSubtitles(videoPath);
     const dir = dirname(videoPath);
 
     const assets = await this.discoverAssets(dir, fileInfo, sceneImagesFolder);
     let crawlerData: CrawlerData | undefined;
+    let nfoLocalState: LocalScanEntry["nfoLocalState"];
     let scanError: string | undefined;
 
     if (assets.nfo) {
       try {
         const nfoContent = await readFile(assets.nfo, "utf-8");
-        crawlerData = parseNfo(nfoContent);
+        const snapshot = parseNfoSnapshot(nfoContent);
+        crawlerData = snapshot.crawlerData;
+        nfoLocalState = snapshot.localState;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         scanError = `NFO 解析失败: ${message}`;
@@ -111,6 +114,7 @@ export class LocalScanService {
       fileInfo,
       nfoPath: assets.nfo,
       crawlerData,
+      nfoLocalState,
       scanError,
       assets,
       currentDir: dir,

@@ -1,7 +1,7 @@
 import { parse } from "node:path";
 import { extractNumber } from "@main/utils/number";
 
-const FC2_SPECIAL_FEATURE_HINTS = ["花絮", "おまけ", "特典"];
+const FC2_SPECIAL_FEATURE_HINTS = ["花絮", "おまけ", "特典", "gift"];
 
 export const isGeneratedSidecarVideo = (filePath: string): boolean => {
   const rawName = parse(filePath).name.normalize("NFC");

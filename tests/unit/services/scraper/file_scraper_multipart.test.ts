@@ -15,7 +15,7 @@ const config = configurationSchema.parse({
   ...defaultConfiguration,
   download: {
     ...defaultConfiguration.download,
-    downloadNfo: false,
+    generateNfo: false,
   },
 });
 

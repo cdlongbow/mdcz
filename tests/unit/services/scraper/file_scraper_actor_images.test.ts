@@ -96,7 +96,7 @@ describe("FileScraper actor image library", () => {
       ...defaultConfiguration,
       download: {
         ...defaultConfiguration.download,
-        downloadNfo: true,
+        generateNfo: true,
       },
       paths: {
         ...defaultConfiguration.paths,
@@ -167,7 +167,7 @@ describe("FileScraper actor image library", () => {
       ...defaultConfiguration,
       download: {
         ...defaultConfiguration.download,
-        downloadNfo: false,
+        generateNfo: false,
       },
       paths: {
         ...defaultConfiguration.paths,
@@ -242,7 +242,7 @@ describe("FileScraper actor image library", () => {
       ...defaultConfiguration,
       download: {
         ...defaultConfiguration.download,
-        downloadNfo: true,
+        generateNfo: true,
       },
       paths: {
         ...defaultConfiguration.paths,
@@ -401,7 +401,7 @@ describe("FileScraper actor image library", () => {
       ...defaultConfiguration,
       download: {
         ...defaultConfiguration.download,
-        downloadNfo: true,
+        generateNfo: true,
       },
       paths: {
         ...defaultConfiguration.paths,

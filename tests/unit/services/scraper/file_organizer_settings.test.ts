@@ -229,6 +229,25 @@ describe("FileOrganizer naming settings", () => {
     expect(parse(numericPartPlan.nfoPath).name).toBe("XYZ-999-CEN");
   });
 
+  it("builds preview rows from the shared naming logic", () => {
+    const organizer = new FileOrganizer();
+    const previews = organizer.buildNamingPreview(
+      createConfig({
+        naming: {
+          cnwordStyle: "-SUB",
+          umrStyle: "-UMR",
+          leakStyle: "-LEAK",
+          censoredStyle: "-CEN",
+        },
+      }),
+    );
+
+    expect(previews.find((item) => item.label === "中文字幕")?.file).toContain("-SUB");
+    expect(previews.find((item) => item.label === "破解")?.file).toContain("-UMR");
+    expect(previews.find((item) => item.label === "流出")?.file).toContain("-LEAK");
+    expect(previews.find((item) => item.label === "多演员")?.folder).toContain("等演员");
+  });
+
   it("preserves input extension and explicit multipart suffix casing when renaming", () => {
     const organizer = new FileOrganizer();
     const plan = organizer.plan(

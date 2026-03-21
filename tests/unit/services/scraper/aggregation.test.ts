@@ -481,7 +481,7 @@ describe("AggregationService", () => {
       download: {
         ...defaultConfiguration.download,
         downloadSceneImages: false,
-        downloadNfo: false,
+        generateNfo: false,
       },
     });
 

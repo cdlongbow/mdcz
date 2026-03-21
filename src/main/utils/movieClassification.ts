@@ -1,4 +1,4 @@
-import type { CrawlerData, FileInfo } from "@shared/types";
+import type { CrawlerData, FileInfo, NfoLocalState } from "@shared/types";
 
 export const UNCENSORED_NUMBER_PATTERNS = [
   /^FC2-\d+/iu,
@@ -30,14 +30,24 @@ export const isLikelyUncensoredNumber = (number: string): boolean => {
   return UNCENSORED_NUMBER_PATTERNS.some((pattern) => pattern.test(normalized));
 };
 
-export const classifyMovie = (fileInfo: FileInfo, data: CrawlerData): MovieClassification => {
+export const classifyMovie = (
+  fileInfo: FileInfo,
+  data: CrawlerData,
+  localState?: NfoLocalState,
+): MovieClassification => {
   const textProbe = [data.title, data.title_zh, ...(data.genres ?? [])]
     .filter((value): value is string => typeof value === "string")
     .join(" ");
-  const umr = includesHint(textProbe, UMR_HINTS);
-  const leak = includesHint(textProbe, LEAK_HINTS);
-  const uncensored =
+  let umr = includesHint(textProbe, UMR_HINTS);
+  let leak = includesHint(textProbe, LEAK_HINTS);
+  let uncensored =
     isLikelyUncensoredNumber(data.number || fileInfo.number) || Boolean(fileInfo.isUncensored) || umr || leak;
+
+  if (localState?.uncensoredChoice) {
+    uncensored = true;
+    umr = localState.uncensoredChoice === "umr";
+    leak = localState.uncensoredChoice === "leak";
+  }
 
   return {
     subtitled: fileInfo.isSubtitled,

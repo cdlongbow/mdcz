@@ -1,5 +1,5 @@
 import { NfoGenerator } from "@main/services/scraper/NfoGenerator";
-import { parseNfo } from "@main/utils/nfo";
+import { parseNfo, parseNfoSnapshot } from "@main/utils/nfo";
 import { Website } from "@shared/enums";
 import { describe, expect, it } from "vitest";
 
@@ -194,5 +194,31 @@ describe("parseNfo", () => {
 
     expect(result.fanart_url).toBe("fanart.jpg");
     expect(result.scene_images).toEqual([]);
+  });
+
+  it("round-trips local uncensored choice and custom tags through localState", () => {
+    const xml = new NfoGenerator().buildXml(
+      {
+        title: "Local Tags",
+        number: "ABC-321",
+        actors: [],
+        genres: [],
+        scene_images: [],
+        website: Website.DMM,
+      },
+      {
+        localState: {
+          uncensoredChoice: "leak",
+          tags: ["中文字幕", "自定义标签"],
+        },
+      },
+    );
+
+    const parsed = parseNfoSnapshot(xml);
+
+    expect(parsed.localState).toEqual({
+      uncensoredChoice: "leak",
+      tags: ["中文字幕", "自定义标签"],
+    });
   });
 });

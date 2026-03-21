@@ -1,5 +1,4 @@
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "@main/services/actorSource/types";
-import { CURRENT_CONFIG_VERSION } from "@main/services/config/migrator";
 import { ProxyType, ThemeMode, TranslateEngine, UiLanguage, Website } from "@shared/enums";
 import { z } from "zod";
 
@@ -83,7 +82,7 @@ const downloadSchema = z.object({
   downloadFanart: z.boolean().default(true),
   downloadSceneImages: z.boolean().default(true),
   downloadTrailer: z.boolean().default(true),
-  downloadNfo: z.boolean().default(true),
+  generateNfo: z.boolean().default(true),
   sceneImageConcurrency: z.number().int().min(1).max(20).default(5),
   keepThumb: z.boolean().default(true),
   keepPoster: z.boolean().default(true),
@@ -260,7 +259,6 @@ const aggregationSchema = z
 
 export const configurationSchema = z
   .object({
-    configVersion: z.number().int().default(CURRENT_CONFIG_VERSION),
     network: networkSchema.default(() => networkSchema.parse({})),
     scrape: scrapeSchema.default(() => scrapeSchema.parse({})),
     naming: namingSchema.default(() => namingSchema.parse({})),

@@ -196,6 +196,19 @@ describe("NfoGenerator", () => {
     expect(leakXml).not.toContain("<tag>无码</tag>");
   });
 
+  it("persists local NFO tags even when fileInfo is unavailable", () => {
+    const xml = new NfoGenerator().buildXml(createCrawlerData(), {
+      localState: {
+        uncensoredChoice: "umr",
+        tags: ["中文字幕", "自定义标签"],
+      },
+    });
+
+    expect(xml).toContain("<tag>破解</tag>");
+    expect(xml).toContain("<tag>中文字幕</tag>");
+    expect(xml).toContain("<tag>自定义标签</tag>");
+  });
+
   it("round-trips release metadata and derives year only when available", () => {
     const releaseXml = new NfoGenerator().buildXml(
       createCrawlerData({

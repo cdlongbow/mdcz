@@ -3,8 +3,9 @@ import { basename, dirname, join } from "node:path";
 import { toArray } from "@main/utils/common";
 import { classifyMovie } from "@main/utils/movieClassification";
 import { buildManagedMovieTags } from "@main/utils/movieMetadata";
+import { normalizeNfoLocalState, uncensoredChoiceToTag } from "@main/utils/nfoLocalState";
 import { resolveFileInfoSubtitleTag } from "@main/utils/subtitles";
-import type { ActorProfile, CrawlerData, DownloadedAssets, FileInfo, VideoMeta } from "@shared/types";
+import type { ActorProfile, CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@shared/types";
 import { XMLBuilder } from "fast-xml-parser";
 import type { SourceMap } from "./aggregation/types";
 
@@ -77,16 +78,28 @@ const toRemoteImageSourceUrl = (value: string | undefined): string | undefined =
 
 const truncateText = (value: string, maxChars: number): string => Array.from(value).slice(0, maxChars).join("");
 
-const buildMovieTags = (data: CrawlerData, fileInfo: FileInfo | undefined): string[] => {
+const buildMovieTags = (
+  data: CrawlerData,
+  fileInfo: FileInfo | undefined,
+  localState: NfoLocalState | undefined,
+): string[] => {
   const classificationTags: string[] = [];
+  const normalizedLocalState = normalizeNfoLocalState(localState);
+  const localChoiceTag = uncensoredChoiceToTag(normalizedLocalState?.uncensoredChoice);
+  if (localChoiceTag) {
+    classificationTags.push(localChoiceTag);
+  }
+
   if (fileInfo) {
-    const classification = classifyMovie(fileInfo, data);
-    if (classification.umr) {
-      classificationTags.push("破解");
-    } else if (classification.leak) {
-      classificationTags.push("流出");
-    } else if (classification.uncensored) {
-      classificationTags.push("无码");
+    if (!localChoiceTag) {
+      const classification = classifyMovie(fileInfo, data, normalizedLocalState);
+      if (classification.umr) {
+        classificationTags.push("破解");
+      } else if (classification.leak) {
+        classificationTags.push("流出");
+      } else if (classification.uncensored) {
+        classificationTags.push("无码");
+      }
     }
 
     const subtitleTag = resolveFileInfoSubtitleTag(fileInfo);
@@ -98,6 +111,7 @@ const buildMovieTags = (data: CrawlerData, fileInfo: FileInfo | undefined): stri
   return Array.from(
     new Set([
       ...classificationTags,
+      ...(normalizedLocalState?.tags ?? []),
       ...buildManagedMovieTags({
         contentType: data.content_type,
       }),
@@ -177,6 +191,7 @@ export interface NfoOptions {
   sources?: SourceMap;
   videoMeta?: VideoMeta;
   fileInfo?: FileInfo;
+  localState?: NfoLocalState;
 }
 
 export class NfoGenerator {
@@ -188,9 +203,10 @@ export class NfoGenerator {
     const sources = options?.sources;
     const videoMeta = options?.videoMeta;
     const fileInfo = options?.fileInfo;
+    const localState = options?.localState;
     const durationSeconds = videoMeta?.durationSeconds ?? data.durationSeconds;
     const runtimeMinutes = durationSeconds ? Math.round(durationSeconds / 60) : undefined;
-    const tags = buildMovieTags(data, fileInfo);
+    const tags = buildMovieTags(data, fileInfo, localState);
     const videoNode = buildVideoNode(videoMeta);
 
     const movie: Record<string, unknown> = {};

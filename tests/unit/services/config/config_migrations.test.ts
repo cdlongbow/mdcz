@@ -283,7 +283,7 @@ describe("Configuration migrations", () => {
   describe("migrator behavior", () => {
     it("skips migration for current version", () => {
       const raw = buildV030Config();
-      raw.configVersion = 2;
+      raw.configVersion = 1;
       delete (raw.download as Record<string, unknown>).downloadCover;
       delete (raw.download as Record<string, unknown>).keepCover;
       delete raw.server;
@@ -295,8 +295,8 @@ describe("Configuration migrations", () => {
 
       expect(result).toEqual({
         migrated: false,
-        fromVersion: 2,
-        toVersion: 2,
+        fromVersion: 1,
+        toVersion: 1,
         applied: [],
       });
     });
@@ -304,12 +304,12 @@ describe("Configuration migrations", () => {
     it("stamps configVersion and returns migration metadata", () => {
       const { raw, result } = migrate();
 
-      expect(raw.configVersion).toBe(2);
+      expect(raw.configVersion).toBe(1);
       expect(result).toEqual({
         migrated: true,
         fromVersion: 0,
-        toVersion: 2,
-        applied: ["v0.3.0 → v0.4.0", "v0.4.0 → v0.4.1"],
+        toVersion: 1,
+        applied: ["v0.3.0 → v0.4.0"],
       });
     });
 

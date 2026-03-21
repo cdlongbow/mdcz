@@ -1,14 +1,35 @@
+import { readFile } from "node:fs/promises";
 import type { ServiceContainer } from "@main/container";
+import { configManager, configurationSchema } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { ScraperServiceError } from "@main/services/scraper";
+import { FileOrganizer } from "@main/services/scraper/FileOrganizer";
+import { LocalScanService } from "@main/services/scraper/maintenance/LocalScanService";
+import { MaintenanceArtifactResolver } from "@main/services/scraper/maintenance/MaintenanceArtifactResolver";
+import { nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { toErrorMessage } from "@main/utils/common";
+import { pathExists } from "@main/utils/file";
+import { parseNfoSnapshot } from "@main/utils/nfo";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
-import type { ScraperStatus } from "@shared/types";
+import type {
+  DownloadedAssets,
+  ScraperStatus,
+  UncensoredConfirmItem,
+  UncensoredConfirmResultItem,
+} from "@shared/types";
 import { createIpcError } from "../errors";
 import { asSerializableIpcError, t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter");
+const fileOrganizer = new FileOrganizer();
+const localScanService = new LocalScanService();
+const artifactResolver = new MaintenanceArtifactResolver();
+
+const EMPTY_DOWNLOADED_ASSETS = (): DownloadedAssets => ({
+  sceneImages: [],
+  downloaded: [],
+});
 
 const defaultScraperStatus = (): ScraperStatus => ({
   state: "idle",
@@ -34,6 +55,7 @@ export const createScraperHandlers = (
   | typeof IpcChannel.Scraper_Resume
   | typeof IpcChannel.Scraper_Requeue
   | typeof IpcChannel.Scraper_RetryFailed
+  | typeof IpcChannel.Scraper_ConfirmUncensored
 > => {
   const { scraperService } = context;
 
@@ -129,5 +151,72 @@ export const createScraperHandlers = (
         throw asSerializableIpcError(error);
       }
     }),
+    [IpcChannel.Scraper_ConfirmUncensored]: t.procedure
+      .input<{ items?: UncensoredConfirmItem[] }>()
+      .action(async ({ input }) => {
+        const items = input?.items ?? [];
+        if (items.length === 0) {
+          return { updatedCount: 0, items: [] };
+        }
+
+        let updatedCount = 0;
+        const updatedItems: UncensoredConfirmResultItem[] = [];
+        const config = configurationSchema.parse(await configManager.get());
+
+        for (const item of items) {
+          try {
+            const nfoPath = item.nfoPath?.trim();
+            const videoPath = item.videoPath?.trim();
+            if (!nfoPath || !videoPath || !(await pathExists(nfoPath)) || !(await pathExists(videoPath))) {
+              logger.warn(`Skipping uncensored confirm: source files not found for ${videoPath || nfoPath}`);
+              continue;
+            }
+
+            const entry = await localScanService.scanVideo(videoPath, config.paths.sceneImagesFolder);
+            const effectiveNfoPath = entry.nfoPath ?? nfoPath;
+            if (!effectiveNfoPath || !entry.crawlerData || !(await pathExists(effectiveNfoPath))) {
+              logger.warn(`Skipping uncensored confirm: incomplete local scan for ${videoPath}`);
+              continue;
+            }
+
+            const snapshot = parseNfoSnapshot(await readFile(effectiveNfoPath, "utf8"));
+            const nextLocalState = {
+              ...snapshot.localState,
+              uncensoredChoice: item.choice,
+            };
+            const rawPlan = fileOrganizer.plan(entry.fileInfo, snapshot.crawlerData, config, nextLocalState);
+            const plan = await fileOrganizer.ensureOutputReady(rawPlan, entry.fileInfo.filePath);
+            const savedNfoPath = await nfoGenerator.writeNfo(plan.nfoPath, snapshot.crawlerData, {
+              fileInfo: entry.fileInfo,
+              localState: nextLocalState,
+            });
+            const outputVideoPath = await fileOrganizer.organizeVideo(entry.fileInfo, plan, config);
+            const resolvedArtifacts = await artifactResolver.resolve({
+              entry: {
+                ...entry,
+                nfoLocalState: nextLocalState,
+              },
+              plan,
+              outputVideoPath,
+              assets: EMPTY_DOWNLOADED_ASSETS(),
+              savedNfoPath,
+            });
+
+            updatedCount += 1;
+            updatedItems.push({
+              sourceVideoPath: videoPath,
+              sourceNfoPath: effectiveNfoPath,
+              targetVideoPath: outputVideoPath,
+              targetNfoPath: resolvedArtifacts.nfoPath,
+              choice: item.choice,
+            });
+            logger.info(`Updated uncensored choice to "${item.choice}" for ${videoPath}`);
+          } catch (error) {
+            logger.warn(`Failed to update uncensored tag for ${item.videoPath}: ${toErrorMessage(error)}`);
+          }
+        }
+
+        return { updatedCount, items: updatedItems };
+      }),
   };
 };

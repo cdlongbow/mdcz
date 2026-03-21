@@ -28,7 +28,7 @@ describe("FileScraper plan timing", () => {
       ...defaultConfiguration,
       download: {
         ...defaultConfiguration.download,
-        downloadNfo: false,
+        generateNfo: false,
         downloadThumb: false,
         downloadPoster: false,
         downloadFanart: false,

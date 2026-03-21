@@ -1,5 +1,15 @@
-import { type Configuration, ConfigValidationError, configManager, type DeepPartial } from "@main/services/config";
+import {
+  type Configuration,
+  ConfigValidationError,
+  configManager,
+  configurationSchema,
+  type DeepPartial,
+} from "@main/services/config";
+import { FileOrganizer } from "@main/services/scraper/FileOrganizer";
 import { toErrorMessage } from "@main/utils/common";
+
+const fileOrganizer = new FileOrganizer();
+
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
 import { createIpcError, IpcErrorCode } from "../errors";
@@ -11,6 +21,7 @@ export const createConfigHandlers = (): Pick<
   | typeof IpcChannel.Config_Save
   | typeof IpcChannel.Config_List
   | typeof IpcChannel.Config_Reset
+  | typeof IpcChannel.Config_PreviewNaming
   | typeof IpcChannel.Config_ListProfiles
   | typeof IpcChannel.Config_CreateProfile
   | typeof IpcChannel.Config_SwitchProfile
@@ -65,6 +76,18 @@ export const createConfigHandlers = (): Pick<
       throw asSerializableIpcError(createIpcError(IpcErrorCode.CONFIG_SAVE_ERROR, toErrorMessage(error)));
     }
   }),
+  [IpcChannel.Config_PreviewNaming]: t.procedure
+    .input<{ config?: DeepPartial<Configuration> }>()
+    .action(async ({ input }) => {
+      try {
+        const config = configurationSchema.parse(input?.config ?? {});
+        return {
+          items: fileOrganizer.buildNamingPreview(config),
+        };
+      } catch (error) {
+        throw asSerializableIpcError(error);
+      }
+    }),
   [IpcChannel.Config_ListProfiles]: t.procedure.action(async () => {
     try {
       await configManager.ensureLoaded();

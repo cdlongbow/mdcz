@@ -123,6 +123,7 @@ export class MaintenanceFileScraper {
       const savedNfoPath = await this.generatePreparedNfo(
         fileInfo.filePath,
         fileInfo.number,
+        entry,
         fileInfo,
         plan,
         preparedCrawlerData,
@@ -235,6 +236,7 @@ export class MaintenanceFileScraper {
       fileInfo: updates.fileInfo,
       nfoPath: updates.nfoPath,
       crawlerData: crawlerData ?? entry.crawlerData,
+      nfoLocalState: entry.nfoLocalState,
       scanError: undefined,
       assets: updates.assets,
       currentDir: updates.currentDir,
@@ -325,6 +327,7 @@ export class MaintenanceFileScraper {
   private async generatePreparedNfo(
     sourceVideoPath: string,
     number: string,
+    entry: LocalScanEntry,
     fileInfo: LocalScanEntry["fileInfo"],
     plan: PreparedMaintenanceFile["plan"],
     preparedCrawlerData: CrawlerData | undefined,
@@ -348,6 +351,7 @@ export class MaintenanceFileScraper {
       sources: aggregationSources,
       videoMeta,
       fileInfo,
+      localState: entry.nfoLocalState,
     });
   }
 

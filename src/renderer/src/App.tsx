@@ -83,6 +83,8 @@ const normalizeResultItem = (payload: BackendScrapeResult): ScrapeResult => {
     sceneImages: assets?.sceneImages,
     sources: payload.sources as Record<string, string> | undefined,
     errorMessage: payload.error,
+    uncensoredAmbiguous: payload.uncensoredAmbiguous,
+    nfoPath: payload.nfoPath,
   };
 };
 

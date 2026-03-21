@@ -215,7 +215,7 @@ export class MaintenancePreparationService {
       throw new Error("本地 NFO 不存在或无法解析，无法执行后续步骤");
     }
 
-    const rawPlan = this.deps.fileOrganizer.plan(entry.fileInfo, crawlerData, config);
+    const rawPlan = this.deps.fileOrganizer.plan(entry.fileInfo, crawlerData, config, entry.nfoLocalState);
     const plan = await this.deps.fileOrganizer.resolveOutputPlan(rawPlan, entry.fileInfo.filePath, {
       createDirectories: options.createDirectories,
     });

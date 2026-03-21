@@ -94,6 +94,40 @@ export interface ScrapeResult {
   assets?: DownloadedAssets;
   /** Maps each CrawlerData field to the Website that provided the value. */
   sources?: Partial<Record<string, Website>>;
+  /** True when the video is classified as uncensored but the specific type (破解/流出) is unknown. */
+  uncensoredAmbiguous?: boolean;
+}
+
+export type UncensoredChoice = "umr" | "leak" | "uncensored";
+
+export interface NfoLocalState {
+  uncensoredChoice?: UncensoredChoice;
+  tags?: string[];
+}
+
+export interface UncensoredConfirmItem {
+  nfoPath: string;
+  videoPath: string;
+  choice: UncensoredChoice;
+}
+
+export interface UncensoredConfirmResultItem {
+  sourceVideoPath: string;
+  sourceNfoPath?: string;
+  targetVideoPath: string;
+  targetNfoPath?: string;
+  choice: UncensoredChoice;
+}
+
+export interface UncensoredConfirmResponse {
+  updatedCount: number;
+  items: UncensoredConfirmResultItem[];
+}
+
+export interface NamingPreviewItem {
+  label: string;
+  folder: string;
+  file: string;
 }
 
 export interface ScraperStatus {
@@ -135,6 +169,7 @@ export interface LocalScanEntry {
   fileInfo: FileInfo;
   nfoPath?: string;
   crawlerData?: CrawlerData;
+  nfoLocalState?: NfoLocalState;
   scanError?: string;
   assets: DiscoveredAssets;
   currentDir: string;

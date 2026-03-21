@@ -7,6 +7,7 @@ import type { ConfigManager } from "@main/services/config/ConfigManager";
 import { loggerService } from "@main/services/LoggerService";
 import type { SignalService } from "@main/services/SignalService";
 import { pathExists } from "@main/utils/file";
+import { classifyMovie, isLikelyUncensoredNumber } from "@main/utils/movieClassification";
 import { parseFileInfo } from "@main/utils/number";
 import { probeVideoMetadata } from "@main/utils/video";
 import type { CrawlerData, FileInfo, ScrapeResult, VideoMeta } from "@shared/types";
@@ -166,7 +167,7 @@ export class FileScraper {
 
       const preparedData = this.applyDownloadedSceneImageMetadata(preparedOutputData.data, resolvedSceneImageUrls);
       let savedNfoPath: string | undefined;
-      if (configuration.download.downloadNfo) {
+      if (configuration.download.generateNfo) {
         if (configuration.download.keepNfo && (await pathExists(plan.nfoPath))) {
           savedNfoPath = plan.nfoPath;
         } else {
@@ -192,6 +193,13 @@ export class FileScraper {
 
       this.setProgress(progress, 100);
 
+      const classification = classifyMovie(fileInfo, preparedData);
+      const uncensoredAmbiguous =
+        classification.uncensored &&
+        !classification.umr &&
+        !classification.leak &&
+        !isLikelyUncensoredNumber(preparedData.number || fileInfo.number);
+
       const result: ScrapeResult = {
         fileInfo: {
           ...fileInfo,
@@ -204,6 +212,7 @@ export class FileScraper {
         nfoPath: savedNfoPath,
         assets,
         sources: aggregationResult.sources,
+        ...(uncensoredAmbiguous ? { uncensoredAmbiguous: true } : {}),
       };
 
       this.deps.signalService.showScrapeResult(result);

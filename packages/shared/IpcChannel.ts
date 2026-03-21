@@ -3,6 +3,7 @@ export enum IpcChannel {
   Config_Save = "config:save",
   Config_List = "config:list",
   Config_Reset = "config:reset",
+  Config_PreviewNaming = "config:preview-naming",
   Config_ListProfiles = "config:list-profiles",
   Config_CreateProfile = "config:create-profile",
   Config_SwitchProfile = "config:switch-profile",
@@ -18,6 +19,7 @@ export enum IpcChannel {
   Scraper_GetFailedFiles = "scraper:get-failed-files",
   Scraper_HasRecoverableSession = "scraper:has-recoverable-session",
   Scraper_RecoverSession = "scraper:recover-session",
+  Scraper_ConfirmUncensored = "scraper:confirm-uncensored",
 
   Crawler_Test = "crawler:test",
   Crawler_ListSites = "crawler:list-sites",

@@ -1,3 +1,5 @@
+import type { Configuration } from "@shared/config";
+import type { NamingPreviewItem } from "@shared/types";
 import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -23,7 +25,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FieldValues } from "react-hook-form";
-import { useForm, useFormContext } from "react-hook-form";
+import { useForm, useFormContext, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { ipc } from "@/client/ipc";
 import { PageHeader } from "@/components/PageHeader";
@@ -126,7 +128,7 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "download.downloadFanart", label: "下载背景图", section: "download" },
   { key: "download.downloadSceneImages", label: "下载剧照", section: "download" },
   { key: "download.downloadTrailer", label: "下载预告片", section: "download" },
-  { key: "download.downloadNfo", label: "下载 NFO", section: "download" },
+  { key: "download.generateNfo", label: "生成 NFO", section: "download" },
   { key: "download.keepThumb", label: "保留已有横版缩略图", section: "download" },
   { key: "download.keepPoster", label: "保留已有海报", section: "download" },
   { key: "download.keepFanart", label: "保留已有背景图", section: "download" },
@@ -202,7 +204,7 @@ const SECTION_DESCRIPTIONS: Record<string, string> = {
   paths: "配置媒体库、本地演员头像库及输出目录路径",
   scrape: "配置刮削行为、站点及并发策略",
   network: "代理、超时、重试及 Cookie 设置",
-  download: "控制缩略图、海报、背景图、剧照与 NFO 的下载与保留",
+  download: "控制缩略图、海报、背景图、剧照与 NFO 的生成与保留",
   naming: "文件和文件夹的命名模板与规则",
   translate: "LLM 翻译引擎配置",
   personSync: "共享人物来源顺序，以及 Jellyfin 与 Emby 的人物同步设置",
@@ -353,14 +355,14 @@ function NetworkSection(_props: SectionRenderProps) {
 
 function DownloadSection(_props: SectionRenderProps) {
   const form = useFormContext<FieldValues>();
-  const [downloadThumb, downloadPoster, downloadFanart, downloadSceneImages, downloadTrailer, downloadNfo] = form.watch(
+  const [downloadThumb, downloadPoster, downloadFanart, downloadSceneImages, downloadTrailer, generateNfo] = form.watch(
     [
       "download.downloadThumb",
       "download.downloadPoster",
       "download.downloadFanart",
       "download.downloadSceneImages",
       "download.downloadTrailer",
-      "download.downloadNfo",
+      "download.generateNfo",
     ],
   ) as [
     boolean | undefined,
@@ -378,14 +380,82 @@ function DownloadSection(_props: SectionRenderProps) {
       <BoolField name="download.downloadFanart" label="下载背景图" />
       <BoolField name="download.downloadSceneImages" label="下载剧照" />
       <BoolField name="download.downloadTrailer" label="下载预告片" />
-      <BoolField name="download.downloadNfo" label="下载 NFO" />
+      <BoolField name="download.generateNfo" label="生成 NFO" />
       {downloadThumb && <BoolField name="download.keepThumb" label="保留已有横版缩略图" />}
       {downloadPoster && <BoolField name="download.keepPoster" label="保留已有海报" />}
       {downloadFanart && <BoolField name="download.keepFanart" label="保留已有背景图" />}
       {downloadSceneImages && <BoolField name="download.keepSceneImages" label="保留已有剧照" />}
       {downloadTrailer && <BoolField name="download.keepTrailer" label="保留已有预告片" />}
-      {downloadNfo && <BoolField name="download.keepNfo" label="保留已有 NFO" />}
+      {generateNfo && <BoolField name="download.keepNfo" label="保留已有 NFO" />}
     </>
+  );
+}
+
+function NamingPreview() {
+  const form = useFormContext<FieldValues>();
+  const naming = useWatch({
+    control: form.control,
+    name: "naming",
+  }) as Record<string, unknown> | undefined;
+  const behavior = useWatch({
+    control: form.control,
+    name: "behavior",
+  }) as Record<string, unknown> | undefined;
+  const [previews, setPreviews] = useState<NamingPreviewItem[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const previewConfigKey = useMemo(
+    () =>
+      JSON.stringify({
+        naming: naming ?? {},
+        behavior: behavior ?? {},
+      }),
+    [behavior, naming],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setLoading(true);
+      try {
+        const result = await ipc.config.previewNaming(JSON.parse(previewConfigKey) as Partial<Configuration>);
+        if (!cancelled) {
+          setPreviews(result.items);
+        }
+      } catch {
+        if (!cancelled) {
+          setPreviews([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [previewConfigKey]);
+
+  return (
+    <div className="rounded-md border bg-muted/30 p-3">
+      <div className="mb-2 text-xs font-medium text-muted-foreground">命名预览</div>
+      <div className="space-y-2">
+        {previews.length === 0 && (
+          <div className="text-xs text-muted-foreground">{loading ? "生成预览中..." : "暂无预览"}</div>
+        )}
+        {previews.map((p) => (
+          <div key={p.label} className="text-xs">
+            <span className="mr-2 inline-block min-w-[4em] text-muted-foreground">{p.label}</span>
+            <span className="font-mono text-[11px]">
+              {p.folder}/{p.file}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -394,6 +464,7 @@ export function NamingSection(_props: SectionRenderProps) {
     <>
       <TextField name="naming.folderTemplate" label="文件夹模板" description={NAMING_TEMPLATE_DESCRIPTION} />
       <TextField name="naming.fileTemplate" label="文件名模板" description={NAMING_TEMPLATE_DESCRIPTION} />
+      <NamingPreview />
       <NumberField name="naming.actorNameMax" label="演员名最大数量" min={1} max={20} />
       <TextField name="naming.actorNameMore" label="演员名超出后缀" />
       <TextField name="naming.releaseRule" label="发行日期格式" />

@@ -176,20 +176,24 @@ export class MaintenanceArtifactResolver {
       return;
     }
 
-    const movieNfoPath = join(dirname(savedNfoPath), "movie.nfo");
-    if (originalNfoPath === savedNfoPath || originalNfoPath === movieNfoPath) {
-      return;
+    const savedMovieNfoPath = join(dirname(savedNfoPath), "movie.nfo");
+    const originalMovieNfoPath = join(dirname(originalNfoPath), "movie.nfo");
+    const staleCandidates = new Set([originalNfoPath]);
+    if (originalMovieNfoPath !== savedMovieNfoPath) {
+      staleCandidates.add(originalMovieNfoPath);
     }
 
-    if (!(await pathExists(originalNfoPath))) {
-      return;
-    }
+    for (const stalePath of staleCandidates) {
+      if (stalePath === savedNfoPath || stalePath === savedMovieNfoPath || !(await pathExists(stalePath))) {
+        continue;
+      }
 
-    try {
-      await unlink(originalNfoPath);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`Failed to remove stale NFO ${originalNfoPath}: ${message}`);
+      try {
+        await unlink(stalePath);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Failed to remove stale NFO ${stalePath}: ${message}`);
+      }
     }
   }
 

@@ -107,7 +107,7 @@ describe("FileScraper .strm support", () => {
 
   it("extracts number from .strm filename and still generates NFO", async () => {
     const config = createConfig({
-      downloadNfo: true,
+      generateNfo: true,
     });
     const crawlerData = createCrawlerData({
       durationSeconds: 5400,
@@ -136,7 +136,7 @@ describe("FileScraper .strm support", () => {
     await writeFile(nfoPath, "<movie />", "utf8");
 
     const config = createConfig({
-      downloadNfo: true,
+      generateNfo: true,
       keepNfo: true,
     });
     const crawlerData = createCrawlerData();

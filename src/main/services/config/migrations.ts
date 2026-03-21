@@ -49,7 +49,6 @@ const V0_ENABLED_SITES = [
   "km_produce",
 ] as const;
 const V1_ENABLED_SITES = [...V0_ENABLED_SITES, "avbase"] as const;
-const V2_ENABLED_SITES = [...V0_ENABLED_SITES.slice(0, 7), "fc2hub", ...V0_ENABLED_SITES.slice(7), "avbase"] as const;
 
 const V0_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
   title: ["dmm", "mgstage", "dmm_tv", "fc2", "javdb", "javbus", "jav321", "km_produce"],
@@ -81,15 +80,6 @@ const V1_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
   series: ["avbase", "dmm", "javdb", "javbus"],
   release_date: ["avbase", "dmm", "javdb", "javbus", "fc2"],
   rating: ["dmm_tv", "dmm", "javdb"],
-};
-
-const V2_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
-  ...V1_FIELD_PRIORITY_DEFAULTS,
-  actors: ["avbase", "mgstage", "dmm", "fc2hub", "javdb", "javbus"],
-  thumb_url: ["avbase", "mgstage", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
-  poster_url: ["avbase", "mgstage", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
-  scene_images: ["avbase", "mgstage", "dmm", "fc2hub", "javdb", "javbus"],
-  release_date: ["avbase", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
 };
 
 const appendPathSegment = (template: string, segment: string): string => {
@@ -225,13 +215,6 @@ function migrateV030ToV040(raw: Record<string, unknown>): void {
   normalizeFieldPriorityDefaults(raw, V0_FIELD_PRIORITY_DEFAULTS, V1_FIELD_PRIORITY_DEFAULTS);
 }
 
-// ── v0.4.0 → v0.4.1 ─────────────────────────────────────────────────────────
-
-function migrateV040ToV041(raw: Record<string, unknown>): void {
-  normalizeScrapeSiteDefaults(raw, V1_ENABLED_SITES, V2_ENABLED_SITES);
-  normalizeFieldPriorityDefaults(raw, V1_FIELD_PRIORITY_DEFAULTS, V2_FIELD_PRIORITY_DEFAULTS);
-}
-
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 export const migrations: Migration[] = [
@@ -240,11 +223,5 @@ export const migrations: Migration[] = [
     toVersion: 1,
     description: "v0.3.0 → v0.4.0",
     migrate: migrateV030ToV040,
-  },
-  {
-    fromVersion: 1,
-    toVersion: 2,
-    description: "v0.4.0 → v0.4.1",
-    migrate: migrateV040ToV041,
   },
 ];

@@ -95,4 +95,17 @@ describe("classifyMovie", () => {
       leak: false,
     });
   });
+
+  it("lets local NFO state override the uncensored subtype", () => {
+    expect(
+      classifyMovie(createFileInfo(), createCrawlerData(), {
+        uncensoredChoice: "leak",
+      }),
+    ).toEqual({
+      subtitled: false,
+      uncensored: true,
+      umr: false,
+      leak: true,
+    });
+  });
 });

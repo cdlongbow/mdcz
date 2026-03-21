@@ -18,7 +18,10 @@ import type {
   MaintenancePresetId,
   MaintenancePreviewResult,
   MaintenanceStatus,
+  NamingPreviewItem,
   ScraperStatus,
+  UncensoredConfirmItem,
+  UncensoredConfirmResponse,
 } from "./types";
 
 export type IpcRouterContract = {
@@ -28,6 +31,7 @@ export type IpcRouterContract = {
   [IpcChannel.Config_Save]: IpcProcedure<{ config?: Partial<Configuration> }, { success: true }>;
   [IpcChannel.Config_List]: IpcProcedure<void, { configPath: string; dataDir: string }>;
   [IpcChannel.Config_Reset]: IpcProcedure<{ path?: string }, { success: true }>;
+  [IpcChannel.Config_PreviewNaming]: IpcProcedure<{ config?: Partial<Configuration> }, { items: NamingPreviewItem[] }>;
   [IpcChannel.Config_ListProfiles]: IpcProcedure<void, { profiles: string[]; active: string }>;
   [IpcChannel.Config_CreateProfile]: IpcProcedure<{ name?: string }, { success: true }>;
   [IpcChannel.Config_SwitchProfile]: IpcProcedure<{ name?: string }, { success: true }>;
@@ -46,6 +50,7 @@ export type IpcRouterContract = {
   [IpcChannel.Scraper_RetryFailed]: IpcProcedure<{ filePaths?: string[] }, { taskId: string; totalFiles: number }>;
   [IpcChannel.Scraper_HasRecoverableSession]: IpcProcedure<void, { recoverable: boolean }>;
   [IpcChannel.Scraper_RecoverSession]: IpcProcedure<void, { taskId: string; totalFiles: number }>;
+  [IpcChannel.Scraper_ConfirmUncensored]: IpcProcedure<{ items?: UncensoredConfirmItem[] }, UncensoredConfirmResponse>;
 
   [IpcChannel.Crawler_Test]: IpcProcedure<
     { site?: Website; number?: string },

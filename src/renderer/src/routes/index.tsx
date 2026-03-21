@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { AlertTriangle, LayoutDashboard, PauseCircle, Play, StopCircle } from "lucide-react";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { pauseScrape, resumeScrape, startBatchScrape, stopScrape } from "@/api/manual";
@@ -10,6 +10,7 @@ import type { ConfigOutput } from "@/client/types";
 import MaintenanceBatchBar from "@/components/maintenance/MaintenanceBatchBar";
 import { ScrapeFailureDialog } from "@/components/maintenance/ScrapeFailureDialog";
 import { PageHeader } from "@/components/PageHeader";
+import { UncensoredConfirmDialog } from "@/components/UncensoredConfirmDialog";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { TabButton } from "@/components/ui/TabButton";
@@ -44,6 +45,7 @@ function DisabledModeButton({ label, tooltip, active }: { label: string; tooltip
 
 function Index() {
   const [failDialogOpen, setFailDialogOpen] = useState(false);
+  const [uncensoredDialogOpen, setUncensoredDialogOpen] = useState(false);
   const configQ = useQuery({
     queryKey: ["config", "current"],
     queryFn: async () => {
@@ -56,6 +58,7 @@ function Index() {
     isScraping,
     scrapeStatus,
     failedCount,
+    results,
     setScraping,
     setScrapeStatus,
     updateProgress,
@@ -66,6 +69,7 @@ function Index() {
       isScraping: state.isScraping,
       scrapeStatus: state.scrapeStatus,
       failedCount: state.failedCount,
+      results: state.results,
       setScraping: state.setScraping,
       setScrapeStatus: state.setScrapeStatus,
       updateProgress: state.updateProgress,
@@ -83,6 +87,22 @@ function Index() {
   );
 
   const maintenanceBusy = maintenanceStatus !== "idle";
+
+  // Detect scrape completion and check for ambiguous uncensored items
+  const prevScrapeStatusRef = useRef(scrapeStatus);
+  useEffect(() => {
+    const prev = prevScrapeStatusRef.current;
+    prevScrapeStatusRef.current = scrapeStatus;
+
+    if ((prev === "running" || prev === "stopping") && scrapeStatus === "idle") {
+      const ambiguousItems = results.filter((r) => r.uncensoredAmbiguous && r.nfoPath);
+      if (ambiguousItems.length > 0) {
+        setUncensoredDialogOpen(true);
+      }
+    }
+  }, [scrapeStatus, results]);
+
+  const ambiguousItems = useMemo(() => results.filter((r) => r.uncensoredAmbiguous && r.nfoPath), [results]);
 
   const handleStartScrape = async () => {
     if (maintenanceBusy) {
@@ -261,6 +281,11 @@ function Index() {
       </div>
 
       <ScrapeFailureDialog open={failDialogOpen} onOpenChange={setFailDialogOpen} />
+      <UncensoredConfirmDialog
+        open={uncensoredDialogOpen && ambiguousItems.length > 0}
+        onOpenChange={setUncensoredDialogOpen}
+        items={ambiguousItems}
+      />
     </div>
   );
 }
