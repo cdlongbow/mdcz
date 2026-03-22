@@ -50,6 +50,7 @@ export class FileScraper {
   private readonly localScanService: Pick<LocalScanService, "scanVideo">;
   private readonly aggregationPromiseCache = new Map<string, Promise<AggregationResult | null>>();
   private readonly aggregationFailureEvictionTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly numberExecutionChains = new Map<string, Promise<void>>();
 
   constructor(private readonly deps: FileScraperDependencies) {
     this.actorImageService = deps.actorImageService ?? new ActorImageService();
@@ -79,150 +80,152 @@ export class FileScraper {
       void aggregationResultPromise.catch(() => undefined);
       const { fileInfo: resolvedFileInfo, subtitleSidecars } = await fileInfoWithSubtitlesPromise;
       fileInfo = resolvedFileInfo;
-      const existingNfoLocalState = await this.loadExistingNfoLocalState(fileInfo.filePath, configuration);
+      return await this.runExclusiveByNumber(fileInfo.number, async () => {
+        const existingNfoLocalState = await this.loadExistingNfoLocalState(fileInfo.filePath, configuration);
 
-      this.deps.signalService.showLogText(`Starting scrape task ${taskId} for ${fileInfo.fileName}`);
-      throwIfAborted(signal);
+        this.deps.signalService.showLogText(`Starting scrape task ${taskId} for ${fileInfo.fileName}`);
+        throwIfAborted(signal);
 
-      this.deps.signalService.showScrapeInfo({
-        fileInfo,
-        site: configuration.scrape.enabledSites[0],
-        step: "search",
-      });
-
-      const aggregationResult = await aggregationResultPromise;
-      throwIfAborted(signal);
-
-      if (!aggregationResult) {
-        this.setProgress(progress, 100);
-        await this.handleFailedFileMove(fileInfo, configuration);
-        const failedResult: ScrapeResult = {
+        this.deps.signalService.showScrapeInfo({
           fileInfo,
-          status: "failed",
-          error: "No crawler returned metadata",
-        };
-        this.deps.signalService.showScrapeResult(failedResult);
-        this.deps.signalService.showFailedInfo({ fileInfo, error: "No crawler returned metadata" });
-        return failedResult;
-      }
+          site: configuration.scrape.enabledSites[0],
+          step: "search",
+        });
 
-      const crawlerData: CrawlerData = aggregationResult.data;
-      let videoMeta: VideoMeta | undefined;
+        const aggregationResult = await aggregationResultPromise;
+        throwIfAborted(signal);
 
-      try {
-        videoMeta = await probeVideoMetadata(fileInfo.filePath);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(`Video probe failed: ${message}`);
-      }
-
-      this.setProgress(progress, 30);
-      const translated = await this.translateCrawlerDataOrFallback(crawlerData, configuration, signal);
-      throwIfAborted(signal);
-      let plan: OrganizePlan = {
-        ...this.deps.fileOrganizer.plan(fileInfo, translated, configuration, existingNfoLocalState),
-        subtitleSidecars,
-      };
-      plan = await this.deps.fileOrganizer.ensureOutputReady(plan, fileInfo.filePath);
-      throwIfAborted(signal);
-      const preparedOutputData = await prepareCrawlerDataForMovieOutput(
-        this.actorImageService,
-        configuration,
-        translated,
-        {
-          enabled: true,
-          movieDir: plan.outputDir,
-          sourceVideoPath: fileInfo.filePath,
-          actorSourceProvider: this.deps.actorSourceProvider,
-          signal,
-        },
-      );
-      throwIfAborted(signal);
-      this.setProgress(progress, 50);
-
-      this.deps.signalService.showScrapeInfo({
-        fileInfo,
-        site: translated.website,
-        step: "download",
-      });
-
-      const downloadImageAlternatives = prepareImageAlternativesForDownload(
-        preparedOutputData.data,
-        aggregationResult.imageAlternatives,
-        aggregationResult.sources,
-      );
-      let resolvedSceneImageUrls: string[] | undefined;
-      const assets = await this.deps.downloadManager.downloadAll(
-        plan.outputDir,
-        preparedOutputData.data,
-        configuration,
-        downloadImageAlternatives,
-        {
-          onSceneProgress: (downloaded, total) => {
-            this.deps.signalService.showLogText(`[${fileInfo.number}] Scene images: ${downloaded}/${total}`);
-          },
-          onResolvedSceneImageUrls: (urls) => {
-            resolvedSceneImageUrls = urls;
-          },
-          signal,
-        },
-      );
-      throwIfAborted(signal);
-      this.setProgress(progress, 75);
-
-      const preparedData = this.applyDownloadedSceneImageMetadata(preparedOutputData.data, resolvedSceneImageUrls);
-      let savedNfoPath: string | undefined;
-      if (configuration.download.generateNfo) {
-        if (configuration.download.keepNfo && (await pathExists(plan.nfoPath))) {
-          savedNfoPath = plan.nfoPath;
-        } else {
-          savedNfoPath = await this.deps.nfoGenerator.writeNfo(plan.nfoPath, preparedData, {
-            assets,
-            sources: aggregationResult.sources,
-            videoMeta,
+        if (!aggregationResult) {
+          this.setProgress(progress, 100);
+          fileInfo = await this.handleFailedFileMove(fileInfo, configuration);
+          const failedResult: ScrapeResult = {
             fileInfo,
-          });
+            status: "failed",
+            error: "No crawler returned metadata",
+          };
+          this.deps.signalService.showScrapeResult(failedResult);
+          this.deps.signalService.showFailedInfo({ fileInfo, error: "No crawler returned metadata" });
+          return failedResult;
         }
-      }
-      throwIfAborted(signal);
-      this.setProgress(progress, 80);
 
-      this.deps.signalService.showScrapeInfo({
-        fileInfo,
-        site: preparedData.website,
-        step: "organize",
+        const crawlerData: CrawlerData = aggregationResult.data;
+        let videoMeta: VideoMeta | undefined;
+
+        try {
+          videoMeta = await probeVideoMetadata(fileInfo.filePath);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger.warn(`Video probe failed: ${message}`);
+        }
+
+        this.setProgress(progress, 30);
+        const translated = await this.translateCrawlerDataOrFallback(crawlerData, configuration, signal);
+        throwIfAborted(signal);
+        let plan: OrganizePlan = {
+          ...this.deps.fileOrganizer.plan(fileInfo, translated, configuration, existingNfoLocalState),
+          subtitleSidecars,
+        };
+        plan = await this.deps.fileOrganizer.ensureOutputReady(plan, fileInfo.filePath);
+        throwIfAborted(signal);
+        const preparedOutputData = await prepareCrawlerDataForMovieOutput(
+          this.actorImageService,
+          configuration,
+          translated,
+          {
+            enabled: true,
+            movieDir: plan.outputDir,
+            sourceVideoPath: fileInfo.filePath,
+            actorSourceProvider: this.deps.actorSourceProvider,
+            signal,
+          },
+        );
+        throwIfAborted(signal);
+        this.setProgress(progress, 50);
+
+        this.deps.signalService.showScrapeInfo({
+          fileInfo,
+          site: translated.website,
+          step: "download",
+        });
+
+        const downloadImageAlternatives = prepareImageAlternativesForDownload(
+          preparedOutputData.data,
+          aggregationResult.imageAlternatives,
+          aggregationResult.sources,
+        );
+        let resolvedSceneImageUrls: string[] | undefined;
+        const assets = await this.deps.downloadManager.downloadAll(
+          plan.outputDir,
+          preparedOutputData.data,
+          configuration,
+          downloadImageAlternatives,
+          {
+            onSceneProgress: (downloaded, total) => {
+              this.deps.signalService.showLogText(`[${fileInfo.number}] Scene images: ${downloaded}/${total}`);
+            },
+            onResolvedSceneImageUrls: (urls) => {
+              resolvedSceneImageUrls = urls;
+            },
+            signal,
+          },
+        );
+        throwIfAborted(signal);
+        this.setProgress(progress, 75);
+
+        const preparedData = this.applyDownloadedSceneImageMetadata(preparedOutputData.data, resolvedSceneImageUrls);
+        let savedNfoPath: string | undefined;
+        if (configuration.download.generateNfo) {
+          if (configuration.download.keepNfo && (await pathExists(plan.nfoPath))) {
+            savedNfoPath = plan.nfoPath;
+          } else {
+            savedNfoPath = await this.deps.nfoGenerator.writeNfo(plan.nfoPath, preparedData, {
+              assets,
+              sources: aggregationResult.sources,
+              videoMeta,
+              fileInfo,
+            });
+          }
+        }
+        throwIfAborted(signal);
+        this.setProgress(progress, 80);
+
+        this.deps.signalService.showScrapeInfo({
+          fileInfo,
+          site: preparedData.website,
+          step: "organize",
+        });
+
+        throwIfAborted(signal);
+        const outputVideoPath = await this.deps.fileOrganizer.organizeVideo(fileInfo, plan, configuration);
+
+        this.setProgress(progress, 100);
+
+        const classification = classifyMovie(fileInfo, preparedData, existingNfoLocalState);
+        const uncensoredAmbiguous =
+          classification.uncensored &&
+          !classification.umr &&
+          !classification.leak &&
+          !isLikelyUncensoredNumber(preparedData.number || fileInfo.number);
+
+        const result: ScrapeResult = {
+          fileInfo: {
+            ...fileInfo,
+            filePath: outputVideoPath,
+          },
+          status: "success",
+          crawlerData: preparedData,
+          videoMeta,
+          outputPath: plan.outputDir,
+          nfoPath: savedNfoPath,
+          assets,
+          sources: aggregationResult.sources,
+          uncensoredAmbiguous,
+        };
+
+        this.deps.signalService.showScrapeResult(result);
+
+        return result;
       });
-
-      throwIfAborted(signal);
-      const outputVideoPath = await this.deps.fileOrganizer.organizeVideo(fileInfo, plan, configuration);
-
-      this.setProgress(progress, 100);
-
-      const classification = classifyMovie(fileInfo, preparedData, existingNfoLocalState);
-      const uncensoredAmbiguous =
-        classification.uncensored &&
-        !classification.umr &&
-        !classification.leak &&
-        !isLikelyUncensoredNumber(preparedData.number || fileInfo.number);
-
-      const result: ScrapeResult = {
-        fileInfo: {
-          ...fileInfo,
-          filePath: outputVideoPath,
-        },
-        status: "success",
-        crawlerData: preparedData,
-        videoMeta,
-        outputPath: plan.outputDir,
-        nfoPath: savedNfoPath,
-        assets,
-        sources: aggregationResult.sources,
-        uncensoredAmbiguous,
-      };
-
-      this.deps.signalService.showScrapeResult(result);
-
-      return result;
     } catch (error) {
       if (isAbortError(error)) {
         this.logger.info(`Scrape aborted for ${fileInfo.filePath}`);
@@ -242,7 +245,7 @@ export class FileScraper {
 
       try {
         const cfg = configurationSchema.parse(await this.deps.configManager.get());
-        await this.handleFailedFileMove(fileInfo, cfg);
+        fileInfo = await this.handleFailedFileMove(fileInfo, cfg);
       } catch (moveError) {
         const moveMsg = moveError instanceof Error ? moveError.message : String(moveError);
         this.logger.warn(`Failed to move file to failed folder: ${moveMsg}`);
@@ -347,17 +350,28 @@ export class FileScraper {
     this.deps.signalService.setProgress(value, fileIndex, totalFiles);
   }
 
-  private async handleFailedFileMove(fileInfo: FileInfo, config: Configuration): Promise<void> {
-    if (!config.behavior.failedFileMove) return;
+  private async handleFailedFileMove(fileInfo: FileInfo, config: Configuration): Promise<FileInfo> {
+    if (!config.behavior.failedFileMove) {
+      return fileInfo;
+    }
     if (!(await pathExists(fileInfo.filePath))) {
       this.logger.warn(`Skip failed-file move because source no longer exists: ${fileInfo.filePath}`);
-      return;
+      return fileInfo;
     }
     try {
-      await this.deps.fileOrganizer.moveToFailedFolder(fileInfo, config);
+      const movedPath = await this.deps.fileOrganizer.moveToFailedFolder(fileInfo, config);
+      const movedFileInfo = parseFileInfo(movedPath);
+      return {
+        ...fileInfo,
+        ...movedFileInfo,
+        filePath: movedPath,
+        isSubtitled: fileInfo.isSubtitled || movedFileInfo.isSubtitled,
+        subtitleTag: fileInfo.subtitleTag ?? movedFileInfo.subtitleTag,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Failed to move file to failed folder: ${message}`);
+      return fileInfo;
     }
   }
 
@@ -373,5 +387,27 @@ export class FileScraper {
       ...crawlerData,
       scene_images: [...sceneImageUrls],
     };
+  }
+
+  private async runExclusiveByNumber<T>(number: string, operation: () => Promise<T>): Promise<T> {
+    const lockKey = number.trim().toUpperCase();
+    const previous = this.numberExecutionChains.get(lockKey) ?? Promise.resolve();
+    let release: (() => void) | undefined;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const chain = previous.catch(() => undefined).then(async () => await current);
+    this.numberExecutionChains.set(lockKey, chain);
+
+    await previous.catch(() => undefined);
+
+    try {
+      return await operation();
+    } finally {
+      release?.();
+      if (this.numberExecutionChains.get(lockKey) === chain) {
+        this.numberExecutionChains.delete(lockKey);
+      }
+    }
   }
 }

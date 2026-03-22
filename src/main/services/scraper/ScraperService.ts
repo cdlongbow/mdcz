@@ -11,6 +11,7 @@ import { AggregationService } from "./aggregation";
 import { DownloadManager } from "./DownloadManager";
 import { fileOrganizer } from "./FileOrganizer";
 import { FileScraper } from "./FileScraper";
+import { isGeneratedSidecarVideo } from "./generatedSidecarVideos";
 import { NfoGenerator } from "./NfoGenerator";
 import { ScrapeSession } from "./ScrapeSession";
 import { TranslateService } from "./TranslateService";
@@ -313,7 +314,14 @@ export class ScraperService {
       }
     }
 
-    return uniquePaths(outputs);
+    const uniqueOutputPaths = uniquePaths(outputs);
+    const filteredOutputPaths = uniqueOutputPaths.filter((filePath) => !isGeneratedSidecarVideo(filePath));
+    const skippedGeneratedCount = uniqueOutputPaths.length - filteredOutputPaths.length;
+    if (skippedGeneratedCount > 0) {
+      this.logger.info(`Skipped ${skippedGeneratedCount} generated sidecar video(s) from batch scrape queue`);
+    }
+
+    return filteredOutputPaths;
   }
 
   private createFileScraperDependencies() {

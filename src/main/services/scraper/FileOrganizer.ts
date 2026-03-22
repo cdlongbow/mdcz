@@ -61,14 +61,12 @@ const appendMarker = (markers: string[], value: string): void => {
   markers.push(marker);
 };
 
-const isBareNumericPartSuffix = (suffix: string): boolean => /^[-_.\s][1-9]$/u.test(suffix.trimEnd());
-
 const formatPartSuffix = (fileInfo: FileInfo, config: Configuration): string => {
   if (!fileInfo.part) {
     return "";
   }
 
-  if (!isBareNumericPartSuffix(fileInfo.part.suffix)) {
+  if (config.naming.partStyle === "RAW") {
     return fileInfo.part.suffix;
   }
 
@@ -365,7 +363,7 @@ export class FileOrganizer {
     return result;
   }
 
-  async moveToFailedFolder(fileInfo: FileInfo, config: Configuration): Promise<void> {
+  async moveToFailedFolder(fileInfo: FileInfo, config: Configuration): Promise<string> {
     const mediaRoot = config.paths.mediaPath.trim();
     const base = mediaRoot.length > 0 ? mediaRoot : dirname(fileInfo.filePath);
     const failedDir = join(base, config.paths.failedOutputFolder);
@@ -375,8 +373,13 @@ export class FileOrganizer {
     });
 
     await ensureParentDirectory(resolvedPaths.targetVideoPath);
-    await this.moveBundledMedia(fileInfo.filePath, resolvedPaths.targetVideoPath, resolvedPaths.subtitleSidecars);
+    const movedPath = await this.moveBundledMedia(
+      fileInfo.filePath,
+      resolvedPaths.targetVideoPath,
+      resolvedPaths.subtitleSidecars,
+    );
     this.logger.info(`Moved failed file to ${failedDir}: ${fileInfo.fileName}`);
+    return movedPath;
   }
 
   private async moveBundledMedia(
@@ -455,6 +458,7 @@ export class FileOrganizer {
     const parsedTargetVideo = parse(options.targetVideoPath);
     const parsedNfo = options.nfoPath ? parse(options.nfoPath) : undefined;
     const nfoTracksVideoBase = parsedNfo ? parsedNfo.name === parsedTargetVideo.name : false;
+    const sharedMultipartNfo = Boolean(parsedNfo && !nfoTracksVideoBase);
     let collisionSuffix = 0;
 
     while (true) {
@@ -469,7 +473,7 @@ export class FileOrganizer {
         ...subtitleSidecars.map((subtitleSidecar) =>
           buildSubtitleSidecarTargetPath(subtitleSidecar, candidateVideoPath),
         ),
-        ...(candidateNfoPath ? [candidateNfoPath] : []),
+        ...(candidateNfoPath && !sharedMultipartNfo ? [candidateNfoPath] : []),
       ];
       const hasCollision = (
         await Promise.all(candidatePaths.map((path) => this.hasTargetCollision(path, ignoredExistingPaths)))

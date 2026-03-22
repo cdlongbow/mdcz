@@ -536,6 +536,58 @@ describe("AggregationService", () => {
     expect(provider.calledSites.sort()).toEqual([Website.FC2, Website.FC2HUB, Website.JAVDB].sort());
   });
 
+  it("skips FC2-only sites when aggregating a non-FC2 number", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.DMM,
+        makeCrawlerData({
+          title: "DMM Title",
+          thumb_url: "https://dmm.example/thumb.jpg",
+          website: Website.DMM,
+        }),
+      ],
+      [
+        Website.JAVDB,
+        makeCrawlerData({
+          title: "JAVDB Title",
+          thumb_url: "https://javdb.example/thumb.jpg",
+          website: Website.JAVDB,
+        }),
+      ],
+      [
+        Website.FC2,
+        makeCrawlerData({
+          title: "FC2 Title",
+          thumb_url: "https://fc2.example/thumb.jpg",
+          website: Website.FC2,
+        }),
+      ],
+      [
+        Website.FC2HUB,
+        makeCrawlerData({
+          title: "FC2HUB Title",
+          thumb_url: "https://fc2hub.example/thumb.jpg",
+          website: Website.FC2HUB,
+        }),
+      ],
+    ]);
+
+    const provider = new MultiResultCrawlerProvider(siteResults);
+    const result = await new AggregationService(provider).aggregate(
+      "ABF-075",
+      makeConfig({
+        scrape: {
+          ...defaultConfiguration.scrape,
+          enabledSites: [Website.DMM, Website.FC2, Website.FC2HUB, Website.JAVDB],
+          siteOrder: [Website.DMM, Website.FC2, Website.FC2HUB, Website.JAVDB],
+        },
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(provider.calledSites.sort()).toEqual([Website.DMM, Website.JAVDB].sort());
+  });
+
   it("aborts a slow crawler once its wall-clock budget is exhausted", async () => {
     const siteResults = new Map<Website, CrawlerData>([
       [

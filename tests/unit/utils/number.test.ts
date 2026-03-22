@@ -11,6 +11,8 @@ describe("extractNumber", () => {
       { input: "FC2-123456-4", expected: "FC2-123456" },
       { input: "FC2-123456-前番", expected: "FC2-123456" },
       { input: "IDBD-905-4", expected: "IDBD-905" },
+      { input: "IDBD-905-A", expected: "IDBD-905" },
+      { input: "IDBD-905-H", expected: "IDBD-905" },
       { input: "123-456", expected: "123-456" },
     ];
 
@@ -92,6 +94,66 @@ describe("parseFileInfo", () => {
         suffix: "-4",
       },
     });
+
+    expect(parseFileInfo("/tmp/IDBD-905-A.mkv")).toMatchObject({
+      number: "IDBD-905",
+      part: {
+        number: 1,
+        suffix: "-A",
+      },
+    });
+
+    expect(parseFileInfo("/tmp/IDBD-905-D-中文字幕.mkv")).toMatchObject({
+      number: "IDBD-905",
+      isSubtitled: true,
+      subtitleTag: "中文字幕",
+      part: {
+        number: 4,
+        suffix: "-D",
+      },
+    });
+
+    expect(parseFileInfo("/tmp/IDBD-905-H.mkv")).toMatchObject({
+      number: "IDBD-905",
+      part: {
+        number: 8,
+        suffix: "-H",
+      },
+    });
+
+    expect(parseFileInfo("/tmp/IDBD-905-Z.mkv")).toMatchObject({
+      number: "IDBD-905",
+      part: {
+        number: 26,
+        suffix: "-Z",
+      },
+    });
+
+    expect(parseFileInfo("/tmp/FC2-123456-縦ver ①.mp4")).toMatchObject({
+      number: "FC2-123456",
+      part: {
+        number: 1,
+        suffix: "-縦ver ①",
+      },
+    });
+
+    expect(parseFileInfo("/tmp/FC2-123456-視角 ②.mp4")).toMatchObject({
+      number: "FC2-123456",
+      part: {
+        number: 2,
+        suffix: "-視角 ②",
+      },
+    });
+
+    expect(parseFileInfo("/tmp/FC2-123456-③-中文字幕.mp4")).toMatchObject({
+      number: "FC2-123456",
+      isSubtitled: true,
+      subtitleTag: "中文字幕",
+      part: {
+        number: 3,
+        suffix: "-③",
+      },
+    });
   });
 
   it("distinguishes uncensored and subtitle suffixes and keeps resolution metadata", () => {
@@ -155,6 +217,24 @@ describe("parseFileInfo", () => {
 
     expect(parseFileInfo("/tmp/IDBD-905-12.mkv")).toMatchObject({
       number: "IDBD-905",
+      part: undefined,
+    });
+
+    expect(parseFileInfo("/tmp/ABP-123A.mp4")).toMatchObject({
+      number: "ABP-123A",
+      part: undefined,
+    });
+
+    expect(parseFileInfo("/tmp/IDBD-905-E.mp4")).toMatchObject({
+      number: "IDBD-905",
+      part: {
+        number: 5,
+        suffix: "-E",
+      },
+    });
+
+    expect(parseFileInfo("/tmp/FC2-123456-标题①.mp4")).toMatchObject({
+      number: "FC2-123456",
       part: undefined,
     });
   });

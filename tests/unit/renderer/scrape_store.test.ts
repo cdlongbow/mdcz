@@ -87,3 +87,43 @@ describe("useScrapeStore.resolveUncensoredResults", () => {
     ]);
   });
 });
+
+describe("useScrapeStore.addResult", () => {
+  it("groups multipart successes that share the same output directory", () => {
+    const store = useScrapeStore.getState();
+
+    store.addResult({
+      id: "part-1",
+      status: "success",
+      number: "FC2-123456",
+      title: "Multipart Title",
+      path: "/library/FC2-123456/FC2-123456-cd1.mp4",
+      outputPath: "/library/FC2-123456",
+      nfoPath: "/library/FC2-123456/FC2-123456.nfo",
+      sceneImages: ["/library/FC2-123456/extrafanart/fanart1.jpg"],
+    });
+    store.addResult({
+      id: "part-2",
+      status: "success",
+      number: "FC2-123456",
+      title: "Multipart Title",
+      path: "/library/FC2-123456/FC2-123456-cd2.mp4",
+      outputPath: "/library/FC2-123456",
+      nfoPath: "/library/FC2-123456/FC2-123456.nfo",
+      sceneImages: ["/library/FC2-123456/extrafanart/fanart1.jpg", "/library/FC2-123456/extrafanart/fanart2.jpg"],
+    });
+
+    expect(useScrapeStore.getState().results).toEqual([
+      {
+        id: "part-1",
+        status: "success",
+        number: "FC2-123456",
+        title: "Multipart Title",
+        path: "/library/FC2-123456/FC2-123456-cd1.mp4",
+        outputPath: "/library/FC2-123456",
+        nfoPath: "/library/FC2-123456/FC2-123456.nfo",
+        sceneImages: ["/library/FC2-123456/extrafanart/fanart1.jpg", "/library/FC2-123456/extrafanart/fanart2.jpg"],
+      },
+    ]);
+  });
+});

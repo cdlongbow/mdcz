@@ -180,7 +180,7 @@ describe("FileOrganizer naming settings", () => {
     }
   });
 
-  it("adds multipart suffixes to videos while keeping NFO on the base name", () => {
+  it("formats multipart suffixes according to the configured style while keeping NFO on the base name", () => {
     const organizer = new FileOrganizer();
     const explicitPartPlan = organizer.plan(
       createFileInfo({
@@ -197,12 +197,12 @@ describe("FileOrganizer naming settings", () => {
       createConfig({
         naming: {
           fileTemplate: "{number}",
-          partStyle: "disc",
+          partStyle: "DISC",
         },
       }),
     );
 
-    expect(parse(explicitPartPlan.targetVideoPath).name).toBe("XYZ-999-CEN-CD1");
+    expect(parse(explicitPartPlan.targetVideoPath).name).toBe("XYZ-999-CEN-DISC1");
     expect(parse(explicitPartPlan.nfoPath).name).toBe("XYZ-999-CEN");
 
     const numericPartPlan = organizer.plan(
@@ -220,12 +220,12 @@ describe("FileOrganizer naming settings", () => {
       createConfig({
         naming: {
           fileTemplate: "{number}",
-          partStyle: "disc",
+          partStyle: "DISC",
         },
       }),
     );
 
-    expect(parse(numericPartPlan.targetVideoPath).name).toBe("XYZ-999-CEN-disc4");
+    expect(parse(numericPartPlan.targetVideoPath).name).toBe("XYZ-999-CEN-DISC4");
     expect(parse(numericPartPlan.nfoPath).name).toBe("XYZ-999-CEN");
   });
 
@@ -670,7 +670,7 @@ describe("FileOrganizer naming settings", () => {
     );
 
     await expect(organizer.ensureOutputReady(multipartPlan, multipartSourcePath)).resolves.toMatchObject({
-      targetVideoPath: join(multipartRoot, "FC2-123456-cd1.mp4"),
+      targetVideoPath: join(multipartRoot, "FC2-123456-1.mp4"),
       nfoPath: join(multipartRoot, "FC2-123456.nfo"),
     });
 
@@ -693,5 +693,49 @@ describe("FileOrganizer naming settings", () => {
     await expect(organizer.ensureOutputReady(invalidPlan, invalidSourcePath)).rejects.toThrow(
       "成功后不移动文件时，仅支持源目录内存在单个视频文件",
     );
+  });
+
+  it("allows multipart videos to reuse an existing shared base NFO without hanging", async () => {
+    const root = await createTempDir();
+    const organizer = new FileOrganizer();
+    const config = createConfig({
+      paths: {
+        mediaPath: root,
+        successOutputFolder: "output",
+      },
+      naming: {
+        folderTemplate: "{number}",
+        fileTemplate: "{number}",
+      },
+      behavior: {
+        successFileMove: true,
+        successFileRename: true,
+      },
+    });
+    const fileInfo = createFileInfo({
+      filePath: join(root, "FC2-123456-cd2.mp4"),
+      fileName: "FC2-123456-cd2",
+      number: "FC2-123456",
+      part: {
+        number: 2,
+        suffix: "-cd2",
+      },
+    });
+    const plan = organizer.plan(
+      fileInfo,
+      createCrawlerData({
+        number: "FC2-123456",
+      }),
+      config,
+    );
+
+    await writeFile(fileInfo.filePath, "video", "utf8");
+    await mkdir(plan.outputDir, { recursive: true });
+    await writeFile(join(plan.outputDir, "FC2-123456.nfo"), "<movie />", "utf8");
+
+    await expect(organizer.ensureOutputReady(plan, fileInfo.filePath)).resolves.toMatchObject({
+      targetVideoPath: join(root, "output", "FC2-123456", "FC2-123456-cd2.mp4"),
+      nfoPath: join(root, "output", "FC2-123456", "FC2-123456.nfo"),
+    });
   });
 });

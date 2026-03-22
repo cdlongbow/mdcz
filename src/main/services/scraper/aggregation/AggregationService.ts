@@ -15,6 +15,7 @@ interface CacheEntry {
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const FC2_SITE_WHITELIST = new Set<Website>([Website.FC2, Website.FC2HUB, Website.JAVDB]);
+const FC2_ONLY_SITES = new Set<Website>([Website.FC2, Website.FC2HUB]);
 const FC2_NUMBER_PATTERN = /^FC2-?\d+$/iu;
 const EARLY_STOP_IMAGE_FIELDS = ["thumb_url", "poster_url"] as const;
 
@@ -113,7 +114,7 @@ export class AggregationService {
     const enabledSet = new Set(config.scrape.enabledSites);
     const ordered = config.scrape.siteOrder.filter((site) => enabledSet.has(site));
     const isFc2 = FC2_NUMBER_PATTERN.test(number.trim().toUpperCase());
-    const candidates = isFc2 ? ordered.filter((site) => FC2_SITE_WHITELIST.has(site)) : ordered;
+    const candidates = ordered.filter((site) => (isFc2 ? FC2_SITE_WHITELIST.has(site) : !FC2_ONLY_SITES.has(site)));
 
     if (isFc2) {
       this.logger.info(`FC2 number detected for ${number}; limiting sites to: ${candidates.join(", ") || "(none)"}`);

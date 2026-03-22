@@ -82,9 +82,10 @@ const LANGUAGE_OPTIONS = ["zh-CN", "zh-TW", "ja-JP", "en-US"];
 const ACTOR_OVERVIEW_SOURCE_OPTIONS = ["official", "avjoho", "avbase"];
 const ACTOR_IMAGE_SOURCE_OPTIONS = ["local", "gfriends", "official", "avbase"];
 const PART_STYLE_OPTIONS: EnumOption[] = [
-  { value: "cd", label: "cd1 / cd2" },
-  { value: "part", label: "part1 / part2" },
-  { value: "disc", label: "disc1 / disc2" },
+  { value: "RAW", label: "保持原始后缀" },
+  { value: "CD", label: "统一为 CD1 / CD2" },
+  { value: "PART", label: "统一为 PART1 / PART2" },
+  { value: "DISC", label: "统一为 DISC1 / DISC2" },
 ];
 
 export const NAMING_TEMPLATE_DESCRIPTION =
@@ -148,7 +149,7 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "naming.leakStyle", label: "流出标记", section: "naming" },
   { key: "naming.uncensoredStyle", label: "无码标记", section: "naming" },
   { key: "naming.censoredStyle", label: "有码标记", section: "naming" },
-  { key: "naming.partStyle", label: "裸数字分盘样式", section: "naming" },
+  { key: "naming.partStyle", label: "分盘样式", section: "naming" },
   // translate
   { key: "translate.enableTranslation", label: "启用内容翻译", section: "translate" },
   { key: "translate.engine", label: "翻译引擎", section: "translate" },
@@ -483,8 +484,8 @@ export function NamingSection(_props: SectionRenderProps) {
       <TextField name="naming.censoredStyle" label="有码标记" />
       <EnumField
         name="naming.partStyle"
-        label="裸数字分盘样式"
-        description="仅对原文件名是 -1..-9 这类裸数字分盘时生效"
+        label="分盘样式"
+        description="控制识别为分盘的视频在输出时保留原始后缀，或统一改写为 CD / PART / DISC 风格"
         options={PART_STYLE_OPTIONS}
       />
     </>

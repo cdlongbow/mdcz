@@ -337,7 +337,7 @@ describe("Configuration migrations", () => {
       expect(parsed.paths.sceneImagesFolder).toBe("my_custom_folder");
       expect(parsed.paths.actorPhotoFolder).toBe("actor_photo");
       expect(parsed.download.generateNfo).toBe(false);
-      expect(parsed.naming.partStyle).toBe("cd");
+      expect(parsed.naming.partStyle).toBe("RAW");
       expect(parsed.aggregation.fieldPriorities.title).toEqual(["javdb", "dmm"]);
       expect(parsed.aggregation.fieldPriorities.scene_images).toEqual(["javbus"]);
       expect(parsed.aggregation.fieldPriorities.rating).toEqual(["javdb"]);
@@ -395,7 +395,7 @@ describe("Configuration migrations", () => {
       expect(scrape.siteOrder).toEqual(V050_ENABLED_SITES);
       expect(fieldPriorities.scene_images).toEqual(V050_FIELD_PRIORITY_DEFAULTS.scene_images);
       expect(fieldPriorities).not.toHaveProperty("sample_images");
-      expect(parsed.naming.partStyle).toBe("cd");
+      expect(parsed.naming.partStyle).toBe("RAW");
     });
 
     it("preserves customized v0.4 values while renaming fields", () => {
@@ -403,18 +403,21 @@ describe("Configuration migrations", () => {
       const scrape = raw.scrape as Record<string, unknown>;
       const download = raw.download as Record<string, unknown>;
       const fieldPriorities = (raw.aggregation as Record<string, unknown>).fieldPriorities as Record<string, string[]>;
+      const naming = raw.naming as Record<string, unknown>;
 
       scrape.enabledSites = ["avbase", "javdb"];
       scrape.siteOrder = ["javdb", "avbase"];
       download.downloadNfo = false;
       fieldPriorities.sample_images = ["javbus"];
       fieldPriorities.rating = ["javdb"];
+      naming.partStyle = "disc";
 
       const parsed = migrate(raw).parsed;
 
       expect(parsed.scrape.enabledSites).toEqual(["avbase", "javdb"]);
       expect(parsed.scrape.siteOrder).toEqual(["javdb", "avbase"]);
       expect(parsed.download.generateNfo).toBe(false);
+      expect(parsed.naming.partStyle).toBe("DISC");
       expect(parsed.aggregation.fieldPriorities.scene_images).toEqual(["javbus"]);
       expect(parsed.aggregation.fieldPriorities.rating).toEqual(["javdb"]);
     });

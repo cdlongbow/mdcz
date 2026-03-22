@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { SignalService } from "@main/services/SignalService";
 import type { AggregationService } from "@main/services/scraper/aggregation";
@@ -8,7 +11,7 @@ import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import type { TranslateService } from "@main/services/scraper/TranslateService";
 import { Website } from "@shared/enums";
 import type { CrawlerData, FileInfo } from "@shared/types";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TestConfigManager } from "./helpers";
 
 const config = configurationSchema.parse({
@@ -54,8 +57,35 @@ const createPlan = (fileInfo: FileInfo): OrganizePlan => ({
   nfoPath: `/output/${fileInfo.number}/${fileInfo.number}.nfo`,
 });
 
-const createScraper = (aggregate: ReturnType<typeof vi.fn>) =>
-  new FileScraper({
+const tempDirs: string[] = [];
+
+const createTempDir = async (): Promise<string> => {
+  const dirPath = await mkdtemp(join(tmpdir(), "mdcz-file-scraper-"));
+  tempDirs.push(dirPath);
+  return dirPath;
+};
+
+const createScraper = (
+  aggregate: ReturnType<typeof vi.fn>,
+  overrides: {
+    downloadAll?: ReturnType<typeof vi.fn>;
+    ensureOutputReady?: ReturnType<typeof vi.fn>;
+    organizeVideo?: ReturnType<typeof vi.fn>;
+    moveToFailedFolder?: ReturnType<typeof vi.fn>;
+  } = {},
+) => {
+  const downloadAll =
+    overrides.downloadAll ??
+    vi.fn().mockResolvedValue({
+      downloaded: [],
+      sceneImages: [],
+    });
+  const ensureOutputReady = overrides.ensureOutputReady ?? vi.fn(async (plan: OrganizePlan) => plan);
+  const organizeVideo =
+    overrides.organizeVideo ?? vi.fn(async (_fileInfo: FileInfo, plan: OrganizePlan) => plan.targetVideoPath);
+  const moveToFailedFolder = overrides.moveToFailedFolder ?? vi.fn(async (fileInfo: FileInfo) => fileInfo.filePath);
+
+  const scraper = new FileScraper({
     configManager: new TestConfigManager(config),
     aggregationService: {
       aggregate,
@@ -67,23 +97,38 @@ const createScraper = (aggregate: ReturnType<typeof vi.fn>) =>
       writeNfo: vi.fn(),
     } as unknown as NfoGenerator,
     downloadManager: {
-      downloadAll: vi.fn().mockResolvedValue({
-        downloaded: [],
-        sceneImages: [],
-      }),
+      downloadAll,
     } as unknown as DownloadManager,
     fileOrganizer: {
       plan: vi.fn((fileInfo: FileInfo) => createPlan(fileInfo)),
-      ensureOutputReady: vi.fn(async (plan: OrganizePlan) => plan),
-      organizeVideo: vi.fn(async (_fileInfo: FileInfo, plan: OrganizePlan) => plan.targetVideoPath),
+      ensureOutputReady,
+      organizeVideo,
+      moveToFailedFolder,
     } as unknown as FileOrganizer,
     signalService: new SignalService(null),
   });
 
+  return {
+    scraper,
+    mocks: {
+      downloadAll,
+      ensureOutputReady,
+      organizeVideo,
+      moveToFailedFolder,
+    },
+  };
+};
+
 describe("FileScraper multipart aggregation cache", () => {
+  afterEach(async () => {
+    await Promise.all(
+      tempDirs.splice(0, tempDirs.length).map((dirPath) => rm(dirPath, { recursive: true, force: true })),
+    );
+  });
+
   it("reuses one aggregation request for same-number multipart files", async () => {
     const aggregate = vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData({ number: "FC2-123456" })));
-    const scraper = createScraper(aggregate);
+    const { scraper } = createScraper(aggregate);
 
     const [part1, part2] = await Promise.all([
       scraper.scrapeFile("/tmp/FC2-123456-1.mp4", { fileIndex: 1, totalFiles: 2 }),
@@ -99,12 +144,30 @@ describe("FileScraper multipart aggregation cache", () => {
     expect(part2.fileInfo.filePath).toContain("FC2-123456-2");
   });
 
+  it("reuses one aggregation request for alphabetic multipart files", async () => {
+    const aggregate = vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData({ number: "IDBD-905" })));
+    const { scraper } = createScraper(aggregate);
+
+    const [partA, partH] = await Promise.all([
+      scraper.scrapeFile("/tmp/IDBD-905-A.mp4", { fileIndex: 1, totalFiles: 2 }),
+      scraper.scrapeFile("/tmp/IDBD-905-H.mp4", { fileIndex: 2, totalFiles: 2 }),
+    ]);
+
+    expect(aggregate).toHaveBeenCalledTimes(1);
+    expect(partA.status).toBe("success");
+    expect(partH.status).toBe("success");
+    expect(partA.fileInfo.part?.number).toBe(1);
+    expect(partH.fileInfo.part?.number).toBe(8);
+    expect(partA.fileInfo.filePath).toContain("IDBD-905-A");
+    expect(partH.fileInfo.filePath).toContain("IDBD-905-H");
+  });
+
   it("keeps aggregation requests separate for different numbers", async () => {
     const aggregate = vi
       .fn()
       .mockResolvedValueOnce(createAggregationResult(createCrawlerData({ number: "ABC-123" })))
       .mockResolvedValueOnce(createAggregationResult(createCrawlerData({ number: "XYZ-999" })));
-    const scraper = createScraper(aggregate);
+    const { scraper } = createScraper(aggregate);
 
     const [first, second] = await Promise.all([
       scraper.scrapeFile("/tmp/ABC-123-1.mp4", { fileIndex: 1, totalFiles: 2 }),
@@ -118,7 +181,7 @@ describe("FileScraper multipart aggregation cache", () => {
 
   it("propagates shared aggregation failures to each multipart result", async () => {
     const aggregate = vi.fn().mockRejectedValue(new Error("aggregate failed"));
-    const scraper = createScraper(aggregate);
+    const { scraper } = createScraper(aggregate);
 
     const [part1, part2] = await Promise.all([
       scraper.scrapeFile("/tmp/FC2-123456-1.mp4", { fileIndex: 1, totalFiles: 2 }),
@@ -134,5 +197,66 @@ describe("FileScraper multipart aggregation cache", () => {
       status: "failed",
       error: "aggregate failed",
     });
+  });
+
+  it("serializes same-number multipart files before output planning", async () => {
+    const aggregate = vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData({ number: "FC2-123456" })));
+    let markFirstStarted: (() => void) | undefined;
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
+    let releaseFirst: (() => void) | undefined;
+    const holdFirst = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const ensureOutputReady = vi.fn(async (plan: OrganizePlan) => {
+      if (ensureOutputReady.mock.calls.length === 1) {
+        markFirstStarted?.();
+        await holdFirst;
+      }
+      return plan;
+    });
+    const { scraper, mocks } = createScraper(aggregate, {
+      ensureOutputReady,
+    });
+
+    const firstPromise = scraper.scrapeFile("/tmp/FC2-123456-1.mp4", { fileIndex: 1, totalFiles: 2 });
+    await firstStarted;
+
+    const secondPromise = scraper.scrapeFile("/tmp/FC2-123456-2.mp4", { fileIndex: 2, totalFiles: 2 });
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    expect(mocks.ensureOutputReady).toHaveBeenCalledTimes(1);
+
+    releaseFirst?.();
+
+    const [first, second] = await Promise.all([firstPromise, secondPromise]);
+
+    expect(first.status).toBe("success");
+    expect(second.status).toBe("success");
+    expect(mocks.ensureOutputReady).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports failed results at the failed-folder path after moving the source video", async () => {
+    const root = await createTempDir();
+    const sourcePath = join(root, "FC2-123456.mp4");
+    await writeFile(sourcePath, "video", "utf8");
+
+    const aggregate = vi.fn().mockResolvedValue(null);
+    const { scraper, mocks } = createScraper(aggregate, {
+      moveToFailedFolder: vi.fn(async () => join(root, "failed", "FC2-123456.mp4")),
+    });
+
+    const result = await scraper.scrapeFile(sourcePath, { fileIndex: 1, totalFiles: 1 });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      fileInfo: {
+        filePath: join(root, "failed", "FC2-123456.mp4"),
+      },
+    });
+    expect(mocks.moveToFailedFolder).toHaveBeenCalledTimes(1);
   });
 });

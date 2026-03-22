@@ -291,6 +291,30 @@ function migrateV040ToV050(raw: Record<string, unknown>): void {
 
   // 4. Normalize untouched v0.4 fieldPriorities arrays to the v0.5 defaults
   normalizeFieldPriorityDefaults(raw, V1_FIELD_PRIORITY_DEFAULTS, V2_FIELD_PRIORITY_DEFAULTS);
+
+  // 5. Rename multipart style values to the current uppercase enum and default to RAW
+  const naming = raw.naming;
+  if (isRecord(naming)) {
+    const currentPartStyle = naming.partStyle;
+    if (typeof currentPartStyle === "string") {
+      switch (currentPartStyle.toLowerCase()) {
+        case "cd":
+          naming.partStyle = "CD";
+          break;
+        case "part":
+          naming.partStyle = "PART";
+          break;
+        case "disc":
+          naming.partStyle = "DISC";
+          break;
+        default:
+          naming.partStyle = "RAW";
+          break;
+      }
+    } else {
+      naming.partStyle = "RAW";
+    }
+  }
 }
 
 // ── Registry ─────────────────────────────────────────────────────────────────
