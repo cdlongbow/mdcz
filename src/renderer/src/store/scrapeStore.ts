@@ -67,6 +67,7 @@ const noopStorage = {
   removeItem: () => undefined,
 };
 
+// Renderer builds without a path polyfill, so keep this dirname logic local.
 const deriveOutputPathFromVideoPath = (videoPath: string): string | undefined => {
   const normalizedPath = videoPath.trim();
   if (!normalizedPath) {

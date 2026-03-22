@@ -1,15 +1,13 @@
-import { readFile } from "node:fs/promises";
 import type { ServiceContainer } from "@main/container";
 import { configManager, configurationSchema } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { ScraperServiceError } from "@main/services/scraper";
-import { FileOrganizer } from "@main/services/scraper/FileOrganizer";
+import { fileOrganizer } from "@main/services/scraper/FileOrganizer";
 import { LocalScanService } from "@main/services/scraper/maintenance/LocalScanService";
 import { MaintenanceArtifactResolver } from "@main/services/scraper/maintenance/MaintenanceArtifactResolver";
 import { nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { toErrorMessage } from "@main/utils/common";
 import { pathExists } from "@main/utils/file";
-import { parseNfoSnapshot } from "@main/utils/nfo";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
 import type {
@@ -18,11 +16,10 @@ import type {
   UncensoredConfirmItem,
   UncensoredConfirmResultItem,
 } from "@shared/types";
-import { createIpcError } from "../errors";
+import { createIpcError, IpcErrorCode } from "../errors";
 import { asSerializableIpcError, t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter");
-const fileOrganizer = new FileOrganizer();
 const localScanService = new LocalScanService();
 const artifactResolver = new MaintenanceArtifactResolver();
 
@@ -162,6 +159,10 @@ export const createScraperHandlers = (
         let updatedCount = 0;
         const updatedItems: UncensoredConfirmResultItem[] = [];
         const config = configurationSchema.parse(await configManager.get());
+        if (!config.download.generateNfo) {
+          logger.warn("Rejecting uncensored confirm because NFO generation is disabled");
+          throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "已关闭 NFO 生成功能，无法确认无码类型");
+        }
 
         for (const item of items) {
           try {
@@ -179,18 +180,17 @@ export const createScraperHandlers = (
               continue;
             }
 
-            const snapshot = parseNfoSnapshot(await readFile(effectiveNfoPath, "utf8"));
             const nextLocalState = {
-              ...snapshot.localState,
+              ...entry.nfoLocalState,
               uncensoredChoice: item.choice,
             };
-            const rawPlan = fileOrganizer.plan(entry.fileInfo, snapshot.crawlerData, config, nextLocalState);
+            const rawPlan = fileOrganizer.plan(entry.fileInfo, entry.crawlerData, config, nextLocalState);
             const plan = await fileOrganizer.ensureOutputReady(rawPlan, entry.fileInfo.filePath);
-            const savedNfoPath = await nfoGenerator.writeNfo(plan.nfoPath, snapshot.crawlerData, {
+            const outputVideoPath = await fileOrganizer.organizeVideo(entry.fileInfo, plan, config);
+            const savedNfoPath = await nfoGenerator.writeNfo(plan.nfoPath, entry.crawlerData, {
               fileInfo: entry.fileInfo,
               localState: nextLocalState,
             });
-            const outputVideoPath = await fileOrganizer.organizeVideo(entry.fileInfo, plan, config);
             const resolvedArtifacts = await artifactResolver.resolve({
               entry: {
                 ...entry,

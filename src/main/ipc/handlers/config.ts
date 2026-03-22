@@ -5,11 +5,8 @@ import {
   configurationSchema,
   type DeepPartial,
 } from "@main/services/config";
-import { FileOrganizer } from "@main/services/scraper/FileOrganizer";
+import { fileOrganizer } from "@main/services/scraper/FileOrganizer";
 import { toErrorMessage } from "@main/utils/common";
-
-const fileOrganizer = new FileOrganizer();
-
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
 import { createIpcError, IpcErrorCode } from "../errors";

@@ -1,6 +1,37 @@
 import { ConfigMigrationError, runMigrations } from "@main/services/config/migrator";
-import { configurationSchema, defaultConfiguration } from "@main/services/config/models";
+import { configurationSchema } from "@main/services/config/models";
 import { describe, expect, it } from "vitest";
+
+const V040_ENABLED_SITES = [
+  "dmm",
+  "dmm_tv",
+  "mgstage",
+  "prestige",
+  "faleno",
+  "dahlia",
+  "fc2",
+  "javdb",
+  "javbus",
+  "jav321",
+  "km_produce",
+  "avbase",
+];
+
+const V040_FIELD_PRIORITY_DEFAULTS = {
+  title: ["avbase", "mgstage", "dmm", "dmm_tv", "javdb", "javbus", "jav321", "fc2"],
+  plot: ["avbase", "mgstage", "dmm", "dmm_tv", "jav321", "fc2"],
+  actors: ["avbase", "mgstage", "dmm", "javdb", "javbus"],
+  genres: ["avbase", "dmm", "javdb", "javbus", "fc2"],
+  thumb_url: ["avbase", "mgstage", "dmm", "javdb", "javbus", "fc2"],
+  poster_url: ["avbase", "mgstage", "dmm", "javdb", "javbus", "fc2"],
+  scene_images: ["avbase", "mgstage", "dmm", "javdb", "javbus"],
+  studio: ["avbase", "dmm", "javdb", "javbus", "fc2"],
+  director: ["avbase", "dmm", "javdb"],
+  publisher: ["avbase", "dmm", "javdb", "fc2"],
+  series: ["avbase", "dmm", "javdb", "javbus"],
+  release_date: ["avbase", "dmm", "javdb", "javbus", "fc2"],
+  rating: ["dmm_tv", "dmm", "javdb"],
+} as const;
 
 /**
  * Build a minimal v0.3.0 config object for testing.
@@ -192,30 +223,22 @@ describe("Configuration migrations", () => {
       expect(raw).not.toHaveProperty("jellyfin");
       expect(paths.actorPhotoFolder).toBe("/photos");
 
-      expect(fieldPriorities.thumb_url).toEqual(defaultConfiguration.aggregation.fieldPriorities.thumb_url);
+      expect(fieldPriorities.thumb_url).toEqual(V040_FIELD_PRIORITY_DEFAULTS.thumb_url);
       expect(fieldPriorities).not.toHaveProperty("cover_url");
     });
 
-    it("normalizes legacy defaults to the current defaults", () => {
+    it("normalizes legacy defaults to the v0.4.0 defaults", () => {
       const { raw, parsed } = migrate();
       const paths = raw.paths as Record<string, unknown>;
       const scrape = raw.scrape as Record<string, unknown>;
 
       expect(paths.sceneImagesFolder).toBe("extrafanart");
-      expect(scrape.enabledSites).toEqual(defaultConfiguration.scrape.enabledSites);
-      expect(scrape.siteOrder).toEqual(defaultConfiguration.scrape.siteOrder);
-      expect(parsed.aggregation.fieldPriorities.actors).toEqual(
-        defaultConfiguration.aggregation.fieldPriorities.actors,
-      );
-      expect(parsed.aggregation.fieldPriorities.thumb_url).toEqual(
-        defaultConfiguration.aggregation.fieldPriorities.thumb_url,
-      );
-      expect(parsed.aggregation.fieldPriorities.poster_url).toEqual(
-        defaultConfiguration.aggregation.fieldPriorities.poster_url,
-      );
-      expect(parsed.aggregation.fieldPriorities.release_date).toEqual(
-        defaultConfiguration.aggregation.fieldPriorities.release_date,
-      );
+      expect(scrape.enabledSites).toEqual(V040_ENABLED_SITES);
+      expect(scrape.siteOrder).toEqual(V040_ENABLED_SITES);
+      expect(parsed.aggregation.fieldPriorities.actors).toEqual(V040_FIELD_PRIORITY_DEFAULTS.actors);
+      expect(parsed.aggregation.fieldPriorities.thumb_url).toEqual(V040_FIELD_PRIORITY_DEFAULTS.thumb_url);
+      expect(parsed.aggregation.fieldPriorities.poster_url).toEqual(V040_FIELD_PRIORITY_DEFAULTS.poster_url);
+      expect(parsed.aggregation.fieldPriorities.release_date).toEqual(V040_FIELD_PRIORITY_DEFAULTS.release_date);
     });
 
     it("preserves customized values instead of resetting them", () => {

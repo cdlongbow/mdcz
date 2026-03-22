@@ -10,13 +10,14 @@ import { pathExists } from "@main/utils/file";
 import { classifyMovie, isLikelyUncensoredNumber } from "@main/utils/movieClassification";
 import { parseFileInfo } from "@main/utils/number";
 import { probeVideoMetadata } from "@main/utils/video";
-import type { CrawlerData, FileInfo, ScrapeResult, VideoMeta } from "@shared/types";
+import type { CrawlerData, FileInfo, NfoLocalState, ScrapeResult, VideoMeta } from "@shared/types";
 import { isAbortError, throwIfAborted } from "./abort";
 import type { AggregationResult, AggregationService } from "./aggregation";
 import type { DownloadManager } from "./DownloadManager";
 import type { FileOrganizer, OrganizePlan } from "./FileOrganizer";
 import { resolveFileInfoWithSubtitles } from "./fileInfoWithSubtitles";
 import { isGeneratedSidecarVideo } from "./generatedSidecarVideos";
+import { LocalScanService } from "./maintenance/LocalScanService";
 import type { NfoGenerator } from "./NfoGenerator";
 import { prepareCrawlerDataForMovieOutput } from "./prepareCrawlerDataForMovieOutput";
 import { prepareImageAlternativesForDownload } from "./prepareImageAlternativesForDownload";
@@ -32,6 +33,7 @@ export interface FileScraperDependencies {
   signalService: SignalService;
   actorImageService?: ActorImageService;
   actorSourceProvider?: ActorSourceProvider;
+  localScanService?: Pick<LocalScanService, "scanVideo">;
 }
 
 export interface FileScrapeProgress {
@@ -45,11 +47,13 @@ export class FileScraper {
   private readonly logger = loggerService.getLogger("FileScraper");
 
   private readonly actorImageService: ActorImageService;
+  private readonly localScanService: Pick<LocalScanService, "scanVideo">;
   private readonly aggregationPromiseCache = new Map<string, Promise<AggregationResult | null>>();
   private readonly aggregationFailureEvictionTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private readonly deps: FileScraperDependencies) {
     this.actorImageService = deps.actorImageService ?? new ActorImageService();
+    this.localScanService = deps.localScanService ?? new LocalScanService();
   }
 
   async scrapeFile(
@@ -75,6 +79,7 @@ export class FileScraper {
       void aggregationResultPromise.catch(() => undefined);
       const { fileInfo: resolvedFileInfo, subtitleSidecars } = await fileInfoWithSubtitlesPromise;
       fileInfo = resolvedFileInfo;
+      const existingNfoLocalState = await this.loadExistingNfoLocalState(fileInfo.filePath, configuration);
 
       this.deps.signalService.showLogText(`Starting scrape task ${taskId} for ${fileInfo.fileName}`);
       throwIfAborted(signal);
@@ -115,7 +120,7 @@ export class FileScraper {
       const translated = await this.translateCrawlerDataOrFallback(crawlerData, configuration, signal);
       throwIfAborted(signal);
       let plan: OrganizePlan = {
-        ...this.deps.fileOrganizer.plan(fileInfo, translated, configuration),
+        ...this.deps.fileOrganizer.plan(fileInfo, translated, configuration, existingNfoLocalState),
         subtitleSidecars,
       };
       plan = await this.deps.fileOrganizer.ensureOutputReady(plan, fileInfo.filePath);
@@ -193,7 +198,7 @@ export class FileScraper {
 
       this.setProgress(progress, 100);
 
-      const classification = classifyMovie(fileInfo, preparedData);
+      const classification = classifyMovie(fileInfo, preparedData, existingNfoLocalState);
       const uncensoredAmbiguous =
         classification.uncensored &&
         !classification.umr &&
@@ -212,7 +217,7 @@ export class FileScraper {
         nfoPath: savedNfoPath,
         assets,
         sources: aggregationResult.sources,
-        ...(uncensoredAmbiguous ? { uncensoredAmbiguous: true } : {}),
+        uncensoredAmbiguous,
       };
 
       this.deps.signalService.showScrapeResult(result);
@@ -271,6 +276,24 @@ export class FileScraper {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Translation failed for ${crawlerData.number}: ${message}`);
       return crawlerData;
+    }
+  }
+
+  private async loadExistingNfoLocalState(
+    filePath: string,
+    configuration: Configuration,
+  ): Promise<NfoLocalState | undefined> {
+    if (!configuration.download.generateNfo || !configuration.download.keepNfo) {
+      return undefined;
+    }
+
+    try {
+      const entry = await this.localScanService.scanVideo(filePath, configuration.paths.sceneImagesFolder);
+      return entry.nfoLocalState;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Failed to read existing NFO local state for ${filePath}: ${message}`);
+      return undefined;
     }
   }
 

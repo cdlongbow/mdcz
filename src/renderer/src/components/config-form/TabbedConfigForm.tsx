@@ -403,31 +403,37 @@ function NamingPreview() {
   }) as Record<string, unknown> | undefined;
   const [previews, setPreviews] = useState<NamingPreviewItem[]>([]);
   const [loading, setLoading] = useState(false);
-
-  const previewConfigKey = useMemo(
-    () =>
-      JSON.stringify({
-        naming: naming ?? {},
-        behavior: behavior ?? {},
-      }),
+  const previewConfig = useMemo(
+    () => ({
+      naming: naming ?? {},
+      behavior: behavior ?? {},
+    }),
     [behavior, naming],
   );
+  const previewConfigRef = useRef(previewConfig);
+
+  const previewConfigKey = useMemo(() => JSON.stringify(previewConfig), [previewConfig]);
 
   useEffect(() => {
+    previewConfigRef.current = previewConfig;
+  }, [previewConfig]);
+
+  useEffect(() => {
+    const requestKey = previewConfigKey;
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       setLoading(true);
       try {
-        const result = await ipc.config.previewNaming(JSON.parse(previewConfigKey) as Partial<Configuration>);
-        if (!cancelled) {
+        const result = await ipc.config.previewNaming(previewConfigRef.current as Partial<Configuration>);
+        if (!cancelled && requestKey === previewConfigKey) {
           setPreviews(result.items);
         }
       } catch {
-        if (!cancelled) {
+        if (!cancelled && requestKey === previewConfigKey) {
           setPreviews([]);
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && requestKey === previewConfigKey) {
           setLoading(false);
         }
       }

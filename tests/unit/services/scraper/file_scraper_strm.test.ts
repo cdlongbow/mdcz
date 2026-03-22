@@ -65,11 +65,13 @@ const createScraper = ({
   crawlerData,
   plan,
   writeNfo,
+  localScanService,
 }: {
   config: ReturnType<typeof createConfig>;
   crawlerData: CrawlerData;
   plan: OrganizePlan;
   writeNfo: ReturnType<typeof vi.fn>;
+  localScanService?: { scanVideo: ReturnType<typeof vi.fn> };
 }) =>
   new FileScraper({
     configManager: new TestConfigManager(config),
@@ -94,6 +96,7 @@ const createScraper = ({
       organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
     } as unknown as FileOrganizer,
     signalService: new SignalService(null),
+    localScanService,
   });
 
 describe("FileScraper .strm support", () => {
@@ -152,5 +155,71 @@ describe("FileScraper .strm support", () => {
 
     expect(writeNfo).not.toHaveBeenCalled();
     expect(result.nfoPath).toBe(nfoPath);
+  });
+
+  it("reuses kept NFO local state for planning and uncensored confirmation state", async () => {
+    const root = await createTempDir();
+    const nfoPath = join(root, "ABC-123-U.nfo");
+    await writeFile(nfoPath, "<movie />", "utf8");
+
+    const config = createConfig({
+      generateNfo: true,
+      keepNfo: true,
+    });
+    const crawlerData = createCrawlerData();
+    const plan: OrganizePlan = {
+      outputDir: root,
+      targetVideoPath: join(root, "ABC-123-U.strm"),
+      nfoPath,
+    };
+    const writeNfo = vi.fn().mockResolvedValue(nfoPath);
+    const fileOrganizer = {
+      plan: vi.fn().mockReturnValue(plan),
+      ensureOutputReady: vi.fn().mockResolvedValue(plan),
+      organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
+    } as unknown as FileOrganizer;
+    const localScanService = {
+      scanVideo: vi.fn().mockResolvedValue({
+        nfoLocalState: {
+          uncensoredChoice: "umr",
+        },
+      }),
+    };
+    const scraper = new FileScraper({
+      configManager: new TestConfigManager(config),
+      aggregationService: {
+        aggregate: vi.fn().mockResolvedValue(createAggregationResult(crawlerData)),
+      } as unknown as AggregationService,
+      translateService: {
+        translateCrawlerData: vi.fn().mockResolvedValue(crawlerData),
+      } as unknown as TranslateService,
+      nfoGenerator: {
+        writeNfo,
+      } as unknown as NfoGenerator,
+      downloadManager: {
+        downloadAll: vi.fn().mockResolvedValue({
+          downloaded: [],
+          sceneImages: [],
+        }),
+      } as unknown as DownloadManager,
+      fileOrganizer,
+      signalService: new SignalService(null),
+      localScanService,
+    });
+
+    const result = await scraper.scrapeFile(join(root, "ABC-123-U.strm"), { fileIndex: 1, totalFiles: 1 });
+
+    expect(fileOrganizer.plan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        number: "ABC-123",
+      }),
+      crawlerData,
+      expect.any(Object),
+      {
+        uncensoredChoice: "umr",
+      },
+    );
+    expect(writeNfo).not.toHaveBeenCalled();
+    expect(result.uncensoredAmbiguous).toBe(false);
   });
 });

@@ -542,3 +542,5 @@ export class FileOrganizer {
     }
   }
 }
+
+export const fileOrganizer = new FileOrganizer();
