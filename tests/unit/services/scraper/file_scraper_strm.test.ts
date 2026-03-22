@@ -7,6 +7,7 @@ import type { AggregationService } from "@main/services/scraper/aggregation";
 import type { DownloadManager } from "@main/services/scraper/DownloadManager";
 import type { FileOrganizer, OrganizePlan } from "@main/services/scraper/FileOrganizer";
 import { FileScraper } from "@main/services/scraper/FileScraper";
+import type { LocalScanService } from "@main/services/scraper/maintenance/LocalScanService";
 import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import type { TranslateService } from "@main/services/scraper/TranslateService";
 import { Website } from "@shared/enums";
@@ -71,7 +72,7 @@ const createScraper = ({
   crawlerData: CrawlerData;
   plan: OrganizePlan;
   writeNfo: ReturnType<typeof vi.fn>;
-  localScanService?: { scanVideo: ReturnType<typeof vi.fn> };
+  localScanService?: Pick<LocalScanService, "scanVideo">;
 }) =>
   new FileScraper({
     configManager: new TestConfigManager(config),
@@ -178,12 +179,13 @@ describe("FileScraper .strm support", () => {
       ensureOutputReady: vi.fn().mockResolvedValue(plan),
       organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
     } as unknown as FileOrganizer;
-    const localScanService = {
-      scanVideo: vi.fn().mockResolvedValue({
-        nfoLocalState: {
-          uncensoredChoice: "umr",
-        },
-      }),
+    const scanVideoMock = vi.fn().mockResolvedValue({
+      nfoLocalState: {
+        uncensoredChoice: "umr",
+      },
+    });
+    const localScanService: Pick<LocalScanService, "scanVideo"> = {
+      scanVideo: async () => (await scanVideoMock()) as Awaited<ReturnType<LocalScanService["scanVideo"]>>,
     };
     const scraper = new FileScraper({
       configManager: new TestConfigManager(config),

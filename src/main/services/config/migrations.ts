@@ -49,6 +49,7 @@ const V0_ENABLED_SITES = [
   "km_produce",
 ] as const;
 const V1_ENABLED_SITES = [...V0_ENABLED_SITES, "avbase"] as const;
+const V2_ENABLED_SITES = [...V1_ENABLED_SITES, "fc2hub"] as const;
 
 const V0_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
   title: ["dmm", "mgstage", "dmm_tv", "fc2", "javdb", "javbus", "jav321", "km_produce"],
@@ -57,7 +58,7 @@ const V0_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
   genres: ["javdb", "fc2", "dmm", "javbus", "km_produce"],
   thumb_url: ["dmm", "fc2", "javdb", "javbus", "km_produce"],
   poster_url: ["dmm", "fc2", "javdb", "javbus", "km_produce"],
-  scene_images: ["mgstage", "dmm", "javbus", "javdb"],
+  sample_images: ["mgstage", "dmm", "javbus", "javdb"],
   studio: ["dmm", "fc2", "javdb", "javbus", "km_produce"],
   director: ["dmm", "javdb"],
   publisher: ["dmm", "fc2", "javdb"],
@@ -73,13 +74,33 @@ const V1_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
   genres: ["avbase", "dmm", "javdb", "javbus", "fc2"],
   thumb_url: ["avbase", "mgstage", "dmm", "javdb", "javbus", "fc2"],
   poster_url: ["avbase", "mgstage", "dmm", "javdb", "javbus", "fc2"],
-  scene_images: ["avbase", "mgstage", "dmm", "javdb", "javbus"],
+  sample_images: ["avbase", "mgstage", "dmm", "javdb", "javbus"],
   studio: ["avbase", "dmm", "javdb", "javbus", "fc2"],
   director: ["avbase", "dmm", "javdb"],
   publisher: ["avbase", "dmm", "javdb", "fc2"],
   series: ["avbase", "dmm", "javdb", "javbus"],
   release_date: ["avbase", "dmm", "javdb", "javbus", "fc2"],
+  durationSeconds: ["avbase", "dmm_tv"],
   rating: ["dmm_tv", "dmm", "javdb"],
+  trailer_url: ["dmm_tv", "dmm", "javbus"],
+};
+
+const V2_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
+  title: ["avbase", "mgstage", "dmm", "dmm_tv", "fc2", "fc2hub", "javdb", "javbus", "jav321"],
+  plot: ["avbase", "mgstage", "dmm", "dmm_tv", "fc2", "fc2hub", "jav321"],
+  actors: ["avbase", "mgstage", "dmm", "fc2hub", "javdb", "javbus"],
+  genres: ["avbase", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
+  thumb_url: ["avbase", "mgstage", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
+  poster_url: ["avbase", "mgstage", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
+  scene_images: ["avbase", "mgstage", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
+  studio: ["avbase", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
+  director: ["avbase", "dmm", "javdb"],
+  publisher: ["avbase", "dmm", "fc2", "fc2hub", "javdb"],
+  series: ["avbase", "dmm", "javdb", "javbus"],
+  release_date: ["avbase", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
+  durationSeconds: ["avbase", "dmm_tv", "fc2hub"],
+  rating: ["dmm_tv", "dmm", "fc2hub", "javdb"],
+  trailer_url: ["dmm_tv", "dmm", "javbus"],
 };
 
 const appendPathSegment = (template: string, segment: string): string => {
@@ -152,10 +173,45 @@ const normalizeFieldPriorityDefaults = (
 
   for (const [key, previousSites] of Object.entries(previousDefaults)) {
     const currentSites = nextDefaults[key];
+    if (!currentSites) {
+      continue;
+    }
     const value = fieldPriorities[key];
     if (isStringArray(value) && stringArraysEqual(value, previousSites)) {
       fieldPriorities[key] = [...currentSites];
     }
+  }
+};
+
+const normalizeRenamedFieldPriorityDefault = (
+  raw: Record<string, unknown>,
+  oldKey: string,
+  newKey: string,
+  previousSites: readonly string[],
+  nextSites: readonly string[],
+): void => {
+  const aggregation = raw.aggregation;
+  if (!isRecord(aggregation)) {
+    return;
+  }
+
+  const fieldPriorities = aggregation.fieldPriorities;
+  if (!isRecord(fieldPriorities)) {
+    return;
+  }
+
+  const oldValue = fieldPriorities[oldKey];
+  if (isStringArray(oldValue) && stringArraysEqual(oldValue, previousSites)) {
+    fieldPriorities[newKey] = [...nextSites];
+    delete fieldPriorities[oldKey];
+    return;
+  }
+
+  renameKey(aggregation, "fieldPriorities", oldKey, newKey);
+
+  const newValue = fieldPriorities[newKey];
+  if (isStringArray(newValue) && stringArraysEqual(newValue, previousSites)) {
+    fieldPriorities[newKey] = [...nextSites];
   }
 };
 
@@ -215,6 +271,28 @@ function migrateV030ToV040(raw: Record<string, unknown>): void {
   normalizeFieldPriorityDefaults(raw, V0_FIELD_PRIORITY_DEFAULTS, V1_FIELD_PRIORITY_DEFAULTS);
 }
 
+// ── v0.4.0 → v0.5.0 ─────────────────────────────────────────────────────────
+
+function migrateV040ToV050(raw: Record<string, unknown>): void {
+  // 1. download.downloadNfo → download.generateNfo
+  renameKey(raw, "download", "downloadNfo", "generateNfo");
+
+  // 2. aggregation.fieldPriorities.sample_images → .scene_images
+  normalizeRenamedFieldPriorityDefault(
+    raw,
+    "sample_images",
+    "scene_images",
+    V1_FIELD_PRIORITY_DEFAULTS.sample_images,
+    V2_FIELD_PRIORITY_DEFAULTS.scene_images,
+  );
+
+  // 3. Normalize untouched v0.4 enabledSites / siteOrder arrays to the v0.5 defaults
+  normalizeScrapeSiteDefaults(raw, V1_ENABLED_SITES, V2_ENABLED_SITES);
+
+  // 4. Normalize untouched v0.4 fieldPriorities arrays to the v0.5 defaults
+  normalizeFieldPriorityDefaults(raw, V1_FIELD_PRIORITY_DEFAULTS, V2_FIELD_PRIORITY_DEFAULTS);
+}
+
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 export const migrations: Migration[] = [
@@ -223,5 +301,11 @@ export const migrations: Migration[] = [
     toVersion: 1,
     description: "v0.3.0 → v0.4.0",
     migrate: migrateV030ToV040,
+  },
+  {
+    fromVersion: 1,
+    toVersion: 2,
+    description: "v0.4.0 → v0.5.0",
+    migrate: migrateV040ToV050,
   },
 ];
