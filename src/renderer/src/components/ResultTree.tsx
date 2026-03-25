@@ -5,22 +5,26 @@ import { deleteFile, deleteFileAndFolder, requeueScrapeByNumber, requeueScrapeBy
 import { type MediaBrowserFilter, MediaBrowserList } from "@/components/shared/MediaBrowserList";
 import { Button } from "@/components/ui/Button";
 import { ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut } from "@/components/ui/ContextMenu";
-import type { ScrapeResult } from "@/store/scrapeStore";
+import {
+  buildScrapeResultGroupActionContext,
+  buildScrapeResultGroups,
+  type ScrapeResultGroup,
+} from "@/lib/scrapeResultGrouping";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
-
-function getDirFromPath(filePath: string) {
-  const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
-  if (slash <= 0) return filePath;
-  return filePath.slice(0, slash);
-}
+import { getDirFromPath } from "@/utils/path";
 
 function getFileNameFromPath(filePath: string) {
   const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
   return slash >= 0 ? filePath.slice(slash + 1) : filePath;
 }
 
-function buildMenuContent(result: ScrapeResult) {
+function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | null) {
+  const actionContext = buildScrapeResultGroupActionContext(group, selectedResultId);
+  const result = actionContext.selectedItem;
+  const nfoPath = actionContext.nfoPath ?? result.path;
+  const groupedVideoPaths = actionContext.videoPaths;
+
   const handleCopyNumber = async () => {
     if (!result.number) {
       toast.error("Number is empty");
@@ -39,7 +43,7 @@ function buildMenuContent(result: ScrapeResult) {
     const number = window.prompt("输入番号重新刮削", defaultNumber)?.trim();
     if (!number) return;
     try {
-      const response = await requeueScrapeByNumber(result.path, number);
+      const response = await requeueScrapeByNumber(groupedVideoPaths, number);
       toast.success(response.data?.message ?? "Queued re-scrape by number");
     } catch {
       toast.error("Failed to queue re-scrape by number");
@@ -50,7 +54,7 @@ function buildMenuContent(result: ScrapeResult) {
     const url = window.prompt("输入网址重新刮削", "")?.trim();
     if (!url) return;
     try {
-      const response = await requeueScrapeByUrl(result.path, url);
+      const response = await requeueScrapeByUrl(groupedVideoPaths, url);
       toast.success(response.data?.message ?? "Queued re-scrape by URL");
     } catch {
       toast.error("Failed to queue re-scrape by URL");
@@ -58,10 +62,18 @@ function buildMenuContent(result: ScrapeResult) {
   };
 
   const handleDeleteFile = async () => {
-    if (!window.confirm(`确定删除文件吗？\n${result.path}`)) return;
+    if (
+      !window.confirm(
+        groupedVideoPaths.length > 1
+          ? `确定删除当前分组下的 ${groupedVideoPaths.length} 个文件吗？\n${result.number}`
+          : `确定删除文件吗？\n${result.path}`,
+      )
+    ) {
+      return;
+    }
     try {
-      await deleteFile(result.path);
-      toast.success("File deleted");
+      await deleteFile(groupedVideoPaths);
+      toast.success(groupedVideoPaths.length > 1 ? `Deleted ${groupedVideoPaths.length} files` : "File deleted");
     } catch {
       toast.error("Failed to delete file");
     }
@@ -94,7 +106,7 @@ function buildMenuContent(result: ScrapeResult) {
   };
 
   const handleOpenNfo = () => {
-    window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path: result.path } }));
+    window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path: nfoPath } }));
   };
 
   return (
@@ -146,20 +158,22 @@ export function ResultTree() {
   const { results, clearResults } = useScrapeStore();
   const { selectedResultId, setSelectedResultId } = useUIStore();
   const [filter, setFilter] = useState<MediaBrowserFilter>("all");
+  const resultGroups = useMemo(() => buildScrapeResultGroups(results), [results]);
 
   const items = useMemo(
     () =>
-      results.map((result) => ({
-        id: result.id,
-        active: selectedResultId === result.id,
-        title: result.number || "Unknown",
-        subtitle: result.title || getFileNameFromPath(result.path),
-        errorText: result.error_msg,
-        status: result.status,
-        onClick: () => setSelectedResultId(result.id),
-        menuContent: buildMenuContent(result),
+      resultGroups.map((group) => ({
+        id: group.id,
+        active: group.items.some((item) => item.id === selectedResultId),
+        title: group.display.number || "Unknown",
+        subtitle: group.display.title || getFileNameFromPath(group.display.path),
+        errorText: group.display.errorMessage,
+        status: group.display.status,
+        onClick: () =>
+          setSelectedResultId(group.items.find((item) => item.id === selectedResultId)?.id ?? group.representative.id),
+        menuContent: buildMenuContent(group, selectedResultId),
       })),
-    [results, selectedResultId, setSelectedResultId],
+    [resultGroups, selectedResultId, setSelectedResultId],
   );
 
   return (
@@ -169,7 +183,7 @@ export function ResultTree() {
       onFilterChange={setFilter}
       emptyMessage="暂无结果。启动刮削任务后，处理项将显示在此处。"
       headerTrailing={
-        results.length > 0 ? (
+        resultGroups.length > 0 ? (
           <Button
             variant="ghost"
             size="icon"

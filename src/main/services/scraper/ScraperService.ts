@@ -9,8 +9,9 @@ import { listVideoFiles } from "@main/utils/file";
 import type { ScraperStatus } from "@shared/types";
 import { AggregationService } from "./aggregation";
 import { DownloadManager } from "./DownloadManager";
-import { FileOrganizer } from "./FileOrganizer";
+import { fileOrganizer } from "./FileOrganizer";
 import { FileScraper } from "./FileScraper";
+import { isGeneratedSidecarVideo } from "./generatedSidecarVideos";
 import { NfoGenerator } from "./NfoGenerator";
 import { ScrapeSession } from "./ScrapeSession";
 import { TranslateService } from "./TranslateService";
@@ -313,7 +314,14 @@ export class ScraperService {
       }
     }
 
-    return uniquePaths(outputs);
+    const uniqueOutputPaths = uniquePaths(outputs);
+    const filteredOutputPaths = uniqueOutputPaths.filter((filePath) => !isGeneratedSidecarVideo(filePath));
+    const skippedGeneratedCount = uniqueOutputPaths.length - filteredOutputPaths.length;
+    if (skippedGeneratedCount > 0) {
+      this.logger.info(`Skipped ${skippedGeneratedCount} generated sidecar video(s) from batch scrape queue`);
+    }
+
+    return filteredOutputPaths;
   }
 
   private createFileScraperDependencies() {
@@ -323,7 +331,7 @@ export class ScraperService {
       translateService: new TranslateService(this.sharedNetworkClient),
       nfoGenerator: new NfoGenerator(),
       downloadManager: new DownloadManager(this.sharedNetworkClient),
-      fileOrganizer: new FileOrganizer(),
+      fileOrganizer,
       signalService: this.signalService,
       actorImageService: this.actorImageService,
       actorSourceProvider: this.actorSourceProvider,

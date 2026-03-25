@@ -4,8 +4,8 @@ import type { CheerioAPI } from "cheerio";
 
 import { BaseCrawler } from "../base/BaseCrawler";
 import { extractText, parseDate } from "../base/parser";
-import type { Context, CrawlerInput } from "../base/types";
-import { toAbsoluteUrl, uniqueStrings } from "./helpers";
+import type { Context, CrawlerInput, SearchPageResolution } from "../base/types";
+import { pickSearchResultDetailUrl, toAbsoluteUrl, uniqueStrings } from "./helpers";
 
 const JAV321_BASE_URL = "https://www.jav321.com";
 
@@ -135,29 +135,24 @@ export class Jav321Crawler extends BaseCrawler {
     return super.fetch(url, context);
   }
 
-  protected async parseSearchPage(context: Jav321Context, $: CheerioAPI, _searchUrl: string): Promise<string | null> {
+  protected async parseSearchPage(
+    context: Jav321Context,
+    $: CheerioAPI,
+    _searchUrl: string,
+  ): Promise<string | SearchPageResolution | null> {
     // JAV321 search redirects to detail page or shows results
     // Check if we're already on a detail page
     const panelHeading = $("div.panel-heading h3").first().text().trim();
     if (panelHeading) {
-      return _searchUrl;
+      return this.reuseSearchDocument(_searchUrl);
     }
-
-    const expected = context.number.toUpperCase().replace(/-/gu, "");
 
     const candidates = $("a[href*='/video/']")
       .toArray()
       .map((element: CheerioInput) => $(element).attr("href"))
       .filter((href: string | undefined): href is string => Boolean(href));
 
-    for (const href of candidates) {
-      const normalized = href.toUpperCase().replace(/-/gu, "");
-      if (normalized.includes(expected)) {
-        return toAbsoluteUrl(JAV321_BASE_URL, href) ?? null;
-      }
-    }
-
-    return candidates[0] ? (toAbsoluteUrl(JAV321_BASE_URL, candidates[0]) ?? null) : null;
+    return pickSearchResultDetailUrl(JAV321_BASE_URL, candidates, context.number);
   }
 
   protected async parseDetailPage(
@@ -225,7 +220,7 @@ export class Jav321Crawler extends BaseCrawler {
     const thumbUrl = $("img.img-responsive").first().attr("src");
     const thumbUrlAbsolute = thumbUrl ? toAbsoluteUrl(JAV321_BASE_URL, thumbUrl) : undefined;
 
-    const sampleImages = uniqueStrings(
+    const sceneImages = uniqueStrings(
       $("a[href*='/snapshot/']")
         .toArray()
         .map((element: CheerioInput) => {
@@ -258,7 +253,7 @@ export class Jav321Crawler extends BaseCrawler {
       thumb_url: thumbUrlAbsolute,
       poster_url: undefined,
       fanart_url: undefined,
-      sample_images: sampleImages,
+      scene_images: sceneImages,
       trailer_url: undefined,
       website: Website.JAV321,
     };

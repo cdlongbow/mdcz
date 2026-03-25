@@ -1,3 +1,5 @@
+import type { Configuration } from "@shared/config";
+import type { NamingPreviewItem } from "@shared/types";
 import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -23,7 +25,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FieldValues } from "react-hook-form";
-import { useForm, useFormContext } from "react-hook-form";
+import { useForm, useFormContext, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { ipc } from "@/client/ipc";
 import { PageHeader } from "@/components/PageHeader";
@@ -60,12 +62,12 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { key: "paths", label: "目录与路径", icon: FolderOpen },
-  { key: "scrape", label: "刮削设置", icon: FileCheck },
-  { key: "network", label: "网络连接", icon: Globe },
-  { key: "download", label: "下载选项", icon: Download },
   { key: "naming", label: "命名规则", icon: Type },
+  { key: "scrape", label: "刮削设置", icon: FileCheck },
   { key: "translate", label: "翻译服务", icon: Languages },
   { key: "personSync", label: "人物同步", icon: Server },
+  { key: "network", label: "网络连接", icon: Globe },
+  { key: "download", label: "下载选项", icon: Download },
   { key: "shortcuts", label: "快捷键", icon: Keyboard },
   { key: "ui", label: "界面设置", icon: Monitor },
   { key: "behavior", label: "文件行为", icon: FileCog },
@@ -79,6 +81,14 @@ const TRANSLATE_ENGINE_OPTIONS: EnumOption[] = [
 const LANGUAGE_OPTIONS = ["zh-CN", "zh-TW", "ja-JP", "en-US"];
 const ACTOR_OVERVIEW_SOURCE_OPTIONS = ["official", "avjoho", "avbase"];
 const ACTOR_IMAGE_SOURCE_OPTIONS = ["local", "gfriends", "official", "avbase"];
+const PART_STYLE_OPTIONS: EnumOption[] = [
+  { value: "RAW", label: "保持原始后缀" },
+  { value: "CD", label: "统一为 CD1 / CD2" },
+  { value: "PART", label: "统一为 PART1 / PART2" },
+  { value: "DISC", label: "统一为 DISC1 / DISC2" },
+];
+
+export const NAMING_TEMPLATE_DESCRIPTION = "可用占位符：{actor} {number} {date} {title} {studio}";
 
 // ── Field registry for search/filter ──
 
@@ -118,7 +128,7 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "download.downloadFanart", label: "下载背景图", section: "download" },
   { key: "download.downloadSceneImages", label: "下载剧照", section: "download" },
   { key: "download.downloadTrailer", label: "下载预告片", section: "download" },
-  { key: "download.downloadNfo", label: "下载 NFO", section: "download" },
+  { key: "download.generateNfo", label: "生成 NFO", section: "download" },
   { key: "download.keepThumb", label: "保留已有横版缩略图", section: "download" },
   { key: "download.keepPoster", label: "保留已有海报", section: "download" },
   { key: "download.keepFanart", label: "保留已有背景图", section: "download" },
@@ -138,6 +148,7 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "naming.leakStyle", label: "流出标记", section: "naming" },
   { key: "naming.uncensoredStyle", label: "无码标记", section: "naming" },
   { key: "naming.censoredStyle", label: "有码标记", section: "naming" },
+  { key: "naming.partStyle", label: "分盘样式", section: "naming" },
   // translate
   { key: "translate.enableTranslation", label: "启用内容翻译", section: "translate" },
   { key: "translate.engine", label: "翻译引擎", section: "translate" },
@@ -184,7 +195,6 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "behavior.deleteEmptyFolder", label: "删除空文件夹", section: "behavior" },
   { key: "behavior.scrapeSoftlinkPath", label: "刮削软链接目录", section: "behavior" },
   { key: "behavior.saveLog", label: "保存日志到文件", section: "behavior" },
-  { key: "behavior.updateCheck", label: "自动检查更新", section: "behavior" },
 ];
 
 // ── Section descriptions ──
@@ -193,7 +203,7 @@ const SECTION_DESCRIPTIONS: Record<string, string> = {
   paths: "配置媒体库、本地演员头像库及输出目录路径",
   scrape: "配置刮削行为、站点及并发策略",
   network: "代理、超时、重试及 Cookie 设置",
-  download: "控制缩略图、海报、背景图、剧照与 NFO 的下载与保留",
+  download: "控制缩略图、海报、背景图、剧照与 NFO 的生成与保留",
   naming: "文件和文件夹的命名模板与规则",
   translate: "LLM 翻译引擎配置",
   personSync: "共享人物来源顺序，以及 Jellyfin 与 Emby 的人物同步设置",
@@ -344,14 +354,14 @@ function NetworkSection(_props: SectionRenderProps) {
 
 function DownloadSection(_props: SectionRenderProps) {
   const form = useFormContext<FieldValues>();
-  const [downloadThumb, downloadPoster, downloadFanart, downloadSceneImages, downloadTrailer, downloadNfo] = form.watch(
+  const [downloadThumb, downloadPoster, downloadFanart, downloadSceneImages, downloadTrailer, generateNfo] = form.watch(
     [
       "download.downloadThumb",
       "download.downloadPoster",
       "download.downloadFanart",
       "download.downloadSceneImages",
       "download.downloadTrailer",
-      "download.downloadNfo",
+      "download.generateNfo",
     ],
   ) as [
     boolean | undefined,
@@ -369,25 +379,106 @@ function DownloadSection(_props: SectionRenderProps) {
       <BoolField name="download.downloadFanart" label="下载背景图" />
       <BoolField name="download.downloadSceneImages" label="下载剧照" />
       <BoolField name="download.downloadTrailer" label="下载预告片" />
-      <BoolField name="download.downloadNfo" label="下载 NFO" />
+      <BoolField name="download.generateNfo" label="生成 NFO" />
       {downloadThumb && <BoolField name="download.keepThumb" label="保留已有横版缩略图" />}
       {downloadPoster && <BoolField name="download.keepPoster" label="保留已有海报" />}
       {downloadFanart && <BoolField name="download.keepFanart" label="保留已有背景图" />}
       {downloadSceneImages && <BoolField name="download.keepSceneImages" label="保留已有剧照" />}
       {downloadTrailer && <BoolField name="download.keepTrailer" label="保留已有预告片" />}
-      {downloadNfo && <BoolField name="download.keepNfo" label="保留已有 NFO" />}
+      {generateNfo && <BoolField name="download.keepNfo" label="保留已有 NFO" />}
     </>
   );
 }
 
-function NamingSection(_props: SectionRenderProps) {
+function NamingPreview() {
+  const form = useFormContext<FieldValues>();
+  const naming = useWatch({
+    control: form.control,
+    name: "naming",
+  }) as Record<string, unknown> | undefined;
+  const behavior = useWatch({
+    control: form.control,
+    name: "behavior",
+  }) as Record<string, unknown> | undefined;
+  const [previews, setPreviews] = useState<NamingPreviewItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const previewConfig = useMemo(
+    () => ({
+      naming: naming ?? {},
+      behavior: behavior ?? {},
+    }),
+    [behavior, naming],
+  );
+  const previewConfigRef = useRef(previewConfig);
+
+  const previewConfigKey = useMemo(() => JSON.stringify(previewConfig), [previewConfig]);
+
+  useEffect(() => {
+    previewConfigRef.current = previewConfig;
+  }, [previewConfig]);
+
+  useEffect(() => {
+    const requestKey = previewConfigKey;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setLoading(true);
+      try {
+        const result = await ipc.config.previewNaming(previewConfigRef.current as Partial<Configuration>);
+        if (!cancelled && requestKey === previewConfigKey) {
+          setPreviews(result.items);
+        }
+      } catch {
+        if (!cancelled && requestKey === previewConfigKey) {
+          setPreviews([]);
+        }
+      } finally {
+        if (!cancelled && requestKey === previewConfigKey) {
+          setLoading(false);
+        }
+      }
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [previewConfigKey]);
+
+  return (
+    <div className="rounded-md border bg-muted/30 p-3">
+      <div className="mb-2 text-xs font-medium text-muted-foreground">命名预览</div>
+      <div className="space-y-2">
+        {previews.length === 0 && (
+          <div className="text-xs text-muted-foreground">{loading ? "生成预览中..." : "暂无预览"}</div>
+        )}
+        {previews.map((p) => (
+          <div key={p.label} className="text-xs">
+            <span className="mr-2 inline-block min-w-[4em] text-muted-foreground">{p.label}</span>
+            <span className="font-mono text-[11px]">
+              {p.folder}/{p.file}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function NamingSection(_props: SectionRenderProps) {
   return (
     <>
-      <TextField name="naming.folderTemplate" label="文件夹模板" />
-      <TextField name="naming.fileTemplate" label="文件名模板" />
+      <TextField name="naming.folderTemplate" label="文件夹模板" description={NAMING_TEMPLATE_DESCRIPTION} />
+      <TextField name="naming.fileTemplate" label="文件名模板" description={NAMING_TEMPLATE_DESCRIPTION} />
+      <NamingPreview />
       <NumberField name="naming.actorNameMax" label="演员名最大数量" min={1} max={20} />
       <TextField name="naming.actorNameMore" label="演员名超出后缀" />
       <TextField name="naming.releaseRule" label="发行日期格式" />
+      <EnumField
+        name="naming.partStyle"
+        label="分盘样式"
+        description="分盘的视频在输出时保留原始后缀，或统一改写为 CD / PART / DISC 风格"
+        options={PART_STYLE_OPTIONS}
+      />
       <NumberField name="naming.folderNameMax" label="文件夹名最大长度" min={10} max={255} />
       <NumberField name="naming.fileNameMax" label="文件名最大长度" min={10} max={255} />
       <TextField name="naming.cnwordStyle" label="中文字幕标记" />
@@ -573,7 +664,6 @@ function BehaviorSection(_props: SectionRenderProps) {
       <BoolField name="behavior.deleteEmptyFolder" label="删除空文件夹" />
       <BoolField name="behavior.scrapeSoftlinkPath" label="刮削软链接目录" />
       <BoolField name="behavior.saveLog" label="保存日志到文件" />
-      <BoolField name="behavior.updateCheck" label="自动检查更新" />
     </>
   );
 }

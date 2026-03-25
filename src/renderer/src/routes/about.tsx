@@ -2,11 +2,15 @@ import type { AppInfo } from "@shared/ipcTypes";
 import { createFileRoute } from "@tanstack/react-router";
 import { Bug, ExternalLink, Github } from "lucide-react";
 import { type CSSProperties, useEffect, useState } from "react";
+import { toast } from "sonner";
 import AppLogo from "@/assets/images/logo.png";
+import { updateConfig } from "@/client/api";
 import { ipc } from "@/client/ipc";
+import type { ConfigOutput } from "@/client/types";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Separator } from "@/components/ui/Separator";
+import { Switch } from "@/components/ui/Switch";
 
 export const Route = createFileRoute("/about")({
   component: About,
@@ -35,16 +39,40 @@ const NO_DRAG_STYLE = {
 
 function About() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+  const [updateCheck, setUpdateCheck] = useState<boolean | null>(null);
+  const [isSavingUpdateCheck, setIsSavingUpdateCheck] = useState(false);
 
   useEffect(() => {
-    ipc.app
-      .info()
-      .then(setAppInfo)
+    Promise.all([ipc.app.info(), ipc.config.get()])
+      .then(([info, config]) => {
+        setAppInfo(info);
+        setUpdateCheck((config as ConfigOutput).behavior?.updateCheck ?? true);
+      })
       .catch(() => {});
   }, []);
 
   const onDebug = async () => {
     await ipc.tool.toggleDevTools();
+  };
+
+  const onUpdateCheckChange = async (checked: boolean) => {
+    const previous = updateCheck ?? true;
+    setUpdateCheck(checked);
+    setIsSavingUpdateCheck(true);
+    try {
+      await updateConfig({
+        body: {
+          behavior: {
+            updateCheck: checked,
+          },
+        },
+      });
+    } catch (error) {
+      setUpdateCheck(previous);
+      toast.error(`保存失败: ${error instanceof Error ? error.message : "未知错误"}`);
+    } finally {
+      setIsSavingUpdateCheck(false);
+    }
   };
 
   return (
@@ -81,9 +109,9 @@ function About() {
             </div>
           </div>
 
-          <div className="grid gap-6">
+          <div className="grid gap-4">
             {/* Support & Development */}
-            <Card className="bg-muted/20 border-none shadow-none">
+            <Card className="bg-muted/20 border-none shadow-none p-0">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium">支持与反馈</CardTitle>
                 <CardDescription>遇到问题或有好的建议？欢迎反馈给开发者</CardDescription>
@@ -107,6 +135,17 @@ function About() {
                   <span>开启调试</span>
                   <ExternalLink className="ml-auto h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-muted/20 border-none shadow-none py-4">
+              <CardContent className="flex justify-between">
+                <CardTitle className="text-sm font-medium">自动检查更新</CardTitle>
+                <Switch
+                  checked={Boolean(updateCheck)}
+                  disabled={updateCheck === null || isSavingUpdateCheck}
+                  onCheckedChange={onUpdateCheckChange}
+                />
               </CardContent>
             </Card>
 
@@ -135,11 +174,9 @@ function About() {
             </Card>
           </div>
 
-          <div className="pt-4">
-            <Separator className="opacity-50" />
-            <div className="mt-6 text-center text-xs text-muted-foreground/60 font-medium">
-              <p>by ShotHeadman</p>
-            </div>
+          <Separator className="opacity-50 mb-2" />
+          <div className="text-center text-xs text-muted-foreground/60 font-medium">
+            <p>by ShotHeadman</p>
           </div>
         </div>
       </div>

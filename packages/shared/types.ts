@@ -49,7 +49,7 @@ export interface CrawlerData {
   poster_source_url?: string;
   fanart_source_url?: string;
   trailer_source_url?: string;
-  sample_images: string[];
+  scene_images: string[];
   trailer_url?: string;
   website: Website;
 }
@@ -60,11 +60,17 @@ export interface FileInfo {
   extension: string;
   number: string;
   isSubtitled: boolean;
+  subtitleTag?: SubtitleTag;
+  isUncensored?: boolean;
   resolution?: string;
-  partNumber?: number;
+  part?: {
+    number: number;
+    suffix: string;
+  };
 }
 
 export type ScrapeResultStatus = "pending" | "processing" | "success" | "failed" | "skipped";
+export type SubtitleTag = "字幕" | "中文字幕";
 
 /** Structured record of all files produced by DownloadManager. */
 export interface DownloadedAssets {
@@ -88,6 +94,40 @@ export interface ScrapeResult {
   assets?: DownloadedAssets;
   /** Maps each CrawlerData field to the Website that provided the value. */
   sources?: Partial<Record<string, Website>>;
+  /** True when the video is classified as uncensored but the specific type (破解/流出) is unknown. */
+  uncensoredAmbiguous?: boolean;
+}
+
+export type UncensoredChoice = "umr" | "leak" | "uncensored";
+
+export interface NfoLocalState {
+  uncensoredChoice?: UncensoredChoice;
+  tags?: string[];
+}
+
+export interface UncensoredConfirmItem {
+  nfoPath: string;
+  videoPath: string;
+  choice: UncensoredChoice;
+}
+
+export interface UncensoredConfirmResultItem {
+  sourceVideoPath: string;
+  sourceNfoPath?: string;
+  targetVideoPath: string;
+  targetNfoPath?: string;
+  choice: UncensoredChoice;
+}
+
+export interface UncensoredConfirmResponse {
+  updatedCount: number;
+  items: UncensoredConfirmResultItem[];
+}
+
+export interface NamingPreviewItem {
+  label: string;
+  folder: string;
+  file: string;
 }
 
 export interface ScraperStatus {
@@ -129,6 +169,7 @@ export interface LocalScanEntry {
   fileInfo: FileInfo;
   nfoPath?: string;
   crawlerData?: CrawlerData;
+  nfoLocalState?: NfoLocalState;
   scanError?: string;
   assets: DiscoveredAssets;
   currentDir: string;
@@ -195,14 +236,12 @@ export interface MaintenancePreviewItem {
 
 export interface MaintenancePreviewResult {
   items: MaintenancePreviewItem[];
-  readyCount: number;
-  blockedCount: number;
 }
 
 export interface MaintenanceImageAlternatives {
   thumb_url?: string[];
   poster_url?: string[];
-  sample_images?: string[][];
+  scene_images?: string[][];
 }
 
 export interface MaintenanceAssetDecisions {

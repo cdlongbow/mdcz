@@ -1,11 +1,13 @@
 import type { ServiceContainer } from "@main/container";
+import { configManager, configurationSchema } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { ScraperServiceError } from "@main/services/scraper";
+import { confirmUncensoredItems } from "@main/services/scraper/confirmUncensored";
 import { toErrorMessage } from "@main/utils/common";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
-import type { ScraperStatus } from "@shared/types";
-import { createIpcError } from "../errors";
+import type { ScraperStatus, UncensoredConfirmItem } from "@shared/types";
+import { createIpcError, IpcErrorCode } from "../errors";
 import { asSerializableIpcError, t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter");
@@ -34,6 +36,7 @@ export const createScraperHandlers = (
   | typeof IpcChannel.Scraper_Resume
   | typeof IpcChannel.Scraper_Requeue
   | typeof IpcChannel.Scraper_RetryFailed
+  | typeof IpcChannel.Scraper_ConfirmUncensored
 > => {
   const { scraperService } = context;
 
@@ -129,5 +132,20 @@ export const createScraperHandlers = (
         throw asSerializableIpcError(error);
       }
     }),
+    [IpcChannel.Scraper_ConfirmUncensored]: t.procedure
+      .input<{ items?: UncensoredConfirmItem[] }>()
+      .action(async ({ input }) => {
+        const items = input?.items ?? [];
+        if (items.length === 0) {
+          return { updatedCount: 0, items: [] };
+        }
+
+        const config = configurationSchema.parse(await configManager.get());
+        if (!config.download.generateNfo) {
+          logger.warn("Rejecting uncensored confirm because NFO generation is disabled");
+          throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "已关闭 NFO 生成功能，无法确认无码类型");
+        }
+        return await confirmUncensoredItems(items, config);
+      }),
   };
 };

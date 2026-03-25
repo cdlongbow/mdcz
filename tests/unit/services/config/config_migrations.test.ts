@@ -1,6 +1,59 @@
-import { ConfigMigrationError, runMigrations } from "@main/services/config/migrator";
-import { configurationSchema, defaultConfiguration } from "@main/services/config/models";
+import { ConfigMigrationError, CURRENT_CONFIG_VERSION, runMigrations } from "@main/services/config/migrator";
+import { configurationSchema } from "@main/services/config/models";
 import { describe, expect, it } from "vitest";
+
+const V040_ENABLED_SITES = [
+  "dmm",
+  "dmm_tv",
+  "mgstage",
+  "prestige",
+  "faleno",
+  "dahlia",
+  "fc2",
+  "javdb",
+  "javbus",
+  "jav321",
+  "km_produce",
+  "avbase",
+];
+
+const V050_ENABLED_SITES = [...V040_ENABLED_SITES, "fc2hub"];
+
+const V040_FIELD_PRIORITY_DEFAULTS = {
+  title: ["avbase", "mgstage", "dmm", "dmm_tv", "javdb", "javbus", "jav321", "fc2"],
+  plot: ["avbase", "mgstage", "dmm", "dmm_tv", "jav321", "fc2"],
+  actors: ["avbase", "mgstage", "dmm", "javdb", "javbus"],
+  genres: ["avbase", "dmm", "javdb", "javbus", "fc2"],
+  thumb_url: ["avbase", "mgstage", "dmm", "javdb", "javbus", "fc2"],
+  poster_url: ["avbase", "mgstage", "dmm", "javdb", "javbus", "fc2"],
+  sample_images: ["avbase", "mgstage", "dmm", "javdb", "javbus"],
+  studio: ["avbase", "dmm", "javdb", "javbus", "fc2"],
+  director: ["avbase", "dmm", "javdb"],
+  publisher: ["avbase", "dmm", "javdb", "fc2"],
+  series: ["avbase", "dmm", "javdb", "javbus"],
+  release_date: ["avbase", "dmm", "javdb", "javbus", "fc2"],
+  durationSeconds: ["avbase", "dmm_tv"],
+  rating: ["dmm_tv", "dmm", "javdb"],
+  trailer_url: ["dmm_tv", "dmm", "javbus"],
+} as const;
+
+const V050_FIELD_PRIORITY_DEFAULTS = {
+  title: ["avbase", "mgstage", "dmm", "dmm_tv", "fc2", "fc2hub", "javdb", "javbus", "jav321"],
+  plot: ["avbase", "mgstage", "dmm", "dmm_tv", "fc2", "fc2hub", "jav321"],
+  actors: ["avbase", "mgstage", "dmm", "fc2hub", "javdb", "javbus"],
+  genres: ["avbase", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
+  thumb_url: ["avbase", "mgstage", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
+  poster_url: ["avbase", "mgstage", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
+  scene_images: ["avbase", "mgstage", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
+  studio: ["avbase", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
+  director: ["avbase", "dmm", "javdb"],
+  publisher: ["avbase", "dmm", "fc2", "fc2hub", "javdb"],
+  series: ["avbase", "dmm", "javdb", "javbus"],
+  release_date: ["avbase", "dmm", "fc2", "fc2hub", "javdb", "javbus"],
+  durationSeconds: ["avbase", "dmm_tv", "fc2hub"],
+  rating: ["dmm_tv", "dmm", "fc2hub", "javdb"],
+  trailer_url: ["dmm_tv", "dmm", "javbus"],
+} as const;
 
 /**
  * Build a minimal v0.3.0 config object for testing.
@@ -18,32 +71,8 @@ function buildV030Config(overrides: Record<string, unknown> = {}): Record<string
       javbusCookie: "",
     },
     scrape: {
-      enabledSites: [
-        "dmm",
-        "dmm_tv",
-        "mgstage",
-        "prestige",
-        "faleno",
-        "dahlia",
-        "fc2",
-        "javdb",
-        "javbus",
-        "jav321",
-        "km_produce",
-      ],
-      siteOrder: [
-        "dmm",
-        "dmm_tv",
-        "mgstage",
-        "prestige",
-        "faleno",
-        "dahlia",
-        "fc2",
-        "javdb",
-        "javbus",
-        "jav321",
-        "km_produce",
-      ],
+      enabledSites: [...V040_ENABLED_SITES.filter((site) => site !== "avbase")],
+      siteOrder: [...V040_ENABLED_SITES.filter((site) => site !== "avbase")],
       threadNumber: 2,
       javdbDelaySeconds: 10,
       restAfterCount: 20,
@@ -160,198 +189,268 @@ function buildV030Config(overrides: Record<string, unknown> = {}): Record<string
   };
 }
 
+/**
+ * Build a minimal v0.4.0 config object for testing.
+ * Includes only the fields relevant to migration; Zod defaults fill the rest.
+ */
+function buildV040Config(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    configVersion: 1,
+    scrape: {
+      enabledSites: [...V040_ENABLED_SITES],
+      siteOrder: [...V040_ENABLED_SITES],
+      threadNumber: 2,
+      javdbDelaySeconds: 10,
+      restAfterCount: 20,
+      restDuration: 60,
+      siteConfigs: {},
+    },
+    download: {
+      downloadThumb: true,
+      downloadPoster: true,
+      downloadFanart: true,
+      downloadSceneImages: true,
+      downloadTrailer: true,
+      downloadNfo: true,
+      sceneImageConcurrency: 5,
+      keepThumb: false,
+      keepPoster: true,
+      keepFanart: true,
+      keepSceneImages: true,
+      keepTrailer: true,
+      keepNfo: true,
+    },
+    aggregation: {
+      maxParallelCrawlers: 3,
+      perCrawlerTimeoutMs: 20000,
+      globalTimeoutMs: 60000,
+      fieldPriorities: {
+        ...V040_FIELD_PRIORITY_DEFAULTS,
+      },
+      behavior: { preferLongerPlot: true, maxSceneImages: 30, maxActors: 50, maxGenres: 30 },
+    },
+    naming: {
+      folderTemplate: "{actor}/{number}",
+      fileTemplate: "{number}",
+      actorNameMax: 3,
+      actorNameMore: "等演员",
+      releaseRule: "YYYY-MM-DD",
+      folderNameMax: 60,
+      fileNameMax: 60,
+      cnwordStyle: "-C",
+      umrStyle: "-破解",
+      leakStyle: "-流出",
+      uncensoredStyle: "",
+      censoredStyle: "",
+    },
+    behavior: {
+      successFileMove: true,
+      failedFileMove: true,
+      successFileRename: true,
+      deleteEmptyFolder: true,
+      scrapeSoftlinkPath: false,
+      saveLog: true,
+      updateCheck: true,
+    },
+    ...overrides,
+  };
+}
+
+const migrate = (raw: Record<string, unknown> = buildV030Config()) => {
+  const result = runMigrations(raw);
+  return {
+    raw,
+    result,
+    parsed: configurationSchema.parse(raw),
+  };
+};
+
 describe("Configuration migrations", () => {
-  describe("v0.3.0 → v0.4.0", () => {
-    it("renames download.downloadCover → downloadThumb", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
+  describe("v0.3.0 → v0.4.0 → v0.5.0", () => {
+    it("renames and relocates legacy fields across both releases", () => {
+      const { raw } = migrate();
 
       const download = raw.download as Record<string, unknown>;
+      const paths = raw.paths as Record<string, unknown>;
+      const fieldPriorities = (raw.aggregation as Record<string, unknown>).fieldPriorities as Record<string, unknown>;
+
       expect(download.downloadThumb).toBe(true);
+      expect(download.keepThumb).toBe(false);
+      expect(download.generateNfo).toBe(true);
       expect(download).not.toHaveProperty("downloadCover");
-    });
-
-    it("renames download.keepCover → keepThumb", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
-
-      const download = raw.download as Record<string, unknown>;
-      expect(download.keepThumb).toBe(false); // was set to false in fixture
       expect(download).not.toHaveProperty("keepCover");
-    });
+      expect(download).not.toHaveProperty("downloadNfo");
 
-    it("splits server into emby and moves actorPhotoFolder to paths", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
-
-      // server should be deleted
       expect(raw).not.toHaveProperty("server");
-
-      // emby should have server's values
-      const emby = raw.emby as Record<string, unknown>;
-      expect(emby.url).toBe("http://192.168.1.100:8096");
-      expect(emby.apiKey).toBe("my-api-key");
-      expect(emby.userId).toBe("");
-
-      // jellyfin should remain untouched so current defaults can fill it
+      expect(raw.emby).toEqual({
+        url: "http://192.168.1.100:8096",
+        apiKey: "my-api-key",
+        userId: "",
+      });
       expect(raw).not.toHaveProperty("jellyfin");
-
-      // actorPhotoFolder should be moved to paths
-      const paths = raw.paths as Record<string, unknown>;
       expect(paths.actorPhotoFolder).toBe("/photos");
+
+      expect(fieldPriorities.thumb_url).toEqual(V050_FIELD_PRIORITY_DEFAULTS.thumb_url);
+      expect(fieldPriorities.scene_images).toEqual(V050_FIELD_PRIORITY_DEFAULTS.scene_images);
+      expect(fieldPriorities).not.toHaveProperty("cover_url");
+      expect(fieldPriorities).not.toHaveProperty("sample_images");
     });
 
-    it("sets actorPhotoFolder to 'actor_photo' when server.actorPhotoFolder is empty", () => {
-      const raw = buildV030Config({
-        server: { url: "", apiKey: "", userId: "", actorPhotoFolder: "" },
-      });
-      runMigrations(raw);
-
+    it("normalizes untouched legacy defaults to the v0.5.0 defaults", () => {
+      const { raw, parsed } = migrate();
       const paths = raw.paths as Record<string, unknown>;
-      expect(paths.actorPhotoFolder).toBe("actor_photo");
-    });
-
-    it("renames fieldPriorities.cover_url → thumb_url", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
-
-      const fp = (raw.aggregation as Record<string, unknown>).fieldPriorities as Record<string, unknown>;
-      expect(fp.thumb_url).toEqual(defaultConfiguration.aggregation.fieldPriorities.thumb_url);
-      expect(fp).not.toHaveProperty("cover_url");
-    });
-
-    it("changes sceneImagesFolder from 'samples' to 'extrafanart'", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
-
-      const paths = raw.paths as Record<string, unknown>;
-      expect(paths.sceneImagesFolder).toBe("extrafanart");
-    });
-
-    it("preserves custom sceneImagesFolder when not 'samples'", () => {
-      const raw = buildV030Config({
-        paths: {
-          mediaPath: "/media",
-          softlinkPath: "softlink",
-          successOutputFolder: "JAV_output",
-          failedOutputFolder: "failed",
-          sceneImagesFolder: "my_custom_folder",
-          configDirectory: "config",
-        },
-      });
-      runMigrations(raw);
-
-      const paths = raw.paths as Record<string, unknown>;
-      expect(paths.sceneImagesFolder).toBe("my_custom_folder");
-    });
-
-    it("normalizes legacy enabledSites and siteOrder defaults to include avbase", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
-
       const scrape = raw.scrape as Record<string, unknown>;
-      expect(scrape.enabledSites).toEqual(defaultConfiguration.scrape.enabledSites);
-      expect(scrape.siteOrder).toEqual(defaultConfiguration.scrape.siteOrder);
+
+      expect(paths.sceneImagesFolder).toBe("extrafanart");
+      expect(scrape.enabledSites).toEqual(V050_ENABLED_SITES);
+      expect(scrape.siteOrder).toEqual(V050_ENABLED_SITES);
+      expect(parsed.aggregation.fieldPriorities.actors).toEqual(V050_FIELD_PRIORITY_DEFAULTS.actors);
+      expect(parsed.aggregation.fieldPriorities.thumb_url).toEqual(V050_FIELD_PRIORITY_DEFAULTS.thumb_url);
+      expect(parsed.aggregation.fieldPriorities.poster_url).toEqual(V050_FIELD_PRIORITY_DEFAULTS.poster_url);
+      expect(parsed.aggregation.fieldPriorities.scene_images).toEqual(V050_FIELD_PRIORITY_DEFAULTS.scene_images);
+      expect(parsed.aggregation.fieldPriorities.durationSeconds).toEqual(V050_FIELD_PRIORITY_DEFAULTS.durationSeconds);
+      expect(parsed.aggregation.fieldPriorities.rating).toEqual(V050_FIELD_PRIORITY_DEFAULTS.rating);
+      expect(parsed.aggregation.fieldPriorities.release_date).toEqual(V050_FIELD_PRIORITY_DEFAULTS.release_date);
     });
 
-    it("normalizes legacy fieldPriorities defaults to the current defaults", () => {
+    it("preserves customized values instead of resetting them", () => {
       const raw = buildV030Config();
-      runMigrations(raw);
+      const scrape = raw.scrape as Record<string, unknown>;
+      const server = raw.server as Record<string, unknown>;
+      const paths = raw.paths as Record<string, unknown>;
+      const download = raw.download as Record<string, unknown>;
+      const fieldPriorities = (raw.aggregation as Record<string, unknown>).fieldPriorities as Record<string, string[]>;
 
-      const parsed = configurationSchema.parse(raw);
-      expect(parsed.aggregation.fieldPriorities).toEqual(defaultConfiguration.aggregation.fieldPriorities);
-    });
+      scrape.enabledSites = ["dmm"];
+      scrape.siteOrder = ["dmm"];
+      server.actorPhotoFolder = "";
+      paths.sceneImagesFolder = "my_custom_folder";
+      download.downloadNfo = false;
+      fieldPriorities.title = ["javdb", "dmm"];
+      fieldPriorities.sample_images = ["javbus"];
+      fieldPriorities.rating = ["javdb"];
 
-    it("preserves customized fieldPriorities arrays", () => {
-      const raw = buildV030Config();
-      const fp = (raw.aggregation as Record<string, unknown>).fieldPriorities as Record<string, string[]>;
-      fp.title = ["javdb", "dmm"];
-      fp.rating = ["javdb"];
+      const parsed = migrate(raw).parsed;
 
-      runMigrations(raw);
-
-      const parsed = configurationSchema.parse(raw);
+      expect(parsed.scrape.enabledSites).toEqual(["dmm"]);
+      expect(parsed.scrape.siteOrder).toEqual(["dmm"]);
+      expect(parsed.paths.sceneImagesFolder).toBe("my_custom_folder");
+      expect(parsed.paths.actorPhotoFolder).toBe("actor_photo");
+      expect(parsed.download.generateNfo).toBe(false);
+      expect(parsed.naming.partStyle).toBe("RAW");
       expect(parsed.aggregation.fieldPriorities.title).toEqual(["javdb", "dmm"]);
+      expect(parsed.aggregation.fieldPriorities.scene_images).toEqual(["javbus"]);
       expect(parsed.aggregation.fieldPriorities.rating).toEqual(["javdb"]);
     });
 
-    it("preserves customized enabledSites and siteOrder", () => {
-      const raw = buildV030Config();
-      (raw.scrape as Record<string, unknown>).enabledSites = ["dmm"];
-      (raw.scrape as Record<string, unknown>).siteOrder = ["dmm"];
-      runMigrations(raw);
+    it("updates folderTemplate only when successFileMove requires {number}", () => {
+      const cases = [
+        {
+          raw: buildV030Config({
+            naming: {
+              folderTemplate: "{actor}",
+              fileTemplate: "{number}",
+            },
+          }),
+          expected: "{actor}/{number}",
+        },
+        {
+          raw: buildV030Config({
+            naming: {
+              folderTemplate: "{actor}",
+              fileTemplate: "{number}",
+            },
+            behavior: {
+              successFileMove: false,
+            },
+          }),
+          expected: "{actor}",
+        },
+      ];
 
+      for (const { raw, expected } of cases) {
+        migrate(raw);
+        expect((raw.naming as Record<string, unknown>).folderTemplate).toBe(expected);
+      }
+    });
+  });
+
+  describe("v0.4.0 → v0.5.0", () => {
+    it("renames v0.4 keys and upgrades untouched defaults", () => {
+      const { raw, result, parsed } = migrate(buildV040Config());
+      const download = raw.download as Record<string, unknown>;
       const scrape = raw.scrape as Record<string, unknown>;
-      expect(scrape.enabledSites).toEqual(["dmm"]);
-      expect(scrape.siteOrder).toEqual(["dmm"]);
-    });
+      const fieldPriorities = (raw.aggregation as Record<string, unknown>).fieldPriorities as Record<string, unknown>;
 
-    it("fixes folderTemplate when successFileMove is enabled and {number} is missing", () => {
-      const raw = buildV030Config({
-        naming: {
-          folderTemplate: "{actor}",
-          fileTemplate: "{number}",
-        },
+      expect(result).toEqual({
+        migrated: true,
+        fromVersion: 1,
+        toVersion: 2,
+        applied: ["v0.4.0 → v0.5.0"],
       });
 
-      runMigrations(raw);
-
-      expect((raw.naming as Record<string, unknown>).folderTemplate).toBe("{actor}/{number}");
+      expect(download.generateNfo).toBe(true);
+      expect(download).not.toHaveProperty("downloadNfo");
+      expect(scrape.enabledSites).toEqual(V050_ENABLED_SITES);
+      expect(scrape.siteOrder).toEqual(V050_ENABLED_SITES);
+      expect(fieldPriorities.scene_images).toEqual(V050_FIELD_PRIORITY_DEFAULTS.scene_images);
+      expect(fieldPriorities).not.toHaveProperty("sample_images");
+      expect(parsed.naming.partStyle).toBe("RAW");
     });
 
-    it("preserves folderTemplate when successFileMove is disabled", () => {
-      const raw = buildV030Config({
-        naming: {
-          folderTemplate: "{actor}",
-          fileTemplate: "{number}",
-        },
-        behavior: {
-          successFileMove: false,
-        },
-      });
+    it("preserves customized v0.4 values while renaming fields", () => {
+      const raw = buildV040Config();
+      const scrape = raw.scrape as Record<string, unknown>;
+      const download = raw.download as Record<string, unknown>;
+      const fieldPriorities = (raw.aggregation as Record<string, unknown>).fieldPriorities as Record<string, string[]>;
+      const naming = raw.naming as Record<string, unknown>;
 
-      runMigrations(raw);
+      scrape.enabledSites = ["avbase", "javdb"];
+      scrape.siteOrder = ["javdb", "avbase"];
+      download.downloadNfo = false;
+      fieldPriorities.sample_images = ["javbus"];
+      fieldPriorities.rating = ["javdb"];
+      naming.partStyle = "disc";
 
-      expect((raw.naming as Record<string, unknown>).folderTemplate).toBe("{actor}");
+      const parsed = migrate(raw).parsed;
+
+      expect(parsed.scrape.enabledSites).toEqual(["avbase", "javdb"]);
+      expect(parsed.scrape.siteOrder).toEqual(["javdb", "avbase"]);
+      expect(parsed.download.generateNfo).toBe(false);
+      expect(parsed.naming.partStyle).toBe("DISC");
+      expect(parsed.aggregation.fieldPriorities.scene_images).toEqual(["javbus"]);
+      expect(parsed.aggregation.fieldPriorities.rating).toEqual(["javdb"]);
     });
   });
 
   describe("migrator behavior", () => {
     it("skips migration for current version", () => {
-      const raw = buildV030Config();
-      raw.configVersion = 1; // already at latest
-      // Remove v0.3.0 fields that won't exist after migrating to v0.4.0
-      delete (raw.download as Record<string, unknown>).downloadCover;
-      delete (raw.download as Record<string, unknown>).keepCover;
-      delete raw.server;
-      (raw.download as Record<string, unknown>).downloadThumb = true;
-      (raw.download as Record<string, unknown>).keepThumb = true;
-      raw.emby = { url: "http://192.168.1.100:8096", apiKey: "my-api-key", userId: "" };
+      const raw = configurationSchema.parse({}) as unknown as Record<string, unknown>;
 
       const result = runMigrations(raw);
-      expect(result.migrated).toBe(false);
-      expect(result.applied).toHaveLength(0);
+
+      expect(result).toEqual({
+        migrated: false,
+        fromVersion: CURRENT_CONFIG_VERSION,
+        toVersion: CURRENT_CONFIG_VERSION,
+        applied: [],
+      });
     });
 
-    it("stamps configVersion after migration", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
+    it("stamps configVersion and returns migration metadata", () => {
+      const { raw, result } = migrate();
 
-      expect(raw.configVersion).toBe(1);
-    });
-
-    it("returns migration metadata", () => {
-      const raw = buildV030Config();
-      const result = runMigrations(raw);
-
-      expect(result.migrated).toBe(true);
-      expect(result.fromVersion).toBe(0);
-      expect(result.toVersion).toBe(1);
-      expect(result.applied).toEqual(["v0.3.0 → v0.4.0"]);
+      expect(raw.configVersion).toBe(CURRENT_CONFIG_VERSION);
+      expect(result).toEqual({
+        migrated: true,
+        fromVersion: 0,
+        toVersion: CURRENT_CONFIG_VERSION,
+        applied: ["v0.3.0 → v0.4.0", "v0.4.0 → v0.5.0"],
+      });
     });
 
     it("rejects config versions newer than the current app supports", () => {
-      const raw = buildV030Config();
+      const raw = buildV040Config();
       raw.configVersion = 99;
 
       expect(() => runMigrations(raw)).toThrow(ConfigMigrationError);
@@ -359,11 +458,8 @@ describe("Configuration migrations", () => {
     });
 
     it("migrated v0.3.0 config passes Zod schema validation", () => {
-      const raw = buildV030Config();
-      runMigrations(raw);
-
-      const parsed = configurationSchema.safeParse(raw);
-      expect(parsed.success).toBe(true);
+      const { raw } = migrate();
+      expect(configurationSchema.safeParse(raw).success).toBe(true);
     });
   });
 });

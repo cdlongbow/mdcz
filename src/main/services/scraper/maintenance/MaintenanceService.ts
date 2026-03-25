@@ -17,7 +17,7 @@ import type {
 import PQueue from "p-queue";
 import { AggregationService } from "../aggregation";
 import { DownloadManager } from "../DownloadManager";
-import { FileOrganizer } from "../FileOrganizer";
+import { fileOrganizer } from "../FileOrganizer";
 import type { FileScraperDependencies } from "../FileScraper";
 import { NfoGenerator } from "../NfoGenerator";
 import { TranslateService } from "../TranslateService";
@@ -126,11 +126,8 @@ export class MaintenanceService {
       ),
     );
 
-    const readyCount = items.filter((item) => item.status === "ready").length;
     return {
       items,
-      readyCount,
-      blockedCount: items.length - readyCount,
     };
   }
 
@@ -305,7 +302,7 @@ export class MaintenanceService {
       translateService: new TranslateService(this.networkClient),
       nfoGenerator: new NfoGenerator(),
       downloadManager: new DownloadManager(this.networkClient),
-      fileOrganizer: new FileOrganizer(),
+      fileOrganizer,
       signalService: this.signalService,
       actorImageService: this.actorImageService,
       actorSourceProvider: this.actorSourceProvider,

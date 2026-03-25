@@ -1,5 +1,4 @@
-import { buildDmmAwsImageCandidates } from "@main/utils/dmmImage";
-import { Website } from "@shared/enums";
+import { buildDmmAwsImageCandidates, isDmmImageUrl } from "@main/utils/dmmImage";
 import type { CrawlerData } from "@shared/types";
 import type { ImageAlternatives, SourceMap } from "./aggregation";
 
@@ -20,12 +19,12 @@ const normalizeUrl = (input?: string): string | null => {
   return null;
 };
 
-const cloneSampleImageAlternatives = (sets: ImageAlternatives["sample_images"] | undefined): string[][] =>
+const cloneSceneImageAlternatives = (sets: ImageAlternatives["scene_images"] | undefined): string[][] =>
   (sets ?? []).map((urls) => [...urls]);
 
-const cloneSampleImageAlternativeSources = (
-  sources: ImageAlternatives["sample_image_sources"] | undefined,
-): Website[] => [...(sources ?? [])];
+const cloneSceneImageAlternativeSources = (
+  sources: ImageAlternatives["scene_image_sources"] | undefined,
+): NonNullable<ImageAlternatives["scene_image_sources"]> => [...(sources ?? [])];
 
 const expandDmmPrimaryImageAlternatives = (
   primaryUrl: string | undefined,
@@ -69,33 +68,33 @@ const expandDmmPrimaryImageAlternatives = (
   return expanded;
 };
 
-const isDmmPrimaryImageSource = (
+const hasDmmPrimaryImageUrl = (
   field: "thumb_url" | "poster_url",
-  data: Pick<CrawlerData, "website">,
-  sources: Pick<SourceMap, "thumb_url" | "poster_url"> | undefined,
+  data: Pick<CrawlerData, "thumb_url" | "poster_url">,
+  _sources: Pick<SourceMap, "thumb_url" | "poster_url"> | undefined,
 ): boolean => {
-  return sources?.[field] === Website.DMM || data.website === Website.DMM;
+  return isDmmImageUrl(data[field]);
 };
 
 export const prepareImageAlternativesForDownload = (
-  data: Pick<CrawlerData, "number" | "website" | "thumb_url" | "poster_url">,
+  data: Pick<CrawlerData, "number" | "thumb_url" | "poster_url">,
   imageAlternatives: Partial<ImageAlternatives> = {},
-  sources?: Pick<SourceMap, "thumb_url" | "poster_url" | "sample_images">,
+  sources?: Pick<SourceMap, "thumb_url" | "poster_url" | "scene_images">,
 ): Partial<ImageAlternatives> => {
   const prepared: Partial<ImageAlternatives> = {
     thumb_url: [...(imageAlternatives.thumb_url ?? [])],
     poster_url: [...(imageAlternatives.poster_url ?? [])],
-    sample_images: cloneSampleImageAlternatives(imageAlternatives.sample_images),
-    sample_images_source: imageAlternatives.sample_images_source ?? sources?.sample_images,
-    sample_image_sources: cloneSampleImageAlternativeSources(imageAlternatives.sample_image_sources),
+    scene_images: cloneSceneImageAlternatives(imageAlternatives.scene_images),
+    scene_images_source: imageAlternatives.scene_images_source ?? sources?.scene_images,
+    scene_image_sources: cloneSceneImageAlternativeSources(imageAlternatives.scene_image_sources),
   };
 
   return {
     ...prepared,
-    thumb_url: isDmmPrimaryImageSource("thumb_url", data, sources)
+    thumb_url: hasDmmPrimaryImageUrl("thumb_url", data, sources)
       ? expandDmmPrimaryImageAlternatives(data.thumb_url, imageAlternatives.thumb_url, data.number)
       : prepared.thumb_url,
-    poster_url: isDmmPrimaryImageSource("poster_url", data, sources)
+    poster_url: hasDmmPrimaryImageUrl("poster_url", data, sources)
       ? expandDmmPrimaryImageAlternatives(data.poster_url, imageAlternatives.poster_url, data.number)
       : prepared.poster_url,
   };

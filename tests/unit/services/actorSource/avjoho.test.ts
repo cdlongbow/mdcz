@@ -52,70 +52,68 @@ const DETAIL_HTML = `
 `;
 
 describe("AvjohoActorSource", () => {
-  it("builds an actor profile from AVJOHO search and detail pages", async () => {
-    const networkClient = new FakeNetworkClient();
-    networkClient.getText.mockImplementation(async (url: string) => {
-      if (url === "https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96") {
-        return SEARCH_HTML;
-      }
-      if (url === "https://db.avjoho.com/%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96/") {
-        return DETAIL_HTML;
-      }
-      throw new Error(`Unexpected URL ${url}`);
-    });
-
-    const source = new AvjohoActorSource({
-      networkClient: networkClient as unknown as NetworkClient,
-    });
-
-    const result = await source.lookup(createConfig(), { name: "北川美玖" });
-
-    expect(result).toMatchObject({
-      source: "avjoho",
-      success: true,
-      profile: {
-        name: "北川美玖",
-        aliases: ["きたがわみく", "みく"],
-        birth_date: "1996-01-31",
-        birth_place: "東京都",
-        blood_type: "AB",
-        height_cm: 156,
-        bust_cm: 90,
-        waist_cm: 56,
-        hip_cm: 86,
-        cup_size: "G",
-        photo_url: "https://db.avjoho.com/wp-content/uploads/veo00064ps.jpg",
+  it("matches canonical names and kana aliases from AVJOHO search results", async () => {
+    const cases = [
+      {
+        query: "北川美玖",
+        searchUrl: "https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96",
+        assertDetailedProfile: true,
       },
-      warnings: [],
-    });
-    expect(result.profile?.description).toContain("デビュー: 2022年7月5日");
-    expect(result.profile?.description).toContain("デビュー: 2022年7月5日\n\n趣味・特技: アニメ、舞台鑑賞");
-    expect(result.profile?.description).toContain("趣味・特技: アニメ、舞台鑑賞");
-    expect(result.profile?.description).toContain("専属メーカー: VENUS");
-    expect(result.profile?.description).not.toContain("生年月日");
-    expect(result.profile?.description).not.toContain("身長");
-  });
+      {
+        query: "きたがわみく",
+        searchUrl: "https://db.avjoho.com/?s=%E3%81%8D%E3%81%9F%E3%81%8C%E3%82%8F%E3%81%BF%E3%81%8F",
+        assertDetailedProfile: false,
+      },
+    ];
 
-  it("can match a kana alias from the AVJOHO result title", async () => {
-    const networkClient = new FakeNetworkClient();
-    networkClient.getText.mockImplementation(async (url: string) => {
-      if (url === "https://db.avjoho.com/?s=%E3%81%8D%E3%81%9F%E3%81%8C%E3%82%8F%E3%81%BF%E3%81%8F") {
-        return SEARCH_HTML;
+    for (const { query, searchUrl, assertDetailedProfile } of cases) {
+      const networkClient = new FakeNetworkClient();
+      networkClient.getText.mockImplementation(async (url: string) => {
+        if (url === searchUrl) {
+          return SEARCH_HTML;
+        }
+        if (url === "https://db.avjoho.com/%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96/") {
+          return DETAIL_HTML;
+        }
+        throw new Error(`Unexpected URL ${url}`);
+      });
+
+      const source = new AvjohoActorSource({
+        networkClient: networkClient as unknown as NetworkClient,
+      });
+
+      const result = await source.lookup(createConfig(), { name: query });
+
+      expect(result.success).toBe(true);
+      expect(result.profile?.name).toBe("北川美玖");
+      expect(result.profile?.aliases).toContain("きたがわみく");
+
+      if (assertDetailedProfile) {
+        expect(result).toMatchObject({
+          source: "avjoho",
+          success: true,
+          profile: {
+            name: "北川美玖",
+            aliases: ["きたがわみく", "みく"],
+            birth_date: "1996-01-31",
+            birth_place: "東京都",
+            blood_type: "AB",
+            height_cm: 156,
+            bust_cm: 90,
+            waist_cm: 56,
+            hip_cm: 86,
+            cup_size: "G",
+            photo_url: "https://db.avjoho.com/wp-content/uploads/veo00064ps.jpg",
+          },
+          warnings: [],
+        });
+        expect(result.profile?.description).toContain("デビュー: 2022年7月5日");
+        expect(result.profile?.description).toContain("デビュー: 2022年7月5日\n\n趣味・特技: アニメ、舞台鑑賞");
+        expect(result.profile?.description).toContain("趣味・特技: アニメ、舞台鑑賞");
+        expect(result.profile?.description).toContain("専属メーカー: VENUS");
+        expect(result.profile?.description).not.toContain("生年月日");
+        expect(result.profile?.description).not.toContain("身長");
       }
-      if (url === "https://db.avjoho.com/%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96/") {
-        return DETAIL_HTML;
-      }
-      throw new Error(`Unexpected URL ${url}`);
-    });
-
-    const source = new AvjohoActorSource({
-      networkClient: networkClient as unknown as NetworkClient,
-    });
-
-    const result = await source.lookup(createConfig(), { name: "きたがわみく" });
-
-    expect(result.success).toBe(true);
-    expect(result.profile?.name).toBe("北川美玖");
-    expect(result.profile?.aliases).toContain("きたがわみく");
+    }
   });
 });

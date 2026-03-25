@@ -8,14 +8,12 @@ import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import { describe, expect, it } from "vitest";
 
-// ── Test data factories ──
-
 const makeCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Test Title",
   number: "ABF-075",
   actors: ["Actor A"],
   genres: ["Genre A"],
-  sample_images: [],
+  scene_images: [],
   website: Website.DMM,
   ...overrides,
 });
@@ -45,170 +43,169 @@ const waitForDelay = async (delayMs: number, signal?: AbortSignal): Promise<void
   });
 };
 
-// ── FieldAggregator unit tests ──
-
 describe("FieldAggregator", () => {
-  describe("first_non_null strategy", () => {
-    it("returns value from highest-priority source", () => {
-      const aggregator = new FieldAggregator({
-        title: [Website.JAVDB, Website.DMM],
-      });
+  it("applies first_non_null priority and fallback rules", () => {
+    const cases = [
+      {
+        aggregator: new FieldAggregator({
+          title: [Website.JAVDB, Website.DMM],
+        }),
+        results: new Map<Website, CrawlerData>([
+          [Website.DMM, makeCrawlerData({ title: "DMM Title", website: Website.DMM })],
+          [Website.JAVDB, makeCrawlerData({ title: "JAVDB Title", website: Website.JAVDB })],
+        ]),
+        field: "title",
+        expectedValue: "JAVDB Title",
+        expectedSource: Website.JAVDB,
+      },
+      {
+        aggregator: new FieldAggregator({
+          studio: [Website.JAVDB, Website.DMM],
+        }),
+        results: new Map<Website, CrawlerData>([
+          [Website.DMM, makeCrawlerData({ studio: "DMM Studio", website: Website.DMM })],
+          [Website.JAVDB, makeCrawlerData({ studio: undefined, website: Website.JAVDB })],
+        ]),
+        field: "studio",
+        expectedValue: "DMM Studio",
+        expectedSource: Website.DMM,
+      },
+    ];
 
-      const results = new Map<Website, CrawlerData>([
-        [Website.DMM, makeCrawlerData({ title: "DMM Title", website: Website.DMM })],
-        [Website.JAVDB, makeCrawlerData({ title: "JAVDB Title", website: Website.JAVDB })],
-      ]);
-
+    for (const { aggregator, results, field, expectedValue, expectedSource } of cases) {
       const { data, sources } = aggregator.aggregate(results);
-      expect(data.title).toBe("JAVDB Title");
-      expect(sources.title).toBe(Website.JAVDB);
-    });
 
-    it("falls back when priority source has empty value", () => {
-      const aggregator = new FieldAggregator({
-        studio: [Website.JAVDB, Website.DMM],
-      });
-
-      const results = new Map<Website, CrawlerData>([
-        [Website.DMM, makeCrawlerData({ studio: "DMM Studio", website: Website.DMM })],
-        [Website.JAVDB, makeCrawlerData({ studio: undefined, website: Website.JAVDB })],
-      ]);
-
-      const { data, sources } = aggregator.aggregate(results);
-      expect(data.studio).toBe("DMM Studio");
-      expect(sources.studio).toBe(Website.DMM);
-    });
+      expect(data[field as keyof CrawlerData]).toBe(expectedValue);
+      expect(sources[field as keyof CrawlerData]).toBe(expectedSource);
+    }
   });
 
-  describe("longest strategy", () => {
-    it("selects the longest plot across sources", () => {
-      const aggregator = new FieldAggregator({});
-
-      const results = new Map<Website, CrawlerData>([
-        [Website.DMM, makeCrawlerData({ plot: "Short plot", website: Website.DMM })],
-        [
-          Website.JAVDB,
-          makeCrawlerData({ plot: "This is a much longer plot description from JAVDB", website: Website.JAVDB }),
-        ],
-      ]);
-
-      const { data, sources } = aggregator.aggregate(results);
-      expect(data.plot).toBe("This is a much longer plot description from JAVDB");
-      expect(sources.plot).toBe(Website.JAVDB);
-    });
-  });
-
-  describe("array selection strategy", () => {
-    it("prefers the highest-priority non-empty actor list without merging sites", () => {
-      const aggregator = new FieldAggregator({
-        actors: [Website.AVBASE, Website.JAVBUS, Website.JAVDB],
-      });
-
-      const results = new Map<Website, CrawlerData>([
-        [Website.JAVBUS, makeCrawlerData({ actors: ["女优 A", "男优 B"], website: Website.JAVBUS })],
-        [Website.AVBASE, makeCrawlerData({ actors: ["女优 A", "女优 C"], website: Website.AVBASE })],
-        [Website.JAVDB, makeCrawlerData({ actors: ["女优 A"], website: Website.JAVDB })],
-      ]);
-
-      const { data, sources } = aggregator.aggregate(results);
-      expect(data.actors).toEqual(["女优 A", "女优 C"]);
-      expect(sources.actors).toBe(Website.AVBASE);
-    });
-
-    it("falls back to the next site when the highest-priority actor list is empty", () => {
-      const aggregator = new FieldAggregator({
-        actors: [Website.AVBASE, Website.JAVDB],
-      });
-
-      const results = new Map<Website, CrawlerData>([
-        [Website.AVBASE, makeCrawlerData({ actors: [], website: Website.AVBASE })],
-        [Website.JAVDB, makeCrawlerData({ actors: ["女优 A", "女优 B"], website: Website.JAVDB })],
-      ]);
-
-      const { data, sources } = aggregator.aggregate(results);
-      expect(data.actors).toEqual(["女优 A", "女优 B"]);
-      expect(sources.actors).toBe(Website.JAVDB);
-    });
-
-    it("prefers the first non-empty genres without merging sites", () => {
-      const aggregator = new FieldAggregator({});
-
-      const results = new Map<Website, CrawlerData>([
-        [Website.DMM, makeCrawlerData({ genres: ["Tag A", "Tag B"], website: Website.DMM })],
-        [Website.JAVDB, makeCrawlerData({ genres: ["tag a", "Tag C"], website: Website.JAVDB })],
-      ]);
-
-      const { data } = aggregator.aggregate(results);
-      expect(data.genres).toEqual(["Tag A", "Tag B"]);
-    });
-
-    it("keeps scene images as a single source set and preserves fallback sets separately", () => {
-      const aggregator = new FieldAggregator({});
-
-      const results = new Map<Website, CrawlerData>([
-        [Website.DMM, makeCrawlerData({ sample_images: ["https://a.jpg", "https://b.jpg"], website: Website.DMM })],
-        [Website.JAVDB, makeCrawlerData({ sample_images: ["https://b.jpg", "https://c.jpg"], website: Website.JAVDB })],
-      ]);
-
-      const { data, imageAlternatives, sources } = aggregator.aggregate(results);
-      expect(data.sample_images).toEqual(["https://a.jpg", "https://b.jpg"]);
-      expect(imageAlternatives.sample_images).toEqual([["https://b.jpg", "https://c.jpg"]]);
-      expect(imageAlternatives.sample_images_source).toBe(Website.DMM);
-      expect(imageAlternatives.sample_image_sources).toEqual([Website.JAVDB]);
-      expect(sources.sample_images).toBe(Website.DMM);
-    });
-
-    it("respects maxActors limit", () => {
-      const aggregator = new FieldAggregator({}, { maxActors: 2 });
-
-      const results = new Map<Website, CrawlerData>([
-        [Website.DMM, makeCrawlerData({ actors: ["A", "B", "C", "D"], website: Website.DMM })],
-      ]);
-
-      const { data } = aggregator.aggregate(results);
-      expect(data.actors).toHaveLength(2);
-    });
-  });
-
-  describe("highest_quality strategy", () => {
-    it("prefers AWS DMM URLs for thumb", () => {
-      const aggregator = new FieldAggregator({
-        thumb_url: [Website.JAVDB, Website.DMM],
-      });
-
-      const results = new Map<Website, CrawlerData>([
-        [Website.DMM, makeCrawlerData({ thumb_url: "https://awsimgsrc.dmm.co.jp/thumb.jpg", website: Website.DMM })],
-        [Website.JAVDB, makeCrawlerData({ thumb_url: "https://javdb.com/thumb.jpg", website: Website.JAVDB })],
-      ]);
-
-      const { data, sources } = aggregator.aggregate(results);
-      expect(data.thumb_url).toBe("https://awsimgsrc.dmm.co.jp/thumb.jpg");
-      expect(sources.thumb_url).toBe(Website.DMM);
-    });
-
-    it("falls back to first_non_null when no AWS URL available", () => {
-      const aggregator = new FieldAggregator({
-        thumb_url: [Website.JAVDB, Website.DMM],
-      });
-
-      const results = new Map<Website, CrawlerData>([
-        [Website.DMM, makeCrawlerData({ thumb_url: "https://dmm.co.jp/thumb.jpg", website: Website.DMM })],
-        [Website.JAVDB, makeCrawlerData({ thumb_url: "https://javdb.com/thumb.jpg", website: Website.JAVDB })],
-      ]);
-
-      const { data } = aggregator.aggregate(results);
-      // JAVDB has higher priority, so it should win
-      expect(data.thumb_url).toBe("https://javdb.com/thumb.jpg");
-    });
-  });
-
-  it("throws when no results provided", () => {
+  it("selects the longest plot across sources", () => {
     const aggregator = new FieldAggregator({});
-    expect(() => aggregator.aggregate(new Map())).toThrow("No results to aggregate");
+    const results = new Map<Website, CrawlerData>([
+      [Website.DMM, makeCrawlerData({ plot: "Short plot", website: Website.DMM })],
+      [
+        Website.JAVDB,
+        makeCrawlerData({ plot: "This is a much longer plot description from JAVDB", website: Website.JAVDB }),
+      ],
+    ]);
+
+    const { data, sources } = aggregator.aggregate(results);
+
+    expect(data.plot).toBe("This is a much longer plot description from JAVDB");
+    expect(sources.plot).toBe(Website.JAVDB);
+  });
+
+  it("selects array fields without merging across sites", () => {
+    const cases = [
+      {
+        aggregator: new FieldAggregator({
+          actors: [Website.AVBASE, Website.JAVBUS, Website.JAVDB],
+        }),
+        results: new Map<Website, CrawlerData>([
+          [Website.JAVBUS, makeCrawlerData({ actors: ["女优 A", "男优 B"], website: Website.JAVBUS })],
+          [Website.AVBASE, makeCrawlerData({ actors: ["女优 A", "女优 C"], website: Website.AVBASE })],
+          [Website.JAVDB, makeCrawlerData({ actors: ["女优 A"], website: Website.JAVDB })],
+        ]),
+        field: "actors",
+        expectedValue: ["女优 A", "女优 C"],
+        expectedSource: Website.AVBASE,
+      },
+      {
+        aggregator: new FieldAggregator({
+          actors: [Website.AVBASE, Website.JAVDB],
+        }),
+        results: new Map<Website, CrawlerData>([
+          [Website.AVBASE, makeCrawlerData({ actors: [], website: Website.AVBASE })],
+          [Website.JAVDB, makeCrawlerData({ actors: ["女优 A", "女优 B"], website: Website.JAVDB })],
+        ]),
+        field: "actors",
+        expectedValue: ["女优 A", "女优 B"],
+        expectedSource: Website.JAVDB,
+      },
+      {
+        aggregator: new FieldAggregator({}),
+        results: new Map<Website, CrawlerData>([
+          [Website.DMM, makeCrawlerData({ genres: ["Tag A", "Tag B"], website: Website.DMM })],
+          [Website.JAVDB, makeCrawlerData({ genres: ["tag a", "Tag C"], website: Website.JAVDB })],
+        ]),
+        field: "genres",
+        expectedValue: ["Tag A", "Tag B"],
+        expectedSource: undefined,
+      },
+    ];
+
+    for (const { aggregator, results, field, expectedValue, expectedSource } of cases) {
+      const { data, sources } = aggregator.aggregate(results);
+
+      expect(data[field as keyof CrawlerData]).toEqual(expectedValue);
+      if (expectedSource !== undefined) {
+        expect(sources[field as keyof CrawlerData]).toBe(expectedSource);
+      }
+    }
+  });
+
+  it("keeps scene images as a single source set and preserves fallback sets separately", () => {
+    const aggregator = new FieldAggregator({});
+    const results = new Map<Website, CrawlerData>([
+      [Website.DMM, makeCrawlerData({ scene_images: ["https://a.jpg", "https://b.jpg"], website: Website.DMM })],
+      [Website.JAVDB, makeCrawlerData({ scene_images: ["https://b.jpg", "https://c.jpg"], website: Website.JAVDB })],
+    ]);
+
+    const { data, imageAlternatives, sources } = aggregator.aggregate(results);
+
+    expect(data.scene_images).toEqual(["https://a.jpg", "https://b.jpg"]);
+    expect(imageAlternatives.scene_images).toEqual([["https://b.jpg", "https://c.jpg"]]);
+    expect(imageAlternatives.scene_images_source).toBe(Website.DMM);
+    expect(imageAlternatives.scene_image_sources).toEqual([Website.JAVDB]);
+    expect(sources.scene_images).toBe(Website.DMM);
+  });
+
+  it("respects maxActors limit", () => {
+    const aggregator = new FieldAggregator({}, { maxActors: 2 });
+    const results = new Map<Website, CrawlerData>([
+      [Website.DMM, makeCrawlerData({ actors: ["A", "B", "C", "D"], website: Website.DMM })],
+    ]);
+
+    const { data } = aggregator.aggregate(results);
+    expect(data.actors).toHaveLength(2);
+  });
+
+  it("prefers higher-quality thumb URLs without ignoring configured fallback order", () => {
+    const aggregator = new FieldAggregator({
+      thumb_url: [Website.JAVDB, Website.DMM],
+    });
+    const cases = [
+      {
+        results: new Map<Website, CrawlerData>([
+          [Website.DMM, makeCrawlerData({ thumb_url: "https://awsimgsrc.dmm.co.jp/thumb.jpg", website: Website.DMM })],
+          [Website.JAVDB, makeCrawlerData({ thumb_url: "https://javdb.com/thumb.jpg", website: Website.JAVDB })],
+        ]),
+        expectedThumb: "https://awsimgsrc.dmm.co.jp/thumb.jpg",
+        expectedSource: Website.DMM,
+      },
+      {
+        results: new Map<Website, CrawlerData>([
+          [Website.DMM, makeCrawlerData({ thumb_url: "https://dmm.co.jp/thumb.jpg", website: Website.DMM })],
+          [Website.JAVDB, makeCrawlerData({ thumb_url: "https://javdb.com/thumb.jpg", website: Website.JAVDB })],
+        ]),
+        expectedThumb: "https://javdb.com/thumb.jpg",
+        expectedSource: Website.JAVDB,
+      },
+    ];
+
+    for (const { results, expectedThumb, expectedSource } of cases) {
+      const { data, sources } = aggregator.aggregate(results);
+
+      expect(data.thumb_url).toBe(expectedThumb);
+      expect(sources.thumb_url).toBe(expectedSource);
+    }
+  });
+
+  it("throws when no results are provided", () => {
+    expect(() => new FieldAggregator({}).aggregate(new Map())).toThrow("No results to aggregate");
   });
 });
-
-// ── AggregationService tests ──
 
 class MultiResultCrawlerProvider extends CrawlerProvider {
   private readonly siteResults: Map<Website, CrawlerData>;
@@ -279,11 +276,10 @@ describe("AggregationService", () => {
       ],
     ]);
 
-    const provider = new MultiResultCrawlerProvider(siteResults);
-    const service = new AggregationService(provider);
-    const config = makeConfig();
-
-    const result = await service.aggregate("ABF-075", config);
+    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults)).aggregate(
+      "ABF-075",
+      makeConfig(),
+    );
 
     expect(result).not.toBeNull();
     expect(result?.data.title).toBeDefined();
@@ -320,7 +316,6 @@ describe("AggregationService", () => {
       [Website.AVBASE]: 0,
       [Website.DMM_TV]: 30,
     });
-    const service = new AggregationService(provider);
     const config = configurationSchema.parse({
       ...defaultConfiguration,
       scrape: {
@@ -337,44 +332,100 @@ describe("AggregationService", () => {
       },
     });
 
-    const result = await service.aggregate("ABF-075", config);
+    const result = await new AggregationService(provider).aggregate("ABF-075", config);
 
     expect(result).not.toBeNull();
     expect(result?.data.durationSeconds).toBe(7_200);
     expect(result?.sources.durationSeconds).toBe(Website.DMM_TV);
   });
 
-  it("returns null when no crawlers succeed", async () => {
-    const provider = new MultiResultCrawlerProvider(new Map());
-    const service = new AggregationService(provider);
-    const config = makeConfig();
-
-    const result = await service.aggregate("ABF-075", config);
-    expect(result).toBeNull();
-  });
-
-  it("returns null when minimum threshold not met (missing thumb and poster)", async () => {
+  it("prefers FC2HUB ahead of JAVDB for FC2 family metadata under the default priorities", async () => {
     const siteResults = new Map<Website, CrawlerData>([
       [
-        Website.DMM,
+        Website.FC2HUB,
         makeCrawlerData({
-          title: "Has title",
-          thumb_url: undefined,
-          poster_url: undefined,
-          website: Website.DMM,
+          title: "FC2HUB Title",
+          number: "FC2-4515706",
+          thumb_url: "https://fc2hub.example/thumb.jpg",
+          studio: "Seller FC2HUB",
+          publisher: "Seller FC2HUB",
+          durationSeconds: 8_068,
+          rating: 4.7,
+          website: Website.FC2HUB,
+        }),
+      ],
+      [
+        Website.JAVDB,
+        makeCrawlerData({
+          title: "JAVDB Title",
+          number: "FC2-4515706",
+          thumb_url: "https://javdb.example/thumb.jpg",
+          studio: "Seller JAVDB",
+          publisher: "Publisher JAVDB",
+          durationSeconds: 7_200,
+          rating: 4.1,
+          website: Website.JAVDB,
         }),
       ],
     ]);
 
-    const provider = new MultiResultCrawlerProvider(siteResults);
-    const service = new AggregationService(provider);
-    const config = makeConfig();
+    const config = configurationSchema.parse({
+      ...defaultConfiguration,
+      scrape: {
+        ...defaultConfiguration.scrape,
+        enabledSites: [Website.FC2HUB, Website.JAVDB],
+        siteOrder: [Website.FC2HUB, Website.JAVDB],
+      },
+    });
 
-    const result = await service.aggregate("ABF-075", config);
-    expect(result).toBeNull();
+    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults)).aggregate(
+      "FC2-4515706",
+      config,
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.data.title).toBe("FC2HUB Title");
+    expect(result?.data.studio).toBe("Seller FC2HUB");
+    expect(result?.data.publisher).toBe("Seller FC2HUB");
+    expect(result?.data.durationSeconds).toBe(8_068);
+    expect(result?.data.rating).toBe(4.7);
+    expect(result?.sources.title).toBe(Website.FC2HUB);
+    expect(result?.sources.studio).toBe(Website.FC2HUB);
+    expect(result?.sources.publisher).toBe(Website.FC2HUB);
+    expect(result?.sources.durationSeconds).toBe(Website.FC2HUB);
+    expect(result?.sources.rating).toBe(Website.FC2HUB);
   });
 
-  it("caches results for repeated calls", async () => {
+  it("returns null when no result clears the aggregation threshold", async () => {
+    const cases = [
+      {
+        provider: new MultiResultCrawlerProvider(new Map<Website, CrawlerData>()),
+        config: makeConfig(),
+      },
+      {
+        provider: new MultiResultCrawlerProvider(
+          new Map<Website, CrawlerData>([
+            [
+              Website.DMM,
+              makeCrawlerData({
+                title: "Has title",
+                thumb_url: undefined,
+                poster_url: undefined,
+                website: Website.DMM,
+              }),
+            ],
+          ]),
+        ),
+        config: makeConfig(),
+      },
+    ];
+
+    for (const { provider, config } of cases) {
+      await expect(new AggregationService(provider).aggregate("ABF-075", config)).resolves.toBeNull();
+    }
+  });
+
+  it("caches results until clearCache is called", async () => {
     const siteResults = new Map<Website, CrawlerData>([
       [
         Website.DMM,
@@ -390,13 +441,16 @@ describe("AggregationService", () => {
     const config = makeConfig();
 
     const first = await service.aggregate("ABF-075", config);
-    expect(first).not.toBeNull();
     const firstCallCount = provider.calledSites.length;
-    expect(firstCallCount).toBeGreaterThan(0);
-
     const second = await service.aggregate("ABF-075", config);
+
+    expect(first).not.toBeNull();
     expect(second).toBe(first);
     expect(provider.calledSites.length).toBe(firstCallCount);
+
+    service.clearCache();
+    await service.aggregate("ABF-075", config);
+    expect(provider.calledSites.length).toBe(firstCallCount * 2);
   });
 
   it("stops launching lower-priority sites once minimum threshold is satisfied", async () => {
@@ -419,8 +473,6 @@ describe("AggregationService", () => {
       ],
     ]);
 
-    const provider = new MultiResultCrawlerProvider(siteResults);
-    const service = new AggregationService(provider);
     const config = makeConfig({
       aggregation: {
         ...defaultConfiguration.aggregation,
@@ -429,34 +481,17 @@ describe("AggregationService", () => {
       download: {
         ...defaultConfiguration.download,
         downloadSceneImages: false,
-        downloadNfo: false,
+        generateNfo: false,
       },
     });
 
-    await service.aggregate("ABF-075", config);
+    const provider = new MultiResultCrawlerProvider(siteResults);
+    await new AggregationService(provider).aggregate("ABF-075", config);
 
     expect(provider.calledSites).toEqual([Website.DMM]);
   });
 
-  it("clears cache when clearCache is called", async () => {
-    const siteResults = new Map<Website, CrawlerData>([
-      [Website.DMM, makeCrawlerData({ thumb_url: "https://thumb.jpg", website: Website.DMM })],
-    ]);
-
-    const provider = new MultiResultCrawlerProvider(siteResults);
-    const service = new AggregationService(provider);
-    const config = makeConfig();
-
-    await service.aggregate("ABF-075", config);
-    const firstCallCount = provider.calledSites.length;
-    expect(firstCallCount).toBeGreaterThan(0);
-
-    service.clearCache();
-    await service.aggregate("ABF-075", config);
-    expect(provider.calledSites.length).toBe(firstCallCount * 2);
-  });
-
-  it("limits FC2 numbers to fc2 and javdb sites only", async () => {
+  it("limits FC2 numbers to the FC2 crawler family only", async () => {
     const siteResults = new Map<Website, CrawlerData>([
       [
         Website.FC2,
@@ -465,6 +500,14 @@ describe("AggregationService", () => {
           number: "FC2-4775286",
           thumb_url: "https://fc2.example/thumb.jpg",
           website: Website.FC2,
+        }),
+      ],
+      [
+        Website.FC2HUB,
+        makeCrawlerData({
+          title: "FC2HUB Title",
+          number: "FC2-4775286",
+          website: Website.FC2HUB,
         }),
       ],
       [
@@ -478,19 +521,71 @@ describe("AggregationService", () => {
     ]);
 
     const provider = new MultiResultCrawlerProvider(siteResults);
-    const service = new AggregationService(provider);
-    const config = makeConfig({
-      scrape: {
-        ...defaultConfiguration.scrape,
-        enabledSites: [Website.DMM, Website.MGSTAGE, Website.FC2, Website.JAVDB, Website.JAVBUS],
-        siteOrder: [Website.DMM, Website.MGSTAGE, Website.FC2, Website.JAVDB, Website.JAVBUS],
-      },
-    });
-
-    const result = await service.aggregate("FC2-4775286", config);
+    const result = await new AggregationService(provider).aggregate(
+      "FC2-4775286",
+      makeConfig({
+        scrape: {
+          ...defaultConfiguration.scrape,
+          enabledSites: [Website.DMM, Website.MGSTAGE, Website.FC2, Website.FC2HUB, Website.JAVDB, Website.JAVBUS],
+          siteOrder: [Website.DMM, Website.MGSTAGE, Website.FC2, Website.FC2HUB, Website.JAVDB, Website.JAVBUS],
+        },
+      }),
+    );
 
     expect(result).not.toBeNull();
-    expect(provider.calledSites.sort()).toEqual([Website.FC2, Website.JAVDB].sort());
+    expect(provider.calledSites.sort()).toEqual([Website.FC2, Website.FC2HUB, Website.JAVDB].sort());
+  });
+
+  it("skips FC2-only sites when aggregating a non-FC2 number", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.DMM,
+        makeCrawlerData({
+          title: "DMM Title",
+          thumb_url: "https://dmm.example/thumb.jpg",
+          website: Website.DMM,
+        }),
+      ],
+      [
+        Website.JAVDB,
+        makeCrawlerData({
+          title: "JAVDB Title",
+          thumb_url: "https://javdb.example/thumb.jpg",
+          website: Website.JAVDB,
+        }),
+      ],
+      [
+        Website.FC2,
+        makeCrawlerData({
+          title: "FC2 Title",
+          thumb_url: "https://fc2.example/thumb.jpg",
+          website: Website.FC2,
+        }),
+      ],
+      [
+        Website.FC2HUB,
+        makeCrawlerData({
+          title: "FC2HUB Title",
+          thumb_url: "https://fc2hub.example/thumb.jpg",
+          website: Website.FC2HUB,
+        }),
+      ],
+    ]);
+
+    const provider = new MultiResultCrawlerProvider(siteResults);
+    const result = await new AggregationService(provider).aggregate(
+      "ABF-075",
+      makeConfig({
+        scrape: {
+          ...defaultConfiguration.scrape,
+          enabledSites: [Website.DMM, Website.FC2, Website.FC2HUB, Website.JAVDB],
+          siteOrder: [Website.DMM, Website.FC2, Website.FC2HUB, Website.JAVDB],
+        },
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(provider.calledSites.sort()).toEqual([Website.DMM, Website.JAVDB].sort());
   });
 
   it("aborts a slow crawler once its wall-clock budget is exhausted", async () => {
@@ -508,7 +603,6 @@ describe("AggregationService", () => {
     const provider = new MultiResultCrawlerProvider(siteResults, {
       [Website.DMM]: 80,
     });
-    const service = new AggregationService(provider);
     const config = makeConfig({
       scrape: {
         ...defaultConfiguration.scrape,
@@ -520,7 +614,7 @@ describe("AggregationService", () => {
     config.aggregation.perCrawlerTimeoutMs = 20;
     config.aggregation.globalTimeoutMs = 100;
 
-    const result = await service.aggregate("ABF-075", config);
+    const result = await new AggregationService(provider).aggregate("ABF-075", config);
 
     expect(result).toBeNull();
     expect(provider.calledSites).toEqual([Website.DMM]);

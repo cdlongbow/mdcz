@@ -7,6 +7,7 @@ import type { AggregationService } from "@main/services/scraper/aggregation";
 import type { DownloadManager } from "@main/services/scraper/DownloadManager";
 import type { FileOrganizer, OrganizePlan } from "@main/services/scraper/FileOrganizer";
 import { FileScraper } from "@main/services/scraper/FileScraper";
+import type { LocalScanService } from "@main/services/scraper/maintenance/LocalScanService";
 import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
 import type { TranslateService } from "@main/services/scraper/TranslateService";
 import { Website } from "@shared/enums";
@@ -36,7 +37,7 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
   number: "ABC-123",
   actors: [],
   genres: [],
-  sample_images: [],
+  scene_images: [],
   website: Website.DMM,
   ...overrides,
 });
@@ -48,7 +49,7 @@ const createAggregationResult = (data: CrawlerData) => ({
     thumb_url: [],
     poster_url: [],
     fanart_url: [],
-    sample_images: [],
+    scene_images: [],
   },
   stats: {
     totalSites: 1,
@@ -65,11 +66,13 @@ const createScraper = ({
   crawlerData,
   plan,
   writeNfo,
+  localScanService,
 }: {
   config: ReturnType<typeof createConfig>;
   crawlerData: CrawlerData;
   plan: OrganizePlan;
   writeNfo: ReturnType<typeof vi.fn>;
+  localScanService?: Pick<LocalScanService, "scanVideo">;
 }) =>
   new FileScraper({
     configManager: new TestConfigManager(config),
@@ -94,6 +97,7 @@ const createScraper = ({
       organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
     } as unknown as FileOrganizer,
     signalService: new SignalService(null),
+    localScanService,
   });
 
 describe("FileScraper .strm support", () => {
@@ -107,7 +111,7 @@ describe("FileScraper .strm support", () => {
 
   it("extracts number from .strm filename and still generates NFO", async () => {
     const config = createConfig({
-      downloadNfo: true,
+      generateNfo: true,
     });
     const crawlerData = createCrawlerData({
       durationSeconds: 5400,
@@ -136,7 +140,7 @@ describe("FileScraper .strm support", () => {
     await writeFile(nfoPath, "<movie />", "utf8");
 
     const config = createConfig({
-      downloadNfo: true,
+      generateNfo: true,
       keepNfo: true,
     });
     const crawlerData = createCrawlerData();
@@ -152,5 +156,116 @@ describe("FileScraper .strm support", () => {
 
     expect(writeNfo).not.toHaveBeenCalled();
     expect(result.nfoPath).toBe(nfoPath);
+  });
+
+  it("reuses kept NFO local state for planning and uncensored confirmation state", async () => {
+    const root = await createTempDir();
+    const nfoPath = join(root, "ABC-123-U.nfo");
+    await writeFile(nfoPath, "<movie />", "utf8");
+
+    const config = createConfig({
+      generateNfo: true,
+      keepNfo: true,
+    });
+    const crawlerData = createCrawlerData();
+    const plan: OrganizePlan = {
+      outputDir: root,
+      targetVideoPath: join(root, "ABC-123-U.strm"),
+      nfoPath,
+    };
+    const writeNfo = vi.fn().mockResolvedValue(nfoPath);
+    const fileOrganizer = {
+      plan: vi.fn().mockReturnValue(plan),
+      ensureOutputReady: vi.fn().mockResolvedValue(plan),
+      organizeVideo: vi.fn().mockResolvedValue(plan.targetVideoPath),
+    } as unknown as FileOrganizer;
+    const scanVideoMock = vi.fn().mockResolvedValue({
+      nfoLocalState: {
+        uncensoredChoice: "umr",
+      },
+    });
+    const localScanService: Pick<LocalScanService, "scanVideo"> = {
+      scanVideo: async () => (await scanVideoMock()) as Awaited<ReturnType<LocalScanService["scanVideo"]>>,
+    };
+    const scraper = new FileScraper({
+      configManager: new TestConfigManager(config),
+      aggregationService: {
+        aggregate: vi.fn().mockResolvedValue(createAggregationResult(crawlerData)),
+      } as unknown as AggregationService,
+      translateService: {
+        translateCrawlerData: vi.fn().mockResolvedValue(crawlerData),
+      } as unknown as TranslateService,
+      nfoGenerator: {
+        writeNfo,
+      } as unknown as NfoGenerator,
+      downloadManager: {
+        downloadAll: vi.fn().mockResolvedValue({
+          downloaded: [],
+          sceneImages: [],
+        }),
+      } as unknown as DownloadManager,
+      fileOrganizer,
+      signalService: new SignalService(null),
+      localScanService,
+    });
+
+    const result = await scraper.scrapeFile(join(root, "ABC-123-U.strm"), { fileIndex: 1, totalFiles: 1 });
+
+    expect(fileOrganizer.plan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        number: "ABC-123",
+      }),
+      crawlerData,
+      expect.any(Object),
+      {
+        uncensoredChoice: "umr",
+      },
+    );
+    expect(writeNfo).not.toHaveBeenCalled();
+    expect(result.uncensoredAmbiguous).toBe(false);
+  });
+
+  it("passes preserved local state when regenerating an NFO", async () => {
+    const root = await createTempDir();
+    const outputDir = join(root, "output");
+    const config = createConfig({
+      generateNfo: true,
+      keepNfo: true,
+    });
+    const crawlerData = createCrawlerData();
+    const plan: OrganizePlan = {
+      outputDir,
+      targetVideoPath: join(outputDir, "ABC-123.strm"),
+      nfoPath: join(outputDir, "ABC-123.nfo"),
+    };
+    const writeNfo = vi.fn().mockResolvedValue(plan.nfoPath);
+    const localScanService: Pick<LocalScanService, "scanVideo"> = {
+      scanVideo: vi.fn().mockResolvedValue({
+        nfoLocalState: {
+          uncensoredChoice: "leak",
+          tags: ["保留标签"],
+        },
+      } as Awaited<ReturnType<LocalScanService["scanVideo"]>>),
+    };
+    const scraper = createScraper({
+      config,
+      crawlerData,
+      plan,
+      writeNfo,
+      localScanService,
+    });
+
+    await scraper.scrapeFile(join(root, "ABC-123.strm"), { fileIndex: 1, totalFiles: 1 });
+
+    expect(writeNfo).toHaveBeenCalledWith(
+      plan.nfoPath,
+      crawlerData,
+      expect.objectContaining({
+        localState: {
+          uncensoredChoice: "leak",
+          tags: ["保留标签"],
+        },
+      }),
+    );
   });
 });

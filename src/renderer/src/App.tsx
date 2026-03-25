@@ -9,6 +9,7 @@ import { Toaster } from "./components/ui/Sonner";
 import { TooltipProvider } from "./components/ui/Tooltip";
 import { ThemeProvider } from "./contexts/ThemeProvider";
 import { ToastProvider } from "./contexts/ToastProvider";
+import { deriveMultipartDirectoryFromPath } from "./lib/multipartDisplay";
 import { routeTree } from "./routeTree.gen";
 import { createRuntimeLog, useLogStore } from "./store/logStore";
 import { useMaintenanceStore } from "./store/maintenanceStore";
@@ -53,6 +54,7 @@ const normalizeResultItem = (payload: BackendScrapeResult): ScrapeResult => {
   const remotePoster = data?.poster_url;
   const remoteThumb = data?.thumb_url ?? data?.fanart_url;
   const remoteFanart = data?.fanart_url ?? data?.thumb_url;
+  const multipartDirectory = payload.outputPath ?? deriveMultipartDirectoryFromPath(payload.fileInfo.filePath);
 
   return {
     id: crypto.randomUUID(),
@@ -76,13 +78,17 @@ const normalizeResultItem = (payload: BackendScrapeResult): ScrapeResult => {
     studio: data?.studio,
     publisher: data?.publisher,
     score: typeof data?.rating === "number" ? String(data.rating) : undefined,
-    poster_url: assets?.poster ?? remotePoster,
-    thumb_url: assets?.thumb ?? assets?.fanart ?? remoteThumb,
-    fanart_url: assets?.fanart ?? assets?.thumb ?? remoteFanart,
-    output_path: payload.outputPath,
-    scene_images: assets?.sceneImages,
+    posterUrl: assets?.poster ?? remotePoster,
+    thumbUrl: assets?.thumb ?? assets?.fanart ?? remoteThumb,
+    fanartUrl: assets?.fanart ?? assets?.thumb ?? remoteFanart,
+    outputPath: payload.outputPath,
+    sceneImages: assets?.sceneImages,
     sources: payload.sources as Record<string, string> | undefined,
-    error_msg: payload.error,
+    errorMessage: payload.error,
+    uncensoredAmbiguous: payload.uncensoredAmbiguous,
+    nfoPath: payload.nfoPath,
+    multipartDirectory,
+    multipartPart: payload.fileInfo.part,
   };
 };
 

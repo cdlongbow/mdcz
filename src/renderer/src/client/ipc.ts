@@ -14,6 +14,8 @@ import type {
   MaintenancePreviewResult,
   MaintenanceStatus,
   ScrapeResult,
+  UncensoredConfirmItem,
+  UncensoredConfirmResponse,
 } from "@shared/types";
 
 type Unsubscribe = () => void;
@@ -66,6 +68,7 @@ export const ipc = {
     save: (config?: Partial<Configuration>) => client[IpcChannel.Config_Save]({ config }),
     list: () => client[IpcChannel.Config_List](undefined),
     reset: (path?: string) => client[IpcChannel.Config_Reset]({ path }),
+    previewNaming: (config?: Partial<Configuration>) => client[IpcChannel.Config_PreviewNaming]({ config }),
     listProfiles: () => client[IpcChannel.Config_ListProfiles](undefined),
     createProfile: (name: string) => client[IpcChannel.Config_CreateProfile]({ name }),
     switchProfile: (name: string) => client[IpcChannel.Config_SwitchProfile]({ name }),
@@ -82,6 +85,8 @@ export const ipc = {
     retryFailed: (filePaths: string[]) => client[IpcChannel.Scraper_RetryFailed]({ filePaths }),
     hasRecoverableSession: () => client[IpcChannel.Scraper_HasRecoverableSession](undefined),
     recoverSession: () => client[IpcChannel.Scraper_RecoverSession](undefined),
+    confirmUncensored: (items: UncensoredConfirmItem[]) =>
+      client[IpcChannel.Scraper_ConfirmUncensored]({ items }) as Promise<UncensoredConfirmResponse>,
   },
   crawler: {
     test: (site: Website, number: string) => client[IpcChannel.Crawler_Test]({ site, number }),
@@ -96,6 +101,7 @@ export const ipc = {
   },
   file: {
     listEntries: (dirPath: string) => client[IpcChannel.File_ListEntries]({ dirPath }),
+    exists: (path: string) => client[IpcChannel.File_Exists]({ path }) as Promise<{ exists: boolean }>,
     browse: (type: "file" | "directory", filters?: Array<{ name: string; extensions: string[] }>) =>
       client[IpcChannel.File_Browse]({ type, filters }),
     delete: (filePaths: string[]) => client[IpcChannel.File_Delete]({ filePaths }),

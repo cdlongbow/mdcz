@@ -13,8 +13,10 @@ import { Button } from "@/components/ui/Button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { Separator } from "@/components/ui/Separator";
+import { findScrapeResultGroup } from "@/lib/scrapeResultGrouping";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
+import { getDirFromPath } from "@/utils/path";
 
 const EMPTY_RESULTS: ReturnType<typeof useScrapeStore.getState>["results"] = [];
 
@@ -70,8 +72,8 @@ export function DetailPanel({
       explicitItem !== undefined
         ? explicitItem
         : (() => {
-            const selectedResult = results.find((result) => result.id === selectedResultId);
-            return selectedResult ? toDetailViewItemFromScrapeResult(selectedResult) : null;
+            const selectedGroup = findScrapeResultGroup(results, selectedResultId);
+            return selectedGroup ? toDetailViewItemFromScrapeResult(selectedGroup.display) : null;
           })(),
     [explicitItem, results, selectedResultId],
   );
@@ -305,7 +307,10 @@ export function DetailPanel({
                 {item.sceneImages && item.sceneImages.length > 0 && (
                   <>
                     <Separator />
-                    <SceneImageGallery images={item.sceneImages} />
+                    <SceneImageGallery
+                      images={item.sceneImages}
+                      baseDir={item.outputPath ?? (item.path ? getDirFromPath(item.path) : undefined)}
+                    />
                   </>
                 )}
 

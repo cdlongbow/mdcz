@@ -17,7 +17,7 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
   number: "ABC-123",
   actors: ["Actor A"],
   genres: [],
-  sample_images: [],
+  scene_images: [],
   website: Website.DMM,
   ...overrides,
 });
@@ -28,7 +28,7 @@ describe("FileScraper plan timing", () => {
       ...defaultConfiguration,
       download: {
         ...defaultConfiguration.download,
-        downloadNfo: false,
+        generateNfo: false,
         downloadThumb: false,
         downloadPoster: false,
         downloadFanart: false,
@@ -68,7 +68,7 @@ describe("FileScraper plan timing", () => {
             thumb_url: [],
             poster_url: [],
             fanart_url: [],
-            sample_images: [],
+            scene_images: [],
           },
           stats: {
             totalSites: 1,
@@ -105,6 +105,7 @@ describe("FileScraper plan timing", () => {
       }),
       translatedData,
       expect.any(Object),
+      undefined,
     );
   });
 });

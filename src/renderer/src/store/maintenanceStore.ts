@@ -9,6 +9,11 @@ import type {
 import { create, type StateCreator } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { MaintenanceFieldSelectionSide } from "@/lib/maintenance";
+import {
+  countMaintenanceDisplayItems,
+  formatMaintenanceIdleStatusText,
+  summarizeMaintenanceExecutionGroups,
+} from "@/lib/maintenanceGrouping";
 
 export type MaintenanceFilter = "all" | "success" | "failed";
 
@@ -20,16 +25,23 @@ const createPreviewResetState = () => ({
   executeDialogOpen: false,
   previewPending: false,
   previewResults: {} as Record<string, MaintenancePreviewItem>,
-  previewReadyCount: 0,
-  previewBlockedCount: 0,
   fieldSelections: {} as Record<string, Record<string, MaintenanceFieldSelectionSide>>,
 });
 
-const getIdleStatusText = (entriesCount: number, emptyText = "就绪"): string => {
-  return entriesCount > 0 ? `已扫描 ${entriesCount} 项` : emptyText;
+const getIdleStatusText = (entries: LocalScanEntry[], emptyText = "就绪"): string =>
+  formatMaintenanceIdleStatusText(entries, emptyText);
+
+const toggleIdsInSelection = (selectedIds: string[], ids: string[]): string[] => {
+  if (ids.length === 0) {
+    return selectedIds;
+  }
+
+  return ids.every((id) => selectedIds.includes(id))
+    ? selectedIds.filter((selectedId) => !ids.includes(selectedId))
+    : Array.from(new Set([...selectedIds, ...ids]));
 };
 
-const summarizeItemResults = (itemResults: Record<string, MaintenanceItemResult>) => {
+const summarizeRawItemResults = (itemResults: Record<string, MaintenanceItemResult>) => {
   let successCount = 0;
   let failedCount = 0;
   let activeCount = 0;
@@ -49,23 +61,27 @@ const summarizeItemResults = (itemResults: Record<string, MaintenanceItemResult>
   }
 
   return {
+    totalCount: successCount + failedCount + activeCount,
+    completedCount: successCount + failedCount,
     successCount,
     failedCount,
     activeCount,
-    totalCount: successCount + failedCount + activeCount,
   };
 };
 
 const formatStatusText = (
   status: MaintenanceStatus,
-  scannedEntries: number,
+  entries: LocalScanEntry[],
   itemResults: Record<string, MaintenanceItemResult>,
   previousText: string,
   previousExecutionStatus: MaintenanceExecutionStatus,
 ): string => {
   const wasStopping = previousExecutionStatus === "stopping" || previousText.startsWith("已停止");
   const wasExecuting = previousExecutionStatus === "executing" || previousText.startsWith("执行完成");
-  const localSummary = summarizeItemResults(itemResults);
+  const localSummary =
+    entries.length > 0
+      ? summarizeMaintenanceExecutionGroups(entries, itemResults)
+      : summarizeRawItemResults(itemResults);
   const hasTerminalLocalSummary = localSummary.totalCount > 0 && localSummary.activeCount === 0;
 
   if (status.state === "scanning") {
@@ -73,29 +89,33 @@ const formatStatusText = (
   }
 
   if (status.state === "executing") {
-    return `已完成 ${status.completedEntries}/${status.totalEntries} · 成功 ${status.successCount} · 失败 ${status.failedCount}`;
+    return localSummary.totalCount > 0
+      ? `已完成 ${localSummary.completedCount}/${localSummary.totalCount} · 成功 ${localSummary.successCount} · 失败 ${localSummary.failedCount}`
+      : `已完成 ${status.completedEntries}/${status.totalEntries} · 成功 ${status.successCount} · 失败 ${status.failedCount}`;
   }
 
   if (status.state === "stopping") {
-    return `正在停止 · 已完成 ${status.completedEntries}/${status.totalEntries}`;
+    return localSummary.totalCount > 0
+      ? `正在停止 · 已完成 ${localSummary.completedCount}/${localSummary.totalCount}`
+      : `正在停止 · 已完成 ${status.completedEntries}/${status.totalEntries}`;
   }
 
   if (wasStopping && (status.totalEntries > 0 || hasTerminalLocalSummary)) {
-    return `已停止 · 成功 ${status.totalEntries > 0 ? status.successCount : localSummary.successCount} · 失败/取消 ${
-      status.totalEntries > 0 ? status.failedCount : localSummary.failedCount
-    }`;
+    return `已停止 · 成功 ${localSummary.successCount} · 失败/取消 ${localSummary.failedCount}`;
   }
 
   if (status.totalEntries > 0) {
-    return `执行完成 · 成功 ${status.successCount} · 失败 ${status.failedCount}`;
+    return localSummary.totalCount > 0
+      ? `执行完成 · 成功 ${localSummary.successCount} · 失败 ${localSummary.failedCount}`
+      : `执行完成 · 成功 ${status.successCount} · 失败 ${status.failedCount}`;
   }
 
   if (wasExecuting && hasTerminalLocalSummary) {
     return `执行完成 · 成功 ${localSummary.successCount} · 失败 ${localSummary.failedCount}`;
   }
 
-  if (scannedEntries > 0) {
-    return `已扫描 ${scannedEntries} 项`;
+  if (entries.length > 0) {
+    return getIdleStatusText(entries);
   }
 
   return previousText || "就绪";
@@ -128,8 +148,6 @@ type PersistedMaintenanceState = Pick<
   | "currentPath"
   | "lastScannedDir"
   | "previewResults"
-  | "previewReadyCount"
-  | "previewBlockedCount"
   | "fieldSelections"
   | "itemResults"
 >;
@@ -153,8 +171,6 @@ const partializeMaintenanceState = (state: MaintenanceState): PersistedMaintenan
   currentPath: state.currentPath,
   lastScannedDir: state.lastScannedDir,
   previewResults: state.previewResults,
-  previewReadyCount: state.previewReadyCount,
-  previewBlockedCount: state.previewBlockedCount,
   fieldSelections: state.fieldSelections,
   itemResults: state.itemResults,
 });
@@ -177,7 +193,7 @@ const mergePersistedMaintenanceState = (persisted: unknown, current: Maintenance
     progressTotal: 0,
     executeDialogOpen: false,
     previewPending: false,
-    statusText: getIdleStatusText(entries.length),
+    statusText: getIdleStatusText(entries),
   };
 };
 
@@ -197,15 +213,13 @@ export interface MaintenanceState {
   executeDialogOpen: boolean;
   previewPending: boolean;
   previewResults: Record<string, MaintenancePreviewItem>;
-  previewReadyCount: number;
-  previewBlockedCount: number;
   fieldSelections: Record<string, Record<string, MaintenanceFieldSelectionSide>>;
   itemResults: Record<string, MaintenanceItemResult>;
 
   setPresetId: (presetId: MaintenancePresetId) => void;
   setEntries: (entries: LocalScanEntry[], dirPath: string) => void;
   setActiveId: (id: string | null) => void;
-  toggleSelected: (id: string) => void;
+  toggleSelectedIds: (ids: string[]) => void;
   setSelectedIds: (ids: string[]) => void;
   toggleSelectAll: (ids: string[]) => void;
   setFilter: (filter: MaintenanceFilter) => void;
@@ -237,7 +251,7 @@ const createMaintenanceState: StateCreator<MaintenanceState> = (set) => ({
       progressValue: 0,
       progressCurrent: 0,
       progressTotal: 0,
-      statusText: getIdleStatusText(state.entries.length),
+      statusText: getIdleStatusText(state.entries),
     })),
 
   setEntries: (entries, dirPath) =>
@@ -257,7 +271,7 @@ const createMaintenanceState: StateCreator<MaintenanceState> = (set) => ({
         progressCurrent: 0,
         progressTotal: 0,
         currentPath: dirPath,
-        statusText: entries.length > 0 ? `已扫描 ${entries.length} 项` : "未发现可维护项目",
+        statusText: getIdleStatusText(entries, "未发现可维护项目"),
         lastScannedDir: dirPath,
         ...createPreviewResetState(),
         itemResults: {},
@@ -267,12 +281,10 @@ const createMaintenanceState: StateCreator<MaintenanceState> = (set) => ({
 
   setActiveId: (id) => set({ activeId: id }),
 
-  toggleSelected: (id) =>
+  toggleSelectedIds: (ids) =>
     set((state) => ({
       ...createPreviewResetState(),
-      selectedIds: state.selectedIds.includes(id)
-        ? state.selectedIds.filter((value) => value !== id)
-        : [...state.selectedIds, id],
+      selectedIds: toggleIdsInSelection(state.selectedIds, ids),
     })),
 
   setSelectedIds: (ids) =>
@@ -283,12 +295,9 @@ const createMaintenanceState: StateCreator<MaintenanceState> = (set) => ({
 
   toggleSelectAll: (ids) =>
     set((state) => {
-      const everySelected = ids.length > 0 && ids.every((id) => state.selectedIds.includes(id));
       return {
         ...createPreviewResetState(),
-        selectedIds: everySelected
-          ? state.selectedIds.filter((id) => !ids.includes(id))
-          : Array.from(new Set([...state.selectedIds, ...ids])),
+        selectedIds: toggleIdsInSelection(state.selectedIds, ids),
       };
     }),
 
@@ -318,8 +327,6 @@ const createMaintenanceState: StateCreator<MaintenanceState> = (set) => ({
       return {
         previewPending: false,
         previewResults,
-        previewReadyCount: result.readyCount,
-        previewBlockedCount: result.blockedCount,
         fieldSelections: {},
         itemResults: {},
         activeId:
@@ -364,7 +371,7 @@ const createMaintenanceState: StateCreator<MaintenanceState> = (set) => ({
         progressValue: 0,
         progressCurrent: 0,
         progressTotal: entryIds.length,
-        statusText: `正在执行 ${entryIds.length} 项...`,
+        statusText: `正在执行 ${countMaintenanceDisplayItems(state.entries.filter((entry) => entryIds.includes(entry.id)))} 项...`,
         itemResults: nextResults,
       };
     }),
@@ -392,13 +399,7 @@ const createMaintenanceState: StateCreator<MaintenanceState> = (set) => ({
         progressValue: nextProgress,
         progressCurrent: status.completedEntries,
         progressTotal: status.totalEntries,
-        statusText: formatStatusText(
-          status,
-          state.entries.length,
-          state.itemResults,
-          state.statusText,
-          state.executionStatus,
-        ),
+        statusText: formatStatusText(status, state.entries, state.itemResults, state.statusText, state.executionStatus),
       };
     }),
 
@@ -436,7 +437,7 @@ const createMaintenanceState: StateCreator<MaintenanceState> = (set) => ({
       progressValue: 0,
       progressCurrent: 0,
       progressTotal: 0,
-      statusText: getIdleStatusText(state.entries.length),
+      statusText: getIdleStatusText(state.entries),
     })),
 
   reset: () =>

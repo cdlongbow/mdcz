@@ -1,8 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { toArray } from "@main/utils/common";
+import { classifyMovie } from "@main/utils/movieClassification";
 import { buildManagedMovieTags } from "@main/utils/movieMetadata";
-import type { ActorProfile, CrawlerData, DownloadedAssets, VideoMeta } from "@shared/types";
+import { normalizeNfoLocalState, uncensoredChoiceToTag } from "@main/utils/nfoLocalState";
+import { resolveFileInfoSubtitleTag } from "@main/utils/subtitles";
+import type { ActorProfile, CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@shared/types";
 import { XMLBuilder } from "fast-xml-parser";
 import type { SourceMap } from "./aggregation/types";
 
@@ -75,9 +78,40 @@ const toRemoteImageSourceUrl = (value: string | undefined): string | undefined =
 
 const truncateText = (value: string, maxChars: number): string => Array.from(value).slice(0, maxChars).join("");
 
-const buildMovieTags = (data: CrawlerData): string[] => {
+const buildMovieTags = (
+  data: CrawlerData,
+  fileInfo: FileInfo | undefined,
+  localState: NfoLocalState | undefined,
+): string[] => {
+  const classificationTags: string[] = [];
+  const normalizedLocalState = normalizeNfoLocalState(localState);
+  const localChoiceTag = uncensoredChoiceToTag(normalizedLocalState?.uncensoredChoice);
+  if (localChoiceTag) {
+    classificationTags.push(localChoiceTag);
+  }
+
+  if (fileInfo) {
+    if (!localChoiceTag) {
+      const classification = classifyMovie(fileInfo, data, normalizedLocalState);
+      if (classification.umr) {
+        classificationTags.push("破解");
+      } else if (classification.leak) {
+        classificationTags.push("流出");
+      } else if (classification.uncensored) {
+        classificationTags.push("无码");
+      }
+    }
+
+    const subtitleTag = resolveFileInfoSubtitleTag(fileInfo);
+    if (subtitleTag) {
+      classificationTags.push(subtitleTag);
+    }
+  }
+
   return Array.from(
     new Set([
+      ...classificationTags,
+      ...(normalizedLocalState?.tags ?? []),
       ...buildManagedMovieTags({
         contentType: data.content_type,
       }),
@@ -135,11 +169,11 @@ const buildMdczNode = (data: CrawlerData): Record<string, unknown> | undefined =
     thumbSourceUrl ??
     toRemoteImageSourceUrl(data.thumb_url);
   const trailerSourceUrl = data.trailer_source_url ?? toRemoteImageSourceUrl(data.trailer_url);
-  const sampleImageUrls = data.sample_images
+  const sceneImageUrls = data.scene_images
     .map((value) => toRemoteImageSourceUrl(value))
     .filter((value): value is string => Boolean(value));
 
-  if (!thumbSourceUrl && !posterSourceUrl && !fanartSourceUrl && !trailerSourceUrl && sampleImageUrls.length === 0) {
+  if (!thumbSourceUrl && !posterSourceUrl && !fanartSourceUrl && !trailerSourceUrl && sceneImageUrls.length === 0) {
     return undefined;
   }
 
@@ -148,7 +182,7 @@ const buildMdczNode = (data: CrawlerData): Record<string, unknown> | undefined =
     poster_source_url: posterSourceUrl,
     fanart_source_url: fanartSourceUrl,
     trailer_source_url: trailerSourceUrl,
-    sample_images: sampleImageUrls.length > 0 ? { image: sampleImageUrls } : undefined,
+    scene_images: sceneImageUrls.length > 0 ? { image: sceneImageUrls } : undefined,
   };
 };
 
@@ -156,6 +190,8 @@ export interface NfoOptions {
   assets?: DownloadedAssets;
   sources?: SourceMap;
   videoMeta?: VideoMeta;
+  fileInfo?: FileInfo;
+  localState?: NfoLocalState;
 }
 
 export class NfoGenerator {
@@ -166,9 +202,11 @@ export class NfoGenerator {
     const assets = options?.assets;
     const sources = options?.sources;
     const videoMeta = options?.videoMeta;
+    const fileInfo = options?.fileInfo;
+    const localState = options?.localState;
     const durationSeconds = videoMeta?.durationSeconds ?? data.durationSeconds;
     const runtimeMinutes = durationSeconds ? Math.round(durationSeconds / 60) : undefined;
-    const tags = buildMovieTags(data);
+    const tags = buildMovieTags(data, fileInfo, localState);
     const videoNode = buildVideoNode(videoMeta);
 
     const movie: Record<string, unknown> = {};
@@ -267,7 +305,7 @@ function buildSourceComment(data: CrawlerData, sources: SourceMap): string {
     { key: "plot", label: "plot", detail: () => `${data.plot?.length ?? 0} chars` },
     { key: "actors", label: "actors", detail: () => `${data.actors.length} actors` },
     { key: "thumb_url", label: "thumb_url" },
-    { key: "sample_images", label: "sample_images", detail: () => `${data.sample_images.length} images` },
+    { key: "scene_images", label: "scene_images", detail: () => `${data.scene_images.length} images` },
     { key: "studio", label: "studio" },
     { key: "genres", label: "genres", detail: () => `${data.genres.length} genres` },
   ];

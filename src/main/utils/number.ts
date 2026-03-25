@@ -1,15 +1,48 @@
 import { basename, extname } from "node:path";
 
+import {
+  CHINESE_SUBTITLE_FILENAME_TOKEN_HINTS,
+  CHINESE_SUBTITLE_STRONG_HINTS,
+  detectChineseSubtitleTagInFileName,
+} from "@main/utils/subtitles";
 import type { FileInfo } from "@shared/types";
 
-const SUBTITLE_PATTERN = /(?:^|[-_.\s])(UC|C)(?:$|[-_.\s])/iu;
+const FILENAME_DELIMITER_SOURCE = String.raw`[-_.\s\[\](){}【】（）]`;
+
+const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+const joinRegexAlternation = (values: readonly string[]): string => values.map(escapeRegex).join("|");
+
+const SUBTITLE_TOKEN_SOURCE = joinRegexAlternation([
+  ...CHINESE_SUBTITLE_FILENAME_TOKEN_HINTS,
+  ...CHINESE_SUBTITLE_STRONG_HINTS,
+]);
+const UNCENSORED_PATTERN = new RegExp(
+  `(?:^|${FILENAME_DELIMITER_SOURCE})(?:UC|U)(?:$|${FILENAME_DELIMITER_SOURCE})`,
+  "iu",
+);
 const RESOLUTION_PATTERNS = [/\b8K\b/iu, /\b4K\b/iu, /\b2160P\b/iu, /\b1080P\b/iu, /\b720P\b/iu];
-const PART_PATTERN = /(?:^|[-_.\s])(?:CD|PART|EP)[-_\s]?(\d{1,2})(?:$|[-_.\s])/iu;
+const PART_PATTERN = /([-_.\s](?:CD|PART|EP)[-_\s]?(\d{1,2}))(?=$|[-_.\s])/giu;
+const FC2_JP_PART_PATTERN = /([-_.\s](前番|前編|後番|後編))(?=$|[-_.\s])/gu;
+const FC2_CIRCLED_PART_DIGITS = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"] as const;
+const FC2_RAW_NUMBER_WITH_CIRCLED_SUFFIX_PATTERN = new RegExp(
+  String.raw`(FC2(?:[-_.\s]?PPV)?[-_.\s]?\d{5,})([-_.\s](?:.+?[-_.\s])?([①②③④⑤⑥⑦⑧⑨]))(?:${FILENAME_DELIMITER_SOURCE}(?:${joinRegexAlternation(["U", ...CHINESE_SUBTITLE_FILENAME_TOKEN_HINTS, ...CHINESE_SUBTITLE_STRONG_HINTS])}))*$`,
+  "iu",
+);
+const TRAILING_SUBTITLE_PATTERN = new RegExp(`${FILENAME_DELIMITER_SOURCE}(?:${SUBTITLE_TOKEN_SOURCE})$`, "iu");
+const TRAILING_UNCENSORED_PATTERN = /[-_.\s]U$/iu;
+const TRAILING_PART_PATTERN = /[-_.\s](?:CD|PART|EP)[-_\s]?\d{1,2}$/iu;
+const TRAILING_FC2_JP_PART_PATTERN = /[-_.\s](?:前番|前編|後番|後編)$/u;
+const TRAILING_BARE_PART_PATTERN = /[-_.\s][1-9]$/u;
+const TRAILING_ALPHA_PART_PATTERN = /[-_.\s][A-Z]$/iu;
+const TRAILING_FC2_CIRCLED_PART_SUFFIX_PATTERN = /[-_.\s](?:(?!FC2[-_.\s]?\d).+?[-_.\s])?[①②③④⑤⑥⑦⑧⑨]$/iu;
 
 const SHORT_TOKEN_PATTERNS = [
   "4K",
   "4KS",
   "8K",
+  "2160P",
+  "1080P",
+  "720P",
   "HD",
   "HEVC",
   "H264",
@@ -21,7 +54,26 @@ const SHORT_TOKEN_PATTERNS = [
   "FULL",
 ] as const;
 
-const normalizeRawName = (rawName: string, escapeStrings: string[] = []): string => {
+const stripTrailingTokens = (value: string, options: { stripBarePart: boolean }): string => {
+  let current = value;
+
+  while (true) {
+    const next = current
+      .replace(TRAILING_SUBTITLE_PATTERN, "")
+      .replace(TRAILING_UNCENSORED_PATTERN, "")
+      .replace(TRAILING_PART_PATTERN, "")
+      .replace(TRAILING_FC2_JP_PART_PATTERN, "");
+    const stripped = options.stripBarePart ? next.replace(TRAILING_BARE_PART_PATTERN, "") : next;
+
+    if (stripped === current) {
+      return stripped;
+    }
+
+    current = stripped;
+  }
+};
+
+const normalizeName = (rawName: string, escapeStrings: string[] = [], options: { stripBarePart: boolean }): string => {
   let normalized = rawName.normalize("NFC").toUpperCase();
 
   for (const token of escapeStrings) {
@@ -41,13 +93,20 @@ const normalizeRawName = (rawName: string, escapeStrings: string[] = []): string
     .replace(/--+/gu, "-")
     .replace(/\d{4}[-_.]\d{1,2}[-_.]\d{1,2}/gu, "")
     .replace(/[-[]\d{2}[-_.]\d{2}[-_.]\d{2}\]?/gu, "")
-    .replace(PART_PATTERN, "")
-    .replace(/[-_.\s][A-Z0-9]\.$/gu, "")
+    .replace(/[-_.\s][A-Z0-9]\.$/gu, "");
+
+  normalized = stripTrailingTokens(normalized, options)
     .replace(/[-_.\s]+/gu, "-")
     .replace(/^[-_.\s]+|[-_.\s]+$/gu, "");
 
   return normalized;
 };
+
+const normalizeRawName = (rawName: string, escapeStrings: string[] = []): string =>
+  normalizeName(rawName, escapeStrings, { stripBarePart: true });
+
+const normalizePartProbeName = (rawName: string, escapeStrings: string[] = []): string =>
+  normalizeName(rawName, escapeStrings, { stripBarePart: false });
 
 const normalizeNumber = (value: string): string => {
   return value
@@ -109,24 +168,179 @@ export const extractNumber = (fileName: string, escapeStrings: string[] = []): s
   return normalizeNumber(normalized);
 };
 
+const detectNamedPart = (stem: string, number: string): FileInfo["part"] | undefined => {
+  const keywordMatches = Array.from(stem.matchAll(PART_PATTERN));
+  const keywordMatch = keywordMatches.at(-1);
+  if (keywordMatch) {
+    return {
+      number: Number.parseInt(keywordMatch[2], 10),
+      suffix: keywordMatch[1],
+    };
+  }
+
+  if (!number.toUpperCase().startsWith("FC2-")) {
+    return undefined;
+  }
+
+  const jpMatches = Array.from(stem.matchAll(FC2_JP_PART_PATTERN));
+  const jpMatch = jpMatches.at(-1);
+  if (!jpMatch) {
+    return undefined;
+  }
+
+  const token = jpMatch[2];
+  return {
+    number: token === "前番" || token === "前編" ? 1 : 2,
+    suffix: jpMatch[1],
+  };
+};
+
+const detectCircledPart = (
+  stem: string,
+  number: string,
+  escapeStrings: string[] = [],
+): FileInfo["part"] | undefined => {
+  if (!number.toUpperCase().startsWith("FC2-")) {
+    return undefined;
+  }
+
+  const normalizedProbe = normalizePartProbeName(stem, escapeStrings);
+  const normalizedNumber = number.trim().toUpperCase();
+  if (!normalizedNumber) {
+    return undefined;
+  }
+
+  const numberIndex = normalizedProbe.indexOf(normalizedNumber);
+  if (numberIndex < 0) {
+    return undefined;
+  }
+
+  const remainder = normalizedProbe.slice(numberIndex + normalizedNumber.length);
+  if (!TRAILING_FC2_CIRCLED_PART_SUFFIX_PATTERN.test(remainder)) {
+    return undefined;
+  }
+
+  const rawMatch = stem.match(FC2_RAW_NUMBER_WITH_CIRCLED_SUFFIX_PATTERN);
+  if (!rawMatch) {
+    return undefined;
+  }
+
+  const digit = rawMatch[3] as (typeof FC2_CIRCLED_PART_DIGITS)[number];
+  const partNumber = FC2_CIRCLED_PART_DIGITS.indexOf(digit) + 1;
+  if (partNumber <= 0) {
+    return undefined;
+  }
+
+  return {
+    number: partNumber,
+    suffix: rawMatch[2],
+  };
+};
+
+const TRAILING_RAW_BARE_PART_PATTERN = new RegExp(
+  String.raw`([-_.\s][1-9])(?:${FILENAME_DELIMITER_SOURCE}(?:${joinRegexAlternation(["U", ...CHINESE_SUBTITLE_FILENAME_TOKEN_HINTS, ...CHINESE_SUBTITLE_STRONG_HINTS])}))*$`,
+  "iu",
+);
+const TRAILING_RAW_ALPHA_PART_PATTERN = new RegExp(
+  String.raw`([-_.\s][A-Z])(?:${FILENAME_DELIMITER_SOURCE}(?:${joinRegexAlternation(["U", ...CHINESE_SUBTITLE_FILENAME_TOKEN_HINTS, ...CHINESE_SUBTITLE_STRONG_HINTS])}))*$`,
+  "iu",
+);
+
+const detectBareNumericPart = (
+  stem: string,
+  number: string,
+  escapeStrings: string[] = [],
+): FileInfo["part"] | undefined => {
+  const normalizedProbe = normalizePartProbeName(stem, escapeStrings);
+  const normalizedNumber = number.trim().toUpperCase();
+  if (!normalizedNumber) {
+    return undefined;
+  }
+
+  const numberIndex = normalizedProbe.indexOf(normalizedNumber);
+  if (numberIndex < 0) {
+    return undefined;
+  }
+
+  const remainder = normalizedProbe.slice(numberIndex + normalizedNumber.length);
+  const remainderMatch = remainder.match(/^-([1-9])$/u);
+  if (!remainderMatch) {
+    return undefined;
+  }
+
+  const rawSuffixMatch = stem.match(TRAILING_RAW_BARE_PART_PATTERN);
+  if (!rawSuffixMatch) {
+    return undefined;
+  }
+
+  return {
+    number: Number.parseInt(remainderMatch[1], 10),
+    suffix: rawSuffixMatch[1],
+  };
+};
+
+const detectAlphabeticPart = (
+  stem: string,
+  number: string,
+  escapeStrings: string[] = [],
+): FileInfo["part"] | undefined => {
+  const normalizedProbe = normalizePartProbeName(stem, escapeStrings);
+  const normalizedNumber = number.trim().toUpperCase();
+  if (!normalizedNumber) {
+    return undefined;
+  }
+
+  const numberIndex = normalizedProbe.indexOf(normalizedNumber);
+  if (numberIndex < 0) {
+    return undefined;
+  }
+
+  const remainder = normalizedProbe.slice(numberIndex + normalizedNumber.length);
+  if (!TRAILING_ALPHA_PART_PATTERN.test(remainder)) {
+    return undefined;
+  }
+
+  const remainderMatch = remainder.match(/^-([A-Z])$/u);
+  if (!remainderMatch) {
+    return undefined;
+  }
+
+  const rawSuffixMatch = stem.match(TRAILING_RAW_ALPHA_PART_PATTERN);
+  if (!rawSuffixMatch) {
+    return undefined;
+  }
+
+  return {
+    number: remainderMatch[1].charCodeAt(0) - "A".charCodeAt(0) + 1,
+    suffix: rawSuffixMatch[1],
+  };
+};
+
 export const parseFileInfo = (filePath: string, escapeStrings: string[] = []): FileInfo => {
-  const extension = extname(filePath).toLowerCase();
+  const extension = extname(filePath);
   const stem = basename(filePath, extension);
   const normalizedStem = stem.normalize("NFC");
   const normalizedUpper = normalizedStem.toUpperCase();
 
-  const subtitleMatch = normalizedUpper.match(SUBTITLE_PATTERN);
+  const subtitleTag = detectChineseSubtitleTagInFileName(normalizedStem);
+  const uncensoredMatch = normalizedUpper.match(UNCENSORED_PATTERN);
   const resolutionMatch = RESOLUTION_PATTERNS.map((pattern) => normalizedUpper.match(pattern)).find(Boolean);
-  const partMatch = normalizedUpper.match(PART_PATTERN);
-  const number = extractNumber(`${normalizedStem}.`, escapeStrings);
+  const number = extractNumber(normalizedStem, escapeStrings);
+  const part =
+    detectNamedPart(normalizedStem, number) ??
+    detectBareNumericPart(normalizedStem, number, escapeStrings) ??
+    detectAlphabeticPart(normalizedStem, number, escapeStrings) ??
+    detectCircledPart(normalizedStem, number, escapeStrings);
 
   return {
     filePath,
     fileName: normalizedStem,
     extension,
     number,
-    isSubtitled: Boolean(subtitleMatch),
+    isSubtitled: Boolean(subtitleTag),
+    subtitleTag,
+    isUncensored: Boolean(uncensoredMatch),
     resolution: resolutionMatch?.[0],
-    partNumber: partMatch ? Number.parseInt(partMatch[1], 10) : undefined,
+    part,
   };
 };

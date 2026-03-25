@@ -2,7 +2,7 @@ import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import type { CheerioAPI } from "cheerio";
 
-import type { Context, CrawlerInput } from "../../base/types";
+import type { Context, CrawlerInput, SearchPageResolution } from "../../base/types";
 import type { FetchOptions } from "../../FetchGateway";
 import { toAbsoluteUrl } from "../helpers";
 import { BaseDmmCrawler } from "./BaseDmmCrawler";
@@ -112,7 +112,7 @@ const parseDmmVideoData = (payload: unknown, fallbackNumber: string): Partial<Cr
     rating: data?.reviewSummary?.average,
     thumb_url: content.packageImage?.largeUrl,
     poster_url: content.packageImage?.mediumUrl,
-    sample_images: (content.sampleImages ?? [])
+    scene_images: (content.sampleImages ?? [])
       .map((item) => item.largeImageUrl)
       .filter((value): value is string => Boolean(value)),
     trailer_url: trailer,
@@ -147,9 +147,13 @@ export class DmmTvCrawler extends BaseDmmCrawler {
     return buildDetailUrl(firstCandidate);
   }
 
-  protected async parseSearchPage(context: DmmTvContext, $: CheerioAPI, searchUrl: string): Promise<string | null> {
+  protected async parseSearchPage(
+    context: DmmTvContext,
+    $: CheerioAPI,
+    searchUrl: string,
+  ): Promise<string | SearchPageResolution | null> {
     if (isVideoDetailUrl(searchUrl)) {
-      return searchUrl;
+      return this.reuseSearchDocument(searchUrl);
     }
 
     const links = new Set<string>();
@@ -223,7 +227,7 @@ export class DmmTvCrawler extends BaseDmmCrawler {
         thumb_url: graphQlData.thumb_url,
         poster_url: graphQlData.poster_url,
         fanart_url: graphQlData.fanart_url,
-        sample_images: graphQlData.sample_images ?? [],
+        scene_images: graphQlData.scene_images ?? [],
         trailer_url: graphQlData.trailer_url,
         website: Website.DMM_TV,
       };
@@ -250,7 +254,7 @@ export class DmmTvCrawler extends BaseDmmCrawler {
       thumb_url: parsed.thumb_url,
       poster_url: parsed.poster_url,
       fanart_url: parsed.fanart_url,
-      sample_images: parsed.sample_images ?? [],
+      scene_images: parsed.scene_images ?? [],
       trailer_url: parsed.trailer_url,
       website: Website.DMM_TV,
     };

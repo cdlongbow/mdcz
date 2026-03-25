@@ -43,7 +43,7 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
     { name: "Actor B", photo_url: "https://img.example.com/actor-b.jpg" },
   ],
   genres: [],
-  sample_images: [],
+  scene_images: [],
   website: Website.DMM,
   ...overrides,
 });
@@ -55,7 +55,7 @@ const createAggregationResult = (data: CrawlerData) => ({
     thumb_url: [],
     poster_url: [],
     fanart_url: [],
-    sample_images: [],
+    scene_images: [],
   },
   stats: {
     totalSites: 1,
@@ -96,7 +96,7 @@ describe("FileScraper actor image library", () => {
       ...defaultConfiguration,
       download: {
         ...defaultConfiguration.download,
-        downloadNfo: true,
+        generateNfo: true,
       },
       paths: {
         ...defaultConfiguration.paths,
@@ -167,7 +167,7 @@ describe("FileScraper actor image library", () => {
       ...defaultConfiguration,
       download: {
         ...defaultConfiguration.download,
-        downloadNfo: false,
+        generateNfo: false,
       },
       paths: {
         ...defaultConfiguration.paths,
@@ -242,7 +242,7 @@ describe("FileScraper actor image library", () => {
       ...defaultConfiguration,
       download: {
         ...defaultConfiguration.download,
-        downloadNfo: true,
+        generateNfo: true,
       },
       paths: {
         ...defaultConfiguration.paths,
@@ -401,7 +401,7 @@ describe("FileScraper actor image library", () => {
       ...defaultConfiguration,
       download: {
         ...defaultConfiguration.download,
-        downloadNfo: true,
+        generateNfo: true,
       },
       paths: {
         ...defaultConfiguration.paths,

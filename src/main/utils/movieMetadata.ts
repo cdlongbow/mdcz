@@ -34,6 +34,8 @@ const parseManagedMovieTag = (tag: string): { key: ManagedMovieTagKey; value: st
   };
 };
 
+export const isManagedMovieTag = (tag: string): boolean => parseManagedMovieTag(tag) !== null;
+
 export const buildManagedMovieTags = (input: { contentType?: string }): string[] => {
   return [buildManagedMovieTag("content_type", input.contentType)].filter((entry): entry is string => Boolean(entry));
 };

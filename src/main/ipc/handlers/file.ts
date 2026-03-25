@@ -4,7 +4,8 @@ import type { ServiceContainer } from "@main/container";
 import { loggerService } from "@main/services/LoggerService";
 import { nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { toErrorMessage } from "@main/utils/common";
-import { parseNfo } from "@main/utils/nfo";
+import { pathExists } from "@main/utils/file";
+import { parseNfo, parseNfoSnapshot } from "@main/utils/nfo";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
 import type { CrawlerData } from "@shared/types";
@@ -19,6 +20,7 @@ export const createFileHandlers = (
 ): Pick<
   IpcRouterContract,
   | typeof IpcChannel.File_ListEntries
+  | typeof IpcChannel.File_Exists
   | typeof IpcChannel.File_Browse
   | typeof IpcChannel.File_Delete
   | typeof IpcChannel.File_NfoRead
@@ -96,6 +98,19 @@ export const createFileHandlers = (
         }
       },
     ),
+    [IpcChannel.File_Exists]: t.procedure.input<{ path?: string }>().action(async ({ input }) => {
+      const targetPath = input?.path?.trim();
+      if (!targetPath) {
+        return { exists: false };
+      }
+
+      try {
+        const stats = await stat(targetPath);
+        return { exists: stats.isFile() };
+      } catch {
+        return { exists: false };
+      }
+    }),
     [IpcChannel.File_Browse]: t.procedure
       .input<{ type?: "file" | "directory"; filters?: Array<{ name: string; extensions: string[] }> }>()
       .action(async ({ input }) => {
@@ -156,7 +171,10 @@ export const createFileHandlers = (
           if (!nfoPath || !data) {
             throw createIpcError(IpcErrorCode.FILE_WRITE_ERROR, "NFO path and data are required");
           }
-          await nfoGenerator.writeNfo(nfoPath, data);
+          const existingSnapshot = (await pathExists(nfoPath))
+            ? parseNfoSnapshot(await readFile(nfoPath, "utf8")).localState
+            : undefined;
+          await nfoGenerator.writeNfo(nfoPath, data, { localState: existingSnapshot });
           return { success: true as const };
         } catch (error) {
           throw asSerializableIpcError(error);

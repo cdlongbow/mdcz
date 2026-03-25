@@ -1,7 +1,8 @@
 import { toArray } from "@main/utils/common";
-import { parseManagedMovieTags } from "@main/utils/movieMetadata";
+import { isManagedMovieTag, parseManagedMovieTags } from "@main/utils/movieMetadata";
+import { normalizeNfoLocalState, tagToUncensoredChoice } from "@main/utils/nfoLocalState";
 import { Website } from "@shared/enums";
-import type { ActorProfile, CrawlerData } from "@shared/types";
+import type { ActorProfile, CrawlerData, NfoLocalState } from "@shared/types";
 import { XMLParser } from "fast-xml-parser";
 
 const WEBSITE_VALUES = new Set(Object.values(Website));
@@ -89,7 +90,12 @@ const parser = new XMLParser({
   attributeNamePrefix: "@_",
 });
 
-export const parseNfo = (xml: string): CrawlerData => {
+export interface ParsedNfoSnapshot {
+  crawlerData: CrawlerData;
+  localState?: NfoLocalState;
+}
+
+export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
   const root = parser.parse(xml) as unknown;
   if (!root || typeof root !== "object" || !("movie" in root)) {
     throw new Error("Invalid NFO root");
@@ -166,6 +172,24 @@ export const parseNfo = (xml: string): CrawlerData => {
   const genres = toStringArray(movieNode.genre);
   const tags = toStringArray(movieNode.tag);
   const managedMovieTags = parseManagedMovieTags(tags);
+  let uncensoredChoice: NfoLocalState["uncensoredChoice"];
+  const localTags: string[] = [];
+
+  for (const tag of tags) {
+    if (isManagedMovieTag(tag)) {
+      continue;
+    }
+
+    const choice = tagToUncensoredChoice(tag);
+    if (choice) {
+      if (!uncensoredChoice) {
+        uncensoredChoice = choice;
+      }
+      continue;
+    }
+
+    localTags.push(tag);
+  }
 
   const thumbs = parseThumbEntries(movieNode.thumb);
   const posterUrl = pickThumbByAspect(thumbs, ["poster"]);
@@ -191,38 +215,46 @@ export const parseNfo = (xml: string): CrawlerData => {
       : [];
   const fanartUrl = fanartThumbs[0];
   const mdczNode = toRecord(movieNode.mdcz);
-  const mdczSampleImagesNode = toRecord(mdczNode?.sample_images);
+  const mdczSceneImagesNode = toRecord(mdczNode?.scene_images);
 
   const rating = ratingText ? Number.parseFloat(ratingText) : undefined;
   const durationSeconds = parseDurationSeconds(movieNode);
   const outline = toStringValue(movieNode.outline);
 
   return {
-    title: originaltitle ?? title,
-    title_zh: title,
-    number,
-    actors,
-    actor_profiles: actorProfiles.length > 0 ? actorProfiles : undefined,
-    genres,
-    studio: toStringValue(movieNode.studio),
-    director: toStringValue(movieNode.director),
-    publisher: toStringValue(movieNode.publisher),
-    series: toStringValue(movieNode.set) ?? toStringValue(movieNode.series),
-    plot: plot ?? outline,
-    plot_zh: plot ?? outline,
-    release_date: releaseDate,
-    durationSeconds,
-    rating: Number.isFinite(rating) ? rating : undefined,
-    content_type: managedMovieTags.content_type,
-    thumb_url: thumbUrl,
-    poster_url: posterUrl,
-    fanart_url: fanartUrl,
-    thumb_source_url: toStringValue(mdczNode?.thumb_source_url),
-    poster_source_url: toStringValue(mdczNode?.poster_source_url),
-    fanart_source_url: toStringValue(mdczNode?.fanart_source_url),
-    trailer_source_url: toStringValue(mdczNode?.trailer_source_url),
-    sample_images: toStringArray(mdczSampleImagesNode?.image),
-    trailer_url: toStringValue(movieNode.trailer),
-    website,
+    crawlerData: {
+      title: originaltitle ?? title,
+      title_zh: title,
+      number,
+      actors,
+      actor_profiles: actorProfiles.length > 0 ? actorProfiles : undefined,
+      genres,
+      studio: toStringValue(movieNode.studio),
+      director: toStringValue(movieNode.director),
+      publisher: toStringValue(movieNode.publisher),
+      series: toStringValue(movieNode.set) ?? toStringValue(movieNode.series),
+      plot: plot ?? outline,
+      plot_zh: plot ?? outline,
+      release_date: releaseDate,
+      durationSeconds,
+      rating: Number.isFinite(rating) ? rating : undefined,
+      content_type: managedMovieTags.content_type,
+      thumb_url: thumbUrl,
+      poster_url: posterUrl,
+      fanart_url: fanartUrl,
+      thumb_source_url: toStringValue(mdczNode?.thumb_source_url),
+      poster_source_url: toStringValue(mdczNode?.poster_source_url),
+      fanart_source_url: toStringValue(mdczNode?.fanart_source_url),
+      trailer_source_url: toStringValue(mdczNode?.trailer_source_url),
+      scene_images: toStringArray(mdczSceneImagesNode?.image),
+      trailer_url: toStringValue(movieNode.trailer),
+      website,
+    },
+    localState: normalizeNfoLocalState({
+      uncensoredChoice,
+      tags: localTags,
+    }),
   };
 };
+
+export const parseNfo = (xml: string): CrawlerData => parseNfoSnapshot(xml).crawlerData;

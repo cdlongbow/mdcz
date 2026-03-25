@@ -14,144 +14,156 @@ class FakeNetworkClient {
 }
 
 describe("AvbaseActorSource", () => {
-  it("builds an actor profile from AVBase search and talent APIs", async () => {
-    const networkClient = new FakeNetworkClient();
-    networkClient.getJson.mockImplementation(async (url: string) => {
-      if (url === "https://www.avbase.net/api/public/actors/search?q=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96&page=1") {
-        return [
-          {
-            actors: [
-              {
-                id: 49045,
-                name: "北川美玖",
-                ruby: "きたがわみく",
-                image_url: "",
-                note: "みく",
-              },
-            ],
-          },
-        ];
-      }
+  it("matches exact names and ruby aliases through the AVBase search and talent APIs", async () => {
+    const cases = [
+      {
+        query: "北川美玖",
+        setup: (networkClient: FakeNetworkClient) => {
+          networkClient.getJson.mockImplementation(async (url: string) => {
+            if (
+              url === "https://www.avbase.net/api/public/actors/search?q=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96&page=1"
+            ) {
+              return [
+                {
+                  actors: [
+                    {
+                      id: 49045,
+                      name: "北川美玖",
+                      ruby: "きたがわみく",
+                      image_url: "",
+                      note: "みく",
+                    },
+                  ],
+                },
+              ];
+            }
 
-      if (url === "https://www.avbase.net/api/public/talents?actor_id=49045") {
-        return {
-          profile: "プロフィール本文",
-          meta: {
-            basic_info: {
-              birthday: "1996-01-31",
-              prefectures: "東京都",
-              height: "156",
-              bust: "90",
-              waist: "56",
-              hip: "86",
-              cup: "G",
-              blood_type: "AB",
-              hobby: "アニメ",
-            },
-            sns: [{ sns: "twitter", id: "kitagawa_miku" }],
-          },
-          primary: {
-            id: 49045,
-            name: "北川美玖",
-            ruby: "きたがわみく",
-            url: "https://example.com/kitagawa-miku",
-            image_url: "https://example.com/actor.jpg",
-            note: null,
-          },
-          actors: [
-            {
-              id: 49045,
+            if (url === "https://www.avbase.net/api/public/talents?actor_id=49045") {
+              return {
+                profile: "プロフィール本文",
+                meta: {
+                  basic_info: {
+                    birthday: "1996-01-31",
+                    prefectures: "東京都",
+                    height: "156",
+                    bust: "90",
+                    waist: "56",
+                    hip: "86",
+                    cup: "G",
+                    blood_type: "AB",
+                    hobby: "アニメ",
+                  },
+                  sns: [{ sns: "twitter", id: "kitagawa_miku" }],
+                },
+                primary: {
+                  id: 49045,
+                  name: "北川美玖",
+                  ruby: "きたがわみく",
+                  url: "https://example.com/kitagawa-miku",
+                  image_url: "https://example.com/actor.jpg",
+                  note: null,
+                },
+                actors: [
+                  {
+                    id: 49045,
+                    name: "北川美玖",
+                    ruby: "きたがわみく",
+                    image_url: "https://example.com/actor.jpg",
+                    note: "みく",
+                  },
+                ],
+              };
+            }
+
+            throw new Error(`Unexpected URL ${url}`);
+          });
+        },
+        assert: (result: Awaited<ReturnType<AvbaseActorSource["lookup"]>>) => {
+          expect(result).toMatchObject({
+            source: "avbase",
+            success: true,
+            profile: {
               name: "北川美玖",
-              ruby: "きたがわみく",
-              image_url: "https://example.com/actor.jpg",
-              note: "みく",
+              aliases: ["きたがわみく", "みく"],
+              birth_date: "1996-01-31",
+              birth_place: "東京都",
+              blood_type: "AB",
+              height_cm: 156,
+              bust_cm: 90,
+              waist_cm: 56,
+              hip_cm: 86,
+              cup_size: "G",
+              photo_url: "https://example.com/actor.jpg",
             },
-          ],
-        };
-      }
-
-      throw new Error(`Unexpected URL ${url}`);
-    });
-    const source = new AvbaseActorSource({
-      networkClient: networkClient as unknown as NetworkClient,
-    });
-
-    const result = await source.lookup(createConfig(), { name: "北川美玖" });
-
-    expect(result).toMatchObject({
-      source: "avbase",
-      success: true,
-      profile: {
-        name: "北川美玖",
-        aliases: ["きたがわみく", "みく"],
-        birth_date: "1996-01-31",
-        birth_place: "東京都",
-        blood_type: "AB",
-        height_cm: 156,
-        bust_cm: 90,
-        waist_cm: 56,
-        hip_cm: 86,
-        cup_size: "G",
-        photo_url: "https://example.com/actor.jpg",
+            warnings: [],
+          });
+          expect(result.profile?.description).toContain("プロフィール本文");
+          expect(result.profile?.description).toContain("趣味: アニメ");
+          expect(result.profile?.description).toContain("SNS:\ntwitter: kitagawa_miku");
+        },
       },
-      warnings: [],
-    });
-    expect(result.profile?.description).toContain("プロフィール本文");
-    expect(result.profile?.description).toContain("趣味: アニメ");
-    expect(result.profile?.description).toContain("SNS:\ntwitter: kitagawa_miku");
-  });
+      {
+        query: "きたがわみく",
+        setup: (networkClient: FakeNetworkClient) => {
+          networkClient.getJson.mockImplementation(async (url: string) => {
+            if (
+              url ===
+              "https://www.avbase.net/api/public/actors/search?q=%E3%81%8D%E3%81%9F%E3%81%8C%E3%82%8F%E3%81%BF%E3%81%8F&page=1"
+            ) {
+              return [
+                {
+                  actors: [
+                    {
+                      id: 49045,
+                      name: "北川美玖",
+                      ruby: "きたがわみく",
+                      image_url: "",
+                      note: null,
+                    },
+                  ],
+                },
+              ];
+            }
 
-  it("can match a ruby alias through the AVBase search API", async () => {
-    const networkClient = new FakeNetworkClient();
-    networkClient.getJson.mockImplementation(async (url: string) => {
-      if (
-        url ===
-        "https://www.avbase.net/api/public/actors/search?q=%E3%81%8D%E3%81%9F%E3%81%8C%E3%82%8F%E3%81%BF%E3%81%8F&page=1"
-      ) {
-        return [
-          {
-            actors: [
-              {
-                id: 49045,
-                name: "北川美玖",
-                ruby: "きたがわみく",
-                image_url: "",
-                note: null,
-              },
-            ],
-          },
-        ];
-      }
+            if (url === "https://www.avbase.net/api/public/talents?actor_id=49045") {
+              return {
+                profile: null,
+                meta: null,
+                primary: {
+                  id: 49045,
+                  name: "北川美玖",
+                  ruby: "きたがわみく",
+                  url: "https://www.avbase.net/actors/49045",
+                  image_url: "https://cdn.example.com/actor.jpg",
+                  note: null,
+                },
+                actors: [],
+              };
+            }
 
-      if (url === "https://www.avbase.net/api/public/talents?actor_id=49045") {
-        return {
-          profile: null,
-          meta: null,
-          primary: {
-            id: 49045,
-            name: "北川美玖",
-            ruby: "きたがわみく",
-            url: "https://www.avbase.net/actors/49045",
-            image_url: "https://cdn.example.com/actor.jpg",
-            note: null,
-          },
-          actors: [],
-        };
-      }
+            throw new Error(`Unexpected URL ${url}`);
+          });
+        },
+        assert: (result: Awaited<ReturnType<AvbaseActorSource["lookup"]>>) => {
+          expect(result.success).toBe(true);
+          expect(result.profile?.name).toBe("北川美玖");
+          expect(result.profile?.aliases).toContain("きたがわみく");
+          expect(result.profile?.photo_url).toBe("https://cdn.example.com/actor.jpg");
+        },
+      },
+    ];
 
-      throw new Error(`Unexpected URL ${url}`);
-    });
+    for (const { query, setup, assert } of cases) {
+      const networkClient = new FakeNetworkClient();
+      setup(networkClient);
 
-    const source = new AvbaseActorSource({
-      networkClient: networkClient as unknown as NetworkClient,
-    });
+      const source = new AvbaseActorSource({
+        networkClient: networkClient as unknown as NetworkClient,
+      });
 
-    const result = await source.lookup(createConfig(), { name: "きたがわみく" });
-
-    expect(result.success).toBe(true);
-    expect(result.profile?.name).toBe("北川美玖");
-    expect(result.profile?.aliases).toContain("きたがわみく");
-    expect(result.profile?.photo_url).toBe("https://cdn.example.com/actor.jpg");
+      const result = await source.lookup(createConfig(), { name: query });
+      assert(result);
+    }
   });
 
   it("does not fall back to the first unrelated candidate when multiple results exist", async () => {

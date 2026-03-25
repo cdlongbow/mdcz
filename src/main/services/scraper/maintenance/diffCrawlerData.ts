@@ -55,7 +55,7 @@ const ARRAY_VALUE_FIELDS: DiffableField[] = [
   { key: "genres", label: "标签" },
 ];
 
-const IMAGE_COLLECTION_FIELDS: DiffableField[] = [{ key: "sample_images", label: "场景图" }];
+const IMAGE_COLLECTION_FIELDS: DiffableField[] = [{ key: "scene_images", label: "场景图" }];
 
 const IMAGE_ASSET_FIELD_MAP = {
   thumb_url: "thumb",
@@ -179,10 +179,12 @@ const buildImagePreview = (
   return { src, fallbackSrcs };
 };
 
-const buildSceneImagePreview = (items: unknown): FieldDiffImageCollectionPreview => {
+const buildSceneImagePreview = (items: unknown, entry?: LocalScanEntry): FieldDiffImageCollectionPreview => {
   return {
     items: Array.isArray(items)
-      ? items.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      ? items
+          .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+          .map((item) => resolveImageValue(item, entry))
       : [],
   };
 };
@@ -273,7 +275,7 @@ const buildImageFieldDiff = (
 };
 
 const buildImageCollectionFieldDiff = (
-  field: "sample_images",
+  field: "scene_images",
   label: string,
   oldData: CrawlerData,
   newData: CrawlerData,
@@ -282,8 +284,8 @@ const buildImageCollectionFieldDiff = (
   const oldValue = normalizeImageCollectionValue(oldData[field]);
   const newValue = normalizeImageCollectionValue(newData[field]);
   const hasLocalSceneImages = (entry?.assets.sceneImages.length ?? 0) > 0;
-  const oldPreview = buildSceneImagePreview(hasLocalSceneImages ? entry?.assets.sceneImages : oldValue);
-  const newPreview = buildSceneImagePreview(newValue);
+  const oldPreview = buildSceneImagePreview(hasLocalSceneImages ? entry?.assets.sceneImages : oldValue, entry);
+  const newPreview = buildSceneImagePreview(newValue, entry);
 
   return {
     kind: "imageCollection",
@@ -371,7 +373,7 @@ export function partitionCrawlerDataWithOptions(
   }
 
   for (const { key, label } of IMAGE_COLLECTION_FIELDS) {
-    const diff = buildImageCollectionFieldDiff(key as "sample_images", label, oldData, newData, entry);
+    const diff = buildImageCollectionFieldDiff(key as "scene_images", label, oldData, newData, entry);
     if (!diff.changed && !hasPreviewContent(diff, "old")) {
       continue;
     }
