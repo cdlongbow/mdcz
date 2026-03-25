@@ -100,9 +100,7 @@ export function UncensoredConfirmDialog({ open, onOpenChange, items }: Uncensore
         <DialogHeader>
           <DialogTitle>确认无码类型</DialogTitle>
         </DialogHeader>
-        <div className="text-xs text-muted-foreground mb-2">
-          以下影片被识别为无码，但无法确定是破解还是流出。未手动修改的条目会按“无码”提交。
-        </div>
+        <div className="text-xs text-muted-foreground mb-2">请手动确认以下影片类型</div>
         <div className="mb-2 flex gap-1.5">
           <span className="text-xs text-muted-foreground leading-7">批量设为：</span>
           {CHOICE_OPTIONS.map((opt) => (
