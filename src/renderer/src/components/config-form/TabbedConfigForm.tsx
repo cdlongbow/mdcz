@@ -195,7 +195,6 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "behavior.deleteEmptyFolder", label: "删除空文件夹", section: "behavior" },
   { key: "behavior.scrapeSoftlinkPath", label: "刮削软链接目录", section: "behavior" },
   { key: "behavior.saveLog", label: "保存日志到文件", section: "behavior" },
-  { key: "behavior.updateCheck", label: "自动检查更新", section: "behavior" },
 ];
 
 // ── Section descriptions ──
@@ -665,7 +664,6 @@ function BehaviorSection(_props: SectionRenderProps) {
       <BoolField name="behavior.deleteEmptyFolder" label="删除空文件夹" />
       <BoolField name="behavior.scrapeSoftlinkPath" label="刮削软链接目录" />
       <BoolField name="behavior.saveLog" label="保存日志到文件" />
-      <BoolField name="behavior.updateCheck" label="自动检查更新" />
     </>
   );
 }
