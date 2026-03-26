@@ -9,8 +9,12 @@ import { BaseFc2Crawler } from "./BaseFc2Crawler";
 import { toAbsoluteUrl } from "./helpers";
 
 const CJK_PATTERN = /[\u3400-\u9fff\uf900-\ufaff]/u;
+const FC2_WATERMARK = /\s*[-*]+[a-z]+(?:[-*]+[a-z]+)+\s*/g;
 
 const BASE_URL = "https://adult.contents.fc2.com";
+
+const stripFc2Watermark = (title: string): string =>
+  title.replace(FC2_WATERMARK, (match) => (match.startsWith(" ") && match.endsWith(" ") ? " " : "")).trim();
 
 export class Fc2Crawler extends BaseFc2Crawler {
   site(): Website {
@@ -34,7 +38,8 @@ export class Fc2Crawler extends BaseFc2Crawler {
   }
 
   protected async parseDetailPage(context: Context, $: CheerioAPI): Promise<CrawlerData | null> {
-    const title = $("div[data-section='userInfo'] h3").first().text().trim();
+    const rawTitle = $("div[data-section='userInfo'] h3").first().text().trim();
+    const title = stripFc2Watermark(rawTitle);
     if (!title || (!isJapanese(title) && !CJK_PATTERN.test(title))) {
       return null;
     }

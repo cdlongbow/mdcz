@@ -79,18 +79,19 @@ describe("Batch2 crawlers", () => {
       verify: (_data) => {},
     },
     {
-      name: "parses fc2",
+      name: "parses fc2 and strips watermark",
       number: "FC2-1234567",
       site: Website.FC2,
       fixtures: new Map<string, unknown>([
         [
           "https://adult.contents.fc2.com/article/1234567/",
-          `<div data-section="userInfo"><h3>FC2 テストタイトル</h3></div><ul class="items_article_SampleImagesArea"><li><a href="https://img.example.com/fc2.jpg"></a></li></ul><div class="items_article_MainitemThumb"><img src="https://img.example.com/fc2s.jpg" /></div><p class="card-text"><a href="/tag/a">TagFC2</a></p><div class="col-8">Seller FC2</div>`,
+          `<div data-section="userInfo"><h3>【個人撮影】可愛過ぎ-q-yosqny るシスター</h3></div><ul class="items_article_SampleImagesArea"><li><a href="https://img.example.com/fc2.jpg"></a></li></ul><div class="items_article_MainitemThumb"><img src="https://img.example.com/fc2s.jpg" /></div><p class="card-text"><a href="/tag/a">TagFC2</a></p><div class="col-8">Seller FC2</div>`,
         ],
       ]),
       createCrawler: (fixtures) => new Fc2Crawler(withGateway(new FixtureNetworkClient(fixtures))),
       verify: (data) => {
         expect(data.number).toBe("FC2-1234567");
+        expect(data.title).toBe("【個人撮影】可愛過ぎるシスター");
       },
     },
   ];

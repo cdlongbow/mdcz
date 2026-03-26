@@ -102,6 +102,10 @@ const V2_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
   rating: ["dmm_tv", "dmm", "fc2hub", "javdb"],
   trailer_url: ["dmm_tv", "dmm", "javbus"],
 };
+const V3_FIELD_PRIORITY_DEFAULTS: Record<string, readonly string[]> = {
+  ...V2_FIELD_PRIORITY_DEFAULTS,
+  title: ["avbase", "mgstage", "dmm", "dmm_tv", "fc2hub", "fc2", "javdb", "javbus", "jav321"],
+};
 const V050_LEGACY_TRANSLATE_PROMPT = "请将以下文本翻译成{lang}。只输出翻译结果。\\n{content}";
 const V052_DEFAULT_TRANSLATE_PROMPT =
   "你是一个影片元数据翻译引擎。自动识别原文语言，将以下内容翻译为{lang}。如果原文已经是目标语言，请润色后直接输出。只输出最终翻译结果，不要输出任何解释。\\n{content}";
@@ -344,6 +348,9 @@ function migrateV050ToV052(raw: Record<string, unknown>): void {
     // 4. Remove enableGoogleFallback (no longer used)
     delete translate.enableGoogleFallback;
   }
+
+  // 5. Normalize untouched v0.5 fieldPriorities arrays to the current defaults
+  normalizeFieldPriorityDefaults(raw, V2_FIELD_PRIORITY_DEFAULTS, V3_FIELD_PRIORITY_DEFAULTS);
 }
 
 // ── Registry ─────────────────────────────────────────────────────────────────
