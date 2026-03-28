@@ -1,4 +1,5 @@
 import type { Configuration } from "@shared/config";
+import { TRANSLATION_TARGET_OPTIONS } from "@shared/enums";
 import type { NamingPreviewItem } from "@shared/types";
 import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
@@ -78,7 +79,7 @@ const TRANSLATE_ENGINE_OPTIONS: EnumOption[] = [
   { value: "openai", label: "LLM 翻译" },
   { value: "google", label: "Google 翻译（免费）" },
 ];
-const LANGUAGE_OPTIONS = ["zh-CN", "zh-TW", "ja-JP", "en-US"];
+const LANGUAGE_OPTIONS = [...TRANSLATION_TARGET_OPTIONS];
 const ACTOR_OVERVIEW_SOURCE_OPTIONS = ["official", "avjoho", "avbase"];
 const ACTOR_IMAGE_SOURCE_OPTIONS = ["local", "gfriends", "official", "avbase"];
 const PART_STYLE_OPTIONS: EnumOption[] = [
@@ -86,6 +87,12 @@ const PART_STYLE_OPTIONS: EnumOption[] = [
   { value: "CD", label: "统一为 CD1 / CD2" },
   { value: "PART", label: "统一为 PART1 / PART2" },
   { value: "DISC", label: "统一为 DISC1 / DISC2" },
+];
+
+const NFO_NAMING_OPTIONS: EnumOption[] = [
+  { value: "both", label: "同时生成两种" },
+  { value: "movie", label: "仅 movie.nfo" },
+  { value: "filename", label: "仅 文件名.nfo" },
 ];
 
 export const NAMING_TEMPLATE_DESCRIPTION = "可用占位符：{actor} {number} {date} {title} {studio}";
@@ -129,6 +136,7 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "download.downloadSceneImages", label: "下载剧照", section: "download" },
   { key: "download.downloadTrailer", label: "下载预告片", section: "download" },
   { key: "download.generateNfo", label: "生成 NFO", section: "download" },
+  { key: "download.nfoNaming", label: "NFO 文件命名", section: "download" },
   { key: "download.keepThumb", label: "保留已有横版缩略图", section: "download" },
   { key: "download.keepPoster", label: "保留已有海报", section: "download" },
   { key: "download.keepFanart", label: "保留已有背景图", section: "download" },
@@ -138,6 +146,7 @@ const FIELD_REGISTRY: FieldEntry[] = [
   // naming
   { key: "naming.folderTemplate", label: "文件夹模板", section: "naming" },
   { key: "naming.fileTemplate", label: "文件名模板", section: "naming" },
+  { key: "naming.nfoTitleTemplate", label: "NFO 标题模板", section: "naming" },
   { key: "naming.actorNameMax", label: "演员名最大数量", section: "naming" },
   { key: "naming.actorNameMore", label: "演员名超出后缀", section: "naming" },
   { key: "naming.releaseRule", label: "发行日期格式", section: "naming" },
@@ -157,11 +166,9 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "translate.llmBaseUrl", label: "LLM 接口地址", section: "translate" },
   { key: "translate.llmPrompt", label: "LLM 翻译提示词", section: "translate" },
   { key: "translate.llmTemperature", label: "LLM 温度", section: "translate" },
-  { key: "translate.llmMaxTry", label: "LLM 最大重试次数", section: "translate" },
+  { key: "translate.llmMaxRetries", label: "LLM 最大重试次数", section: "translate" },
   { key: "translate.llmMaxRequestsPerSecond", label: "LLM 每秒最大请求数", section: "translate" },
-  { key: "translate.enableGoogleFallback", label: "启用 Google 翻译回退", section: "translate" },
-  { key: "translate.titleLanguage", label: "标题目标语言", section: "translate" },
-  { key: "translate.plotLanguage", label: "简介目标语言", section: "translate" },
+  { key: "translate.targetLanguage", label: "目标语言", section: "translate" },
   // person sync
   { key: "personSync.personOverviewSources", label: "人物简介来源", section: "personSync" },
   { key: "personSync.personImageSources", label: "人物头像来源", section: "personSync" },
@@ -380,6 +387,7 @@ function DownloadSection(_props: SectionRenderProps) {
       <BoolField name="download.downloadSceneImages" label="下载剧照" />
       <BoolField name="download.downloadTrailer" label="下载预告片" />
       <BoolField name="download.generateNfo" label="生成 NFO" />
+      {generateNfo && <EnumField name="download.nfoNaming" label="NFO 文件命名" options={NFO_NAMING_OPTIONS} />}
       {downloadThumb && <BoolField name="download.keepThumb" label="保留已有横版缩略图" />}
       {downloadPoster && <BoolField name="download.keepPoster" label="保留已有海报" />}
       {downloadFanart && <BoolField name="download.keepFanart" label="保留已有背景图" />}
@@ -469,6 +477,11 @@ export function NamingSection(_props: SectionRenderProps) {
     <>
       <TextField name="naming.folderTemplate" label="文件夹模板" description={NAMING_TEMPLATE_DESCRIPTION} />
       <TextField name="naming.fileTemplate" label="文件名模板" description={NAMING_TEMPLATE_DESCRIPTION} />
+      <TextField
+        name="naming.nfoTitleTemplate"
+        label="NFO 标题模板"
+        description="NFO 中 title 字段的格式。可用占位符：{number} {title}"
+      />
       <NamingPreview />
       <NumberField name="naming.actorNameMax" label="演员名最大数量" min={1} max={20} />
       <TextField name="naming.actorNameMore" label="演员名超出后缀" />
@@ -493,6 +506,8 @@ export function NamingSection(_props: SectionRenderProps) {
 function TranslateSection(_props: SectionRenderProps) {
   const [testing, setTesting] = useState(false);
   const form = useFormContext<FieldValues>();
+  const engine = useWatch({ control: form.control, name: "translate.engine" });
+  const isLLM = engine !== "google";
 
   const handleTestLlm = async () => {
     const input = {
@@ -522,22 +537,24 @@ function TranslateSection(_props: SectionRenderProps) {
       <BaseField name="translate.enableTranslation" label="启用内容翻译">
         {(field) => (
           <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={handleTestLlm}
-              disabled={testing}
-            >
-              {testing ? (
-                <>
-                  <Loader2 className="h-3 w-3 mr-1 animate-spin" /> 测试中...
-                </>
-              ) : (
-                "测试连通性"
-              )}
-            </Button>
+            {isLLM && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={handleTestLlm}
+                disabled={testing}
+              >
+                {testing ? (
+                  <>
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" /> 测试中...
+                  </>
+                ) : (
+                  "测试连通性"
+                )}
+              </Button>
+            )}
             <FormControl>
               <Switch checked={Boolean(field.value)} onCheckedChange={field.onChange} />
             </FormControl>
@@ -545,20 +562,22 @@ function TranslateSection(_props: SectionRenderProps) {
         )}
       </BaseField>
       <EnumField name="translate.engine" label="翻译引擎" options={TRANSLATE_ENGINE_OPTIONS} />
-      <TextField name="translate.llmModelName" label="LLM 模型名称" />
-      <SecretField name="translate.llmApiKey" label="LLM 密钥" />
-      <UrlField
-        name="translate.llmBaseUrl"
-        label="LLM 接口地址"
-        description="一般需要增加 /v1 后缀，如果添加后接口报错请尝试去除 /v1 再试"
-      />
-      <PromptFieldWrapper name="translate.llmPrompt" label="LLM 翻译提示词" />
-      <NumberField name="translate.llmTemperature" label="LLM 温度" min={0} max={2} step={0.1} />
-      <NumberField name="translate.llmMaxTry" label="LLM 最大重试次数" min={1} max={20} />
-      <NumberField name="translate.llmMaxRequestsPerSecond" label="LLM 每秒最大请求数" min={1} max={100} />
-      <BoolField name="translate.enableGoogleFallback" label="启用 Google 翻译回退" />
-      <EnumField name="translate.titleLanguage" label="标题目标语言" options={LANGUAGE_OPTIONS} />
-      <EnumField name="translate.plotLanguage" label="简介目标语言" options={LANGUAGE_OPTIONS} />
+      {isLLM && (
+        <>
+          <TextField name="translate.llmModelName" label="LLM 模型名称" />
+          <SecretField name="translate.llmApiKey" label="LLM 密钥" />
+          <UrlField
+            name="translate.llmBaseUrl"
+            label="LLM 接口地址"
+            description="一般需要增加 /v1 后缀，如果添加后接口报错请尝试去除 /v1 再试"
+          />
+          <PromptFieldWrapper name="translate.llmPrompt" label="LLM 翻译提示词" />
+          <NumberField name="translate.llmTemperature" label="LLM 温度" min={0} max={2} step={0.1} />
+          <NumberField name="translate.llmMaxRetries" label="LLM 最大重试次数" min={1} max={20} />
+          <NumberField name="translate.llmMaxRequestsPerSecond" label="LLM 每秒最大请求数" min={1} max={100} />
+        </>
+      )}
+      <EnumField name="translate.targetLanguage" label="目标语言" options={LANGUAGE_OPTIONS} />
     </>
   );
 }

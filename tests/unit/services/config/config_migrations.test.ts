@@ -55,6 +55,11 @@ const V050_FIELD_PRIORITY_DEFAULTS = {
   trailer_url: ["dmm_tv", "dmm", "javbus"],
 } as const;
 
+const V052_FIELD_PRIORITY_DEFAULTS = {
+  ...V050_FIELD_PRIORITY_DEFAULTS,
+  title: ["avbase", "mgstage", "dmm", "dmm_tv", "fc2hub", "fc2", "javdb", "javbus", "jav321"],
+} as const;
+
 /**
  * Build a minimal v0.3.0 config object for testing.
  * Includes only the fields relevant to migration; Zod defaults fill the rest.
@@ -296,7 +301,7 @@ describe("Configuration migrations", () => {
       expect(fieldPriorities).not.toHaveProperty("sample_images");
     });
 
-    it("normalizes untouched legacy defaults to the v0.5.0 defaults", () => {
+    it("normalizes untouched legacy defaults to the current defaults", () => {
       const { raw, parsed } = migrate();
       const paths = raw.paths as Record<string, unknown>;
       const scrape = raw.scrape as Record<string, unknown>;
@@ -304,6 +309,7 @@ describe("Configuration migrations", () => {
       expect(paths.sceneImagesFolder).toBe("extrafanart");
       expect(scrape.enabledSites).toEqual(V050_ENABLED_SITES);
       expect(scrape.siteOrder).toEqual(V050_ENABLED_SITES);
+      expect(parsed.aggregation.fieldPriorities.title).toEqual(V052_FIELD_PRIORITY_DEFAULTS.title);
       expect(parsed.aggregation.fieldPriorities.actors).toEqual(V050_FIELD_PRIORITY_DEFAULTS.actors);
       expect(parsed.aggregation.fieldPriorities.thumb_url).toEqual(V050_FIELD_PRIORITY_DEFAULTS.thumb_url);
       expect(parsed.aggregation.fieldPriorities.poster_url).toEqual(V050_FIELD_PRIORITY_DEFAULTS.poster_url);
@@ -385,16 +391,18 @@ describe("Configuration migrations", () => {
       expect(result).toEqual({
         migrated: true,
         fromVersion: 1,
-        toVersion: 2,
-        applied: ["v0.4.0 → v0.5.0"],
+        toVersion: 3,
+        applied: ["v0.4.0 → v0.5.0", "v0.5.0 → v0.5.2"],
       });
 
       expect(download.generateNfo).toBe(true);
       expect(download).not.toHaveProperty("downloadNfo");
       expect(scrape.enabledSites).toEqual(V050_ENABLED_SITES);
       expect(scrape.siteOrder).toEqual(V050_ENABLED_SITES);
+      expect(fieldPriorities.title).toEqual(V052_FIELD_PRIORITY_DEFAULTS.title);
       expect(fieldPriorities.scene_images).toEqual(V050_FIELD_PRIORITY_DEFAULTS.scene_images);
       expect(fieldPriorities).not.toHaveProperty("sample_images");
+      expect(parsed.aggregation.fieldPriorities.title).toEqual(V052_FIELD_PRIORITY_DEFAULTS.title);
       expect(parsed.naming.partStyle).toBe("RAW");
     });
 
@@ -423,6 +431,109 @@ describe("Configuration migrations", () => {
     });
   });
 
+  describe("v0.5.0 → v0.5.2", () => {
+    function buildV050Config(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+      return {
+        configVersion: 2,
+        aggregation: {
+          fieldPriorities: {
+            title: [...V050_FIELD_PRIORITY_DEFAULTS.title],
+          },
+        },
+        translate: {
+          enableTranslation: false,
+          engine: "openai",
+          llmModelName: "gpt-5.2",
+          llmApiKey: "",
+          llmBaseUrl: "",
+          llmPrompt: "请将以下文本翻译成{lang}。只输出翻译结果。\\n{content}",
+          llmTemperature: 1.0,
+          llmMaxTry: 3,
+          llmMaxRequestsPerSecond: 1,
+          enableGoogleFallback: true,
+          titleLanguage: "zh-CN",
+          plotLanguage: "zh-CN",
+        },
+        ...overrides,
+      };
+    }
+
+    it("renames translate fields and removes obsolete ones", () => {
+      const { raw, result, parsed } = migrate(buildV050Config());
+      const translate = raw.translate as Record<string, unknown>;
+      const fieldPriorities = (raw.aggregation as Record<string, unknown>).fieldPriorities as Record<string, unknown>;
+
+      expect(result).toEqual({
+        migrated: true,
+        fromVersion: 2,
+        toVersion: 3,
+        applied: ["v0.5.0 → v0.5.2"],
+      });
+
+      expect(translate.llmMaxRetries).toBe(3);
+      expect(translate).not.toHaveProperty("llmMaxTry");
+      expect(translate.targetLanguage).toBe("zh-CN");
+      expect(translate).not.toHaveProperty("titleLanguage");
+      expect(translate).not.toHaveProperty("plotLanguage");
+      expect(translate).not.toHaveProperty("enableGoogleFallback");
+      expect(translate.llmPrompt).toBe(
+        "你是一个影片元数据翻译引擎。自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果，不要输出任何解释。\\n{content}",
+      );
+      expect(fieldPriorities.title).toEqual(V052_FIELD_PRIORITY_DEFAULTS.title);
+      expect(parsed.translate.llmMaxRetries).toBe(3);
+      expect(parsed.translate.targetLanguage).toBe("zh-CN");
+      expect(parsed.translate.llmPrompt).toBe(
+        "你是一个影片元数据翻译引擎。自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果，不要输出任何解释。\\n{content}",
+      );
+      expect(parsed.aggregation.fieldPriorities.title).toEqual(V052_FIELD_PRIORITY_DEFAULTS.title);
+    });
+
+    it("preserves customized titleLanguage as targetLanguage", () => {
+      const raw = buildV050Config({
+        translate: {
+          enableTranslation: true,
+          engine: "openai",
+          llmApiKey: "key",
+          llmMaxTry: 5,
+          titleLanguage: "zh-TW",
+          plotLanguage: "zh-CN",
+          enableGoogleFallback: false,
+        },
+      });
+
+      const parsed = migrate(raw).parsed;
+
+      expect(parsed.translate.targetLanguage).toBe("zh-TW");
+      expect(parsed.translate.llmMaxRetries).toBe(5);
+    });
+
+    it("preserves customized llmPrompt instead of resetting it", () => {
+      const parsed = migrate(
+        buildV050Config({
+          translate: {
+            llmPrompt: "自定义提示词：{lang}\\n{content}",
+          },
+        }),
+      ).parsed;
+
+      expect(parsed.translate.llmPrompt).toBe("自定义提示词：{lang}\\n{content}");
+    });
+
+    it("preserves customized title priority instead of resetting it", () => {
+      const parsed = migrate(
+        buildV050Config({
+          aggregation: {
+            fieldPriorities: {
+              title: ["fc2", "javdb", "fc2hub"],
+            },
+          },
+        }),
+      ).parsed;
+
+      expect(parsed.aggregation.fieldPriorities.title).toEqual(["fc2", "javdb", "fc2hub"]);
+    });
+  });
+
   describe("migrator behavior", () => {
     it("skips migration for current version", () => {
       const raw = configurationSchema.parse({}) as unknown as Record<string, unknown>;
@@ -445,7 +556,7 @@ describe("Configuration migrations", () => {
         migrated: true,
         fromVersion: 0,
         toVersion: CURRENT_CONFIG_VERSION,
-        applied: ["v0.3.0 → v0.4.0", "v0.4.0 → v0.5.0"],
+        applied: ["v0.3.0 → v0.4.0", "v0.4.0 → v0.5.0", "v0.5.0 → v0.5.2"],
       });
     });
 

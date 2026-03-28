@@ -1,6 +1,6 @@
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "@main/services/actorSource/types";
 import { CURRENT_CONFIG_VERSION } from "@main/services/config/migrator";
-import { ProxyType, ThemeMode, TranslateEngine, UiLanguage, Website } from "@shared/enums";
+import { ProxyType, ThemeMode, TRANSLATION_TARGET_OPTIONS, TranslateEngine, UiLanguage, Website } from "@shared/enums";
 import { z } from "zod";
 
 const DEFAULT_ENABLED_SITES: Website[] = [
@@ -21,6 +21,7 @@ const DEFAULT_ENABLED_SITES: Website[] = [
 
 const DEFAULT_SITE_ORDER: Website[] = [...DEFAULT_ENABLED_SITES];
 const PART_STYLE_OPTIONS = ["RAW", "CD", "PART", "DISC"] as const;
+const NFO_NAMING_OPTIONS = ["both", "movie", "filename"] as const;
 
 const networkSchema = z.object({
   proxyType: z.enum(ProxyType).default(ProxyType.NONE),
@@ -49,6 +50,7 @@ const scrapeSchema = z.object({
 const namingSchema = z.object({
   folderTemplate: z.string().default("{actor}/{number}"),
   fileTemplate: z.string().default("{number}"),
+  nfoTitleTemplate: z.string().default("{title}"),
   actorNameMax: z.number().int().min(1).max(20).default(3),
   actorNameMore: z.string().default("等演员"),
   releaseRule: z.string().default("YYYY-MM-DD"),
@@ -62,19 +64,26 @@ const namingSchema = z.object({
   partStyle: z.enum(PART_STYLE_OPTIONS).default("RAW"),
 });
 
+const translationTargetSchema = z
+  .enum(TRANSLATION_TARGET_OPTIONS)
+  .catch(TRANSLATION_TARGET_OPTIONS[0])
+  .default(TRANSLATION_TARGET_OPTIONS[0]);
+
 const translateSchema = z.object({
   enableTranslation: z.boolean().default(false),
   engine: z.enum(TranslateEngine).default(TranslateEngine.OPENAI),
   llmModelName: z.string().default("gpt-5.2"),
   llmApiKey: z.string().default(""),
   llmBaseUrl: z.url().or(z.literal("")).default(""),
-  llmPrompt: z.string().default("请将以下文本翻译成{lang}。只输出翻译结果。\\n{content}"),
+  llmPrompt: z
+    .string()
+    .default(
+      "你是一个影片元数据翻译引擎。自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果，不要输出任何解释。\\n{content}",
+    ),
   llmTemperature: z.number().min(0).max(2).default(1.0),
-  llmMaxTry: z.number().int().min(1).max(20).default(3),
-  llmMaxRequestsPerSecond: z.number().positive().default(1),
-  enableGoogleFallback: z.boolean().default(true),
-  titleLanguage: z.enum(UiLanguage).default(UiLanguage.ZH_CN),
-  plotLanguage: z.enum(UiLanguage).default(UiLanguage.ZH_CN),
+  llmMaxRetries: z.number().int().min(1).max(20).default(3),
+  llmMaxRequestsPerSecond: z.number().int().min(1).max(100).default(1),
+  targetLanguage: translationTargetSchema,
 });
 
 const downloadSchema = z.object({
@@ -84,6 +93,7 @@ const downloadSchema = z.object({
   downloadSceneImages: z.boolean().default(true),
   downloadTrailer: z.boolean().default(true),
   generateNfo: z.boolean().default(true),
+  nfoNaming: z.enum(NFO_NAMING_OPTIONS).default("both"),
   sceneImageConcurrency: z.number().int().min(1).max(20).default(5),
   keepThumb: z.boolean().default(true),
   keepPoster: z.boolean().default(true),
@@ -161,8 +171,8 @@ const fieldPrioritiesSchema = z.object({
       Website.MGSTAGE,
       Website.DMM,
       Website.DMM_TV,
-      Website.FC2,
       Website.FC2HUB,
+      Website.FC2,
       Website.JAVDB,
       Website.JAVBUS,
       Website.JAV321,

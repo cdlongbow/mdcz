@@ -5,8 +5,9 @@ import type { NetworkClient } from "@main/services/network";
 import { CachedAsyncResolver } from "@main/utils/CachedAsyncResolver";
 import { toErrorMessage } from "@main/utils/common";
 import { parseRetryAfterMs, readRetryAfterHeader } from "@main/utils/http";
-import { convertToSimplified, convertToTraditional, type DetectedLanguage, detectLanguage } from "@main/utils/language";
+import { convertToSimplified, convertToTraditional, detectLanguage } from "@main/utils/language";
 import { appendMappingCandidate, findMappedActorName, findMappedGenreName } from "@main/utils/translate";
+import type { TranslationTarget } from "@shared/enums";
 import type { ActorProfile, CrawlerData } from "@shared/types";
 import OpenAI from "openai";
 import PQueue from "p-queue";
@@ -15,7 +16,7 @@ import { isAbortError, throwIfAborted } from "./abort";
 
 type LanguageTarget = "zh_cn" | "zh_tw";
 
-const toTarget = (value: unknown): LanguageTarget => {
+const toTarget = (value: TranslationTarget): LanguageTarget => {
   if (value === "zh-TW") {
     return "zh_tw";
   }
@@ -24,20 +25,33 @@ const toTarget = (value: unknown): LanguageTarget => {
 
 const normalizeNewlines = (value: string): string => value.replace(/\r\n?/gu, "\n");
 
+const normalizeTermKey = (value: string): string => {
+  return value.normalize("NFKC").trim().toLowerCase();
+};
+
 const ensureTargetChinese = (text: string, target: LanguageTarget): string => {
   if (target === "zh_tw") {
     return convertToTraditional(text);
   }
-  return convertToSimplified(text);
-};
 
-const normalizeTermKey = (value: string): string => {
-  return value.normalize("NFKC").trim().toLowerCase();
+  return convertToSimplified(text);
 };
 
 const googleTranslateResponseSchema = z.array(z.unknown());
 const OPENAI_RETRY_STATUS_CODE = 429;
 const RETRY_AFTER_CAP_MS = 15_000;
+
+const getTargetLanguageLabel = (target: LanguageTarget): string => {
+  if (target === "zh_tw") {
+    return "繁体中文";
+  }
+  return "简体中文";
+};
+
+const toTranslatedFieldValue = (value: string): string | undefined => {
+  const detected = detectLanguage(value);
+  return detected === "zh_cn" || detected === "zh_tw" ? value : undefined;
+};
 
 const extractGoogleTranslatedText = (payload: unknown): string | null => {
   const parsed = googleTranslateResponseSchema.safeParse(payload);
@@ -91,11 +105,12 @@ export class TranslateService {
 
     throwIfAborted(signal);
 
-    const titleTarget = toTarget(config.translate.titleLanguage);
-    const plotTarget = toTarget(config.translate.plotLanguage);
+    const target = toTarget(config.translate.targetLanguage);
 
-    const title_zh = await this.translateText(data.title, titleTarget, config, signal);
-    const plot_zh = data.plot ? await this.translateText(data.plot, plotTarget, config, signal) : undefined;
+    const title_zh = toTranslatedFieldValue(await this.translateText(data.title, target, config, signal));
+    const plot_zh = data.plot
+      ? toTranslatedFieldValue(await this.translateText(data.plot, target, config, signal))
+      : undefined;
 
     throwIfAborted(signal);
 
@@ -104,7 +119,7 @@ export class TranslateService {
       (data.actor_profiles ?? []).map((profile) => this.normalizeActorProfile(profile)),
     );
     const mappedGenres = await Promise.all(
-      (data.genres ?? []).map((genre) => this.translateGenreTerm(genre, titleTarget, config, signal)),
+      (data.genres ?? []).map((genre) => this.translateGenreTerm(genre, target, config, signal)),
     );
 
     throwIfAborted(signal);
@@ -128,15 +143,16 @@ export class TranslateService {
   }
 
   private buildGenreTranslationPrompt(term: string, target: LanguageTarget): string {
-    const targetLabel = target === "zh_tw" ? "Traditional Chinese" : "Simplified Chinese";
+    const targetLabel = getTargetLanguageLabel(target);
 
     return [
-      `Translate exactly one genre label into ${targetLabel}.`,
-      "Translation rules:",
-      "1. Output only one short translated genre term.",
-      "2. Keep wording consistent for repeated terms.",
-      "3. Do not output explanations or punctuation.",
-      `Term: ${term}`,
+      `将以下影片类型标签翻译为${targetLabel}。`,
+      "自动识别原文语言后翻译。",
+      "翻译规则：",
+      "1. 只输出一个简短的翻译结果。",
+      "2. 对重复出现的术语保持译名一致。",
+      "3. 不要输出解释或标点符号。",
+      `术语：${term}`,
     ].join("\n");
   }
 
@@ -194,7 +210,7 @@ export class TranslateService {
       const mapped = await findMappedGenreName(normalized, target);
 
       if (mapped) {
-        return ensureTargetChinese(mapped, target);
+        return ensureTargetChinese(mapped.trim(), target);
       }
 
       const llmTerm = await this.translateGenreWithOpenAiTerm(normalized, target, config, signal);
@@ -214,7 +230,7 @@ export class TranslateService {
         }
       }
 
-      return normalizedResult.length > 0 ? normalizedResult : ensureTargetChinese(normalized, target);
+      return normalizedResult.length > 0 ? normalizedResult : normalized;
     });
   }
 
@@ -224,6 +240,10 @@ export class TranslateService {
     config: Configuration,
     signal?: AbortSignal,
   ): Promise<string | null> {
+    if (config.translate.engine === "google") {
+      return null;
+    }
+
     if (!config.translate.llmApiKey.trim()) {
       return null;
     }
@@ -289,7 +309,7 @@ export class TranslateService {
 
     throwIfAborted(signal);
 
-    const detected: DetectedLanguage = detectLanguage(text);
+    const detected = detectLanguage(text);
     if (detected === target) {
       return text;
     }
@@ -303,28 +323,22 @@ export class TranslateService {
     if (engine === "google") {
       const google = await this.translateWithGoogle(text, target, signal);
       if (google) {
-        return ensureTargetChinese(google, target);
-      }
-
-      const openAi = await this.translateWithOpenAi(text, target, config, signal);
-      if (openAi) {
-        return ensureTargetChinese(openAi, target);
+        return ensureTargetChinese(google.trim(), target);
       }
     } else {
       const openAi = await this.translateWithOpenAi(text, target, config, signal);
       if (openAi) {
-        return ensureTargetChinese(openAi, target);
+        return ensureTargetChinese(openAi.trim(), target);
       }
 
-      if (config.translate.enableGoogleFallback) {
-        const google = await this.translateWithGoogle(text, target, signal);
-        if (google) {
-          return ensureTargetChinese(google, target);
-        }
+      const google = await this.translateWithGoogle(text, target, signal);
+      if (google) {
+        return ensureTargetChinese(google.trim(), target);
       }
     }
 
-    return ensureTargetChinese(text, target);
+    this.logger.warn(`All translation engines failed, returning original text`);
+    return text;
   }
 
   private async translateWithOpenAi(
@@ -340,7 +354,7 @@ export class TranslateService {
     throwIfAborted(signal);
 
     const prompt = config.translate.llmPrompt
-      .replaceAll("{lang}", target === "zh_tw" ? "Traditional Chinese" : "Simplified Chinese")
+      .replaceAll("{lang}", getTargetLanguageLabel(target))
       .replaceAll("{content}", text);
 
     const client = this.openAiFactory(config);
@@ -410,7 +424,7 @@ export class TranslateService {
     request: () => Promise<T>,
     signal?: AbortSignal,
   ): Promise<T> {
-    const maxRetryCount = Math.max(0, Math.trunc(config.translate.llmMaxTry));
+    const maxRetryCount = Math.max(0, Math.trunc(config.translate.llmMaxRetries));
     let attempt = 0;
 
     while (true) {

@@ -1,5 +1,10 @@
 import type { Configuration } from "@main/services/config";
-import type { NetworkClient } from "@main/services/network";
+import {
+  type CookieResolver,
+  InMemoryCookieJar,
+  type NetworkClient,
+  type NetworkSession,
+} from "@main/services/network";
 import { normalizeActorName, toUniqueActorNames } from "@main/utils/actor";
 import {
   parseActorBloodType,
@@ -7,7 +12,7 @@ import {
   parseActorMeasurements,
   parseActorMetricCm,
 } from "@main/utils/actorProfile";
-import { buildUrl } from "@main/utils/common";
+import { buildUrl, toErrorMessage } from "@main/utils/common";
 import { normalizeText } from "@main/utils/normalization";
 import { load } from "cheerio";
 import { mergeActorSourceHints } from "../sourceHints";
@@ -23,6 +28,7 @@ const AGENCY_FIELD_NAMES = ["所属事務所", "所属プロダクション", "�
 
 export interface AvjohoActorSourceDependencies {
   networkClient: NetworkClient;
+  cookieResolver?: CookieResolver;
   baseUrl?: string;
 }
 
@@ -30,6 +36,18 @@ interface ParsedActorTitle {
   displayName: string;
   primaryName: string;
   aliases: string[];
+}
+
+interface HtmlLoadResult {
+  html: string;
+  warnings: string[];
+  challengeTriggered?: boolean;
+}
+
+interface AvjohoRequestContext {
+  session: NetworkSession;
+  cookieJar: InMemoryCookieJar;
+  cookieResolver?: CookieResolver;
 }
 
 const parseActorTitle = (value: string): ParsedActorTitle => {
@@ -69,11 +87,6 @@ const resolveUrl = (baseUrl: string, value: string | undefined): string | undefi
   return new URL(normalized, baseUrl).toString();
 };
 
-interface HtmlLoadResult {
-  html: string;
-  warnings: string[];
-}
-
 const isChallengePage = (html: string): boolean => {
   return (
     html.includes("少々お待ちください") &&
@@ -82,15 +95,16 @@ const isChallengePage = (html: string): boolean => {
 };
 
 const getHtml = async (
-  networkClient: NetworkClient,
+  context: AvjohoRequestContext,
   url: string,
   headers: Record<string, string> = {},
 ): Promise<HtmlLoadResult> => {
-  const html = await networkClient.getText(url, {
-    headers: {
-      ...DEFAULT_AVJOHO_HEADERS,
-      ...headers,
-    },
+  const requestHeaders = {
+    ...DEFAULT_AVJOHO_HEADERS,
+    ...headers,
+  };
+  const html = await context.session.getText(url, {
+    headers: requestHeaders,
   });
 
   if (!isChallengePage(html)) {
@@ -100,10 +114,69 @@ const getHtml = async (
     };
   }
 
-  return {
-    html,
-    warnings: [`AVJOHO returned a browser challenge page for ${url}`],
-  };
+  const warnings = [`AVJOHO browser challenge detected for ${url}`];
+  warnings.push(`AVJOHO retrying request with session cookies for ${url}`);
+
+  const sessionRetriedHtml = await context.session.getText(url, {
+    headers: requestHeaders,
+  });
+  if (!isChallengePage(sessionRetriedHtml)) {
+    warnings.push(`AVJOHO resolved browser challenge via session retry for ${url}`);
+    return {
+      html: sessionRetriedHtml,
+      warnings,
+    };
+  }
+
+  warnings.push(`AVJOHO browser challenge persisted after session retry for ${url}`);
+  if (!context.cookieResolver) {
+    warnings.push(`AVJOHO cookie resolver is unavailable for ${url}`);
+    return {
+      html: sessionRetriedHtml,
+      warnings,
+      challengeTriggered: true,
+    };
+  }
+
+  warnings.push(`AVJOHO resolving browser challenge cookies for ${url}`);
+
+  try {
+    const cookies = await context.cookieResolver(url);
+    if (cookies.length === 0) {
+      warnings.push(`AVJOHO cookie resolver returned no cookies for ${url}`);
+      return {
+        html: sessionRetriedHtml,
+        warnings,
+        challengeTriggered: true,
+      };
+    }
+
+    context.cookieJar.setResolvedCookies(cookies, url);
+    const retriedHtml = await context.session.getText(url, {
+      headers: requestHeaders,
+    });
+    if (isChallengePage(retriedHtml)) {
+      warnings.push(`AVJOHO browser challenge persisted after retry for ${url}`);
+      return {
+        html: retriedHtml,
+        warnings,
+        challengeTriggered: true,
+      };
+    }
+
+    warnings.push(`AVJOHO resolved browser challenge and retried successfully for ${url}`);
+    return {
+      html: retriedHtml,
+      warnings,
+    };
+  } catch (error) {
+    warnings.push(`AVJOHO failed to resolve browser challenge for ${url}: ${toErrorMessage(error)}`);
+    return {
+      html: sessionRetriedHtml,
+      warnings,
+      challengeTriggered: true,
+    };
+  }
 };
 
 const readProfileFields = (html: string): Map<string, string> => {
@@ -160,11 +233,11 @@ const matchesSearchCandidate = (candidate: ParsedActorTitle, queryName: string):
 };
 
 const findDetailUrl = async (
-  networkClient: NetworkClient,
+  context: AvjohoRequestContext,
   baseUrl: string,
   queryName: string,
-): Promise<{ detailUrl?: string; warnings: string[] }> => {
-  const { html, warnings } = await getHtml(networkClient, buildUrl(baseUrl, "/", { s: queryName }));
+): Promise<{ detailUrl?: string; warnings: string[]; challengeTriggered?: boolean }> => {
+  const { html, warnings, challengeTriggered } = await getHtml(context, buildUrl(baseUrl, "/", { s: queryName }));
   const $ = load(html);
   let detailUrl: string | undefined;
 
@@ -187,6 +260,7 @@ const findDetailUrl = async (
   return {
     detailUrl,
     warnings,
+    challengeTriggered,
   };
 };
 
@@ -235,9 +309,14 @@ export class AvjohoActorSource implements BaseActorSource {
   readonly name = "avjoho" as const;
 
   private readonly baseUrl: string;
+  private readonly cookieJar = new InMemoryCookieJar();
+  private readonly session: NetworkSession;
 
   constructor(private readonly deps: AvjohoActorSourceDependencies) {
     this.baseUrl = deps.baseUrl?.replace(/\/+$/u, "") ?? DEFAULT_AVJOHO_BASE_URL;
+    this.session = deps.networkClient.createSession({
+      cookieJar: this.cookieJar,
+    });
 
     if (typeof deps.networkClient.setDomainLimit === "function") {
       deps.networkClient.setDomainLimit(new URL(this.baseUrl).hostname, 1, 1);
@@ -247,19 +326,39 @@ export class AvjohoActorSource implements BaseActorSource {
   async lookup(_configuration: Configuration, query: ActorLookupQuery): Promise<ActorSourceResult> {
     try {
       const warnings: string[] = [];
+      const requestContext: AvjohoRequestContext = {
+        session: this.session,
+        cookieJar: this.cookieJar,
+        cookieResolver: this.deps.cookieResolver,
+      };
 
       for (const searchName of toUniqueActorNames([query.name, ...(query.aliases ?? [])], normalizeText)) {
-        const searchResult = await findDetailUrl(this.deps.networkClient, this.baseUrl, searchName);
+        const searchResult = await findDetailUrl(requestContext, this.baseUrl, searchName);
         warnings.push(...searchResult.warnings);
+        if (searchResult.challengeTriggered) {
+          return {
+            source: this.name,
+            success: true,
+            warnings,
+          };
+        }
+
         const detailUrl = searchResult.detailUrl;
         if (!detailUrl) {
           continue;
         }
 
-        const detailResult = await getHtml(this.deps.networkClient, detailUrl);
+        const detailResult = await getHtml(requestContext, detailUrl);
         warnings.push(...detailResult.warnings);
-        const detailHtml = detailResult.html;
-        const profile = parseDetailProfile(this.baseUrl, detailHtml);
+        if (detailResult.challengeTriggered) {
+          return {
+            source: this.name,
+            success: true,
+            warnings,
+          };
+        }
+
+        const profile = parseDetailProfile(this.baseUrl, detailResult.html);
         if (!profile) {
           continue;
         }
@@ -292,7 +391,7 @@ export class AvjohoActorSource implements BaseActorSource {
         warnings,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       return {
         source: this.name,
         success: false,
