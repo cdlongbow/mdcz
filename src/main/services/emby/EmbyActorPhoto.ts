@@ -1,18 +1,21 @@
-import { readFile } from "node:fs/promises";
 import type { ActorSourceProvider } from "@main/services/actorSource";
 import { logActorSourceWarnings } from "@main/services/actorSource/logging";
+import {
+  createEmptyPersonSyncResult,
+  formatPersonSyncError,
+  loadPrimaryImageFromSource,
+  runPersonSyncBatch,
+} from "@main/services/common/personSync";
 import type { Configuration } from "@main/services/config";
 import { assertLocalActorImageSourceReady } from "@main/services/config/actorPhotoPath";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
-import { imageContentTypeFromPath, pathExists } from "@main/utils/file";
 import {
   buildEmbyHeaders,
   buildEmbyUrl,
   type EmbyBatchResult,
   type EmbyMode,
-  EmbyServiceError,
   fetchActorPersons,
   getHttpStatus,
   hasPrimaryImage,
@@ -34,11 +37,21 @@ const uploadPrimaryImage = async (
   bytes: Uint8Array,
   contentType: string,
 ): Promise<void> => {
+  const primaryPath = `/Items/${encodeURIComponent(personId)}/Images/Primary`;
   const body = Buffer.from(bytes).toString("base64");
   const headers = buildEmbyHeaders(configuration, {
     "content-type": contentType,
   });
-  const primaryPath = `/Items/${encodeURIComponent(personId)}/Images/Primary`;
+  const uploadError = {
+    code: "EMBY_WRITE_FAILED",
+    message: "上传 Emby 人物头像失败",
+  };
+  const uploadStatusMappings = {
+    400: { code: "EMBY_BAD_REQUEST", message: "Emby 拒绝了人物头像上传请求" },
+    401: { code: "EMBY_AUTH_FAILED", message: "Emby API Key 无效，无法上传人物头像" },
+    403: { code: "EMBY_ADMIN_KEY_REQUIRED", message: "Emby 人物头像上传需要管理员 API Key" },
+    415: { code: "EMBY_UNSUPPORTED_MEDIA", message: "Emby 不接受当前头像文件类型" },
+  };
 
   try {
     await networkClient.postText(buildEmbyUrl(configuration, primaryPath), body, { headers });
@@ -46,19 +59,7 @@ const uploadPrimaryImage = async (
   } catch (error) {
     const status = getHttpStatus(error);
     if (status !== 400 && status !== 404 && status !== 405) {
-      throw toEmbyServiceError(
-        error,
-        {
-          400: { code: "EMBY_BAD_REQUEST", message: "Emby 拒绝了人物头像上传请求" },
-          401: { code: "EMBY_AUTH_FAILED", message: "Emby API Key 无效，无法上传人物头像" },
-          403: { code: "EMBY_ADMIN_KEY_REQUIRED", message: "Emby 人物头像上传需要管理员 API Key" },
-          415: { code: "EMBY_UNSUPPORTED_MEDIA", message: "Emby 不接受当前头像文件类型" },
-        },
-        {
-          code: "EMBY_WRITE_FAILED",
-          message: "上传 Emby 人物头像失败",
-        },
-      );
+      throw toEmbyServiceError(error, uploadStatusMappings, uploadError);
     }
   }
 
@@ -68,16 +69,10 @@ const uploadPrimaryImage = async (
     throw toEmbyServiceError(
       error,
       {
-        400: { code: "EMBY_BAD_REQUEST", message: "Emby 拒绝了人物头像上传请求" },
-        401: { code: "EMBY_AUTH_FAILED", message: "Emby API Key 无效，无法上传人物头像" },
-        403: { code: "EMBY_ADMIN_KEY_REQUIRED", message: "Emby 人物头像上传需要管理员 API Key" },
+        ...uploadStatusMappings,
         404: { code: "EMBY_NOT_FOUND", message: "Emby 无法找到需要写入头像的人物" },
-        415: { code: "EMBY_UNSUPPORTED_MEDIA", message: "Emby 不接受当前头像文件类型" },
       },
-      {
-        code: "EMBY_WRITE_FAILED",
-        message: "上传 Emby 人物头像失败",
-      },
+      uploadError,
     );
   }
 };
@@ -98,35 +93,21 @@ export class EmbyActorPhotoService {
     const persons = await fetchActorPersons(this.networkClient, configuration, {
       userId: resolvedUserId,
     });
-    const total = persons.length;
-
-    if (total === 0) {
-      return {
-        processedCount: 0,
-        failedCount: 0,
-        skippedCount: 0,
-      };
+    if (persons.length === 0) {
+      return createEmptyPersonSyncResult();
     }
 
-    let processedCount = 0;
-    let failedCount = 0;
-    let skippedCount = 0;
-    let completed = 0;
-
-    this.deps.signalService.resetProgress();
-
-    for (const person of persons) {
-      const actorName = person.Name.trim();
-
-      try {
+    const result = await runPersonSyncBatch({
+      items: persons,
+      signalService: this.deps.signalService,
+      processItem: async (person) => {
+        const actorName = person.Name.trim();
         if (mode === "missing" && hasPrimaryImage(person)) {
-          skippedCount += 1;
-          continue;
+          return "skipped";
         }
 
         if (!actorName) {
-          skippedCount += 1;
-          continue;
+          return "skipped";
         }
 
         const actorSource = await this.deps.actorSourceProvider.lookup(configuration, {
@@ -134,69 +115,37 @@ export class EmbyActorPhotoService {
           requiredField: "photo_url",
         });
         logActorSourceWarnings(this.logger, actorName, actorSource.warnings);
-        const photoUrl = actorSource.profile.photo_url?.trim();
+        const image = await loadPrimaryImageFromSource(this.networkClient, actorSource.profile.photo_url);
 
-        let content: Buffer | Uint8Array | undefined;
-        let contentType: string | undefined;
-
-        if (photoUrl && (await pathExists(photoUrl))) {
-          content = await readFile(photoUrl);
-          contentType = imageContentTypeFromPath(photoUrl);
-        } else if (photoUrl) {
-          content = await this.networkClient.getContent(photoUrl, {
-            headers: {
-              accept: "image/*",
-            },
-          });
-          contentType = imageContentTypeFromPath(photoUrl);
-        }
-
-        if (!content || !contentType) {
-          skippedCount += 1;
+        if (!image) {
           this.deps.signalService.showLogText(`No Emby actor photo source found for ${actorName}`, "warn");
-          continue;
+          return "skipped";
         }
 
-        await uploadPrimaryImage(this.networkClient, configuration, person.Id, content, contentType);
+        await uploadPrimaryImage(this.networkClient, configuration, person.Id, image.content, image.contentType);
         if (configuration.emby.refreshPersonAfterSync) {
           try {
             await refreshPerson(this.networkClient, configuration, person.Id);
           } catch (error) {
-            const detail =
-              error instanceof EmbyServiceError
-                ? `${error.code}: ${error.message}`
-                : error instanceof Error
-                  ? error.message
-                  : String(error);
-            this.logger.warn(`Failed to refresh Emby actor ${person.Name} after photo sync: ${detail}`);
+            this.logger.warn(
+              `Failed to refresh Emby actor ${person.Name} after photo sync: ${formatPersonSyncError(error)}`,
+            );
           }
         }
 
-        processedCount += 1;
         this.deps.signalService.showLogText(`Updated Emby actor photo: ${actorName}`);
-      } catch (error) {
-        failedCount += 1;
-        const detail =
-          error instanceof EmbyServiceError
-            ? `${error.code}: ${error.message}`
-            : error instanceof Error
-              ? error.message
-              : String(error);
-        this.logger.warn(`Failed to update Emby actor photo for ${actorName}: ${detail}`);
-      } finally {
-        completed += 1;
-        this.deps.signalService.setProgress(Math.round((completed / total) * 100), completed, total);
-      }
-    }
+        return "processed";
+      },
+      onError: (person, error) => {
+        const actorName = person.Name.trim() || person.Name;
+        this.logger.warn(`Failed to update Emby actor photo for ${actorName}: ${formatPersonSyncError(error)}`);
+      },
+    });
 
     this.deps.signalService.showLogText(
-      `Emby actor photo sync completed. Total: ${total}, Success: ${processedCount}, Failed: ${failedCount}, Skipped: ${skippedCount}`,
+      `Emby actor photo sync completed. Total: ${persons.length}, Success: ${result.processedCount}, Failed: ${result.failedCount}, Skipped: ${result.skippedCount}`,
     );
 
-    return {
-      processedCount,
-      failedCount,
-      skippedCount,
-    };
+    return result;
   }
 }

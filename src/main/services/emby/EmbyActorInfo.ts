@@ -1,5 +1,10 @@
 import type { ActorSourceProvider } from "@main/services/actorSource";
 import { logActorSourceWarnings } from "@main/services/actorSource/logging";
+import {
+  createEmptyPersonSyncResult,
+  formatPersonSyncError,
+  runPersonSyncBatch,
+} from "@main/services/common/personSync";
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
@@ -15,7 +20,6 @@ import {
   type EmbyBatchResult,
   type EmbyMode,
   type EmbyPerson,
-  EmbyServiceError,
   fetchActorPersons,
   fetchPersonDetail,
   type ItemDetail,
@@ -48,25 +52,14 @@ export class EmbyActorInfoService {
       fields: ["Overview"],
       userId: resolvedUserId,
     });
-    const total = persons.length;
-
-    if (total === 0) {
-      return {
-        processedCount: 0,
-        failedCount: 0,
-        skippedCount: 0,
-      };
+    if (persons.length === 0) {
+      return createEmptyPersonSyncResult();
     }
 
-    let processedCount = 0;
-    let failedCount = 0;
-    let skippedCount = 0;
-    let completed = 0;
-
-    this.deps.signalService.resetProgress();
-
-    for (const person of persons) {
-      try {
+    const result = await runPersonSyncBatch({
+      items: persons,
+      signalService: this.deps.signalService,
+      processItem: async (person) => {
         const detail = await fetchPersonDetail(this.networkClient, configuration, person, resolvedUserId);
         const existing = normalizeExistingPersonSyncState({
           overview: toStringValue(detail.Overview) ?? person.Overview,
@@ -81,8 +74,7 @@ export class EmbyActorInfoService {
         logActorSourceWarnings(this.logger, person.Name, actorSource.warnings);
         const synced = planPersonSync(actorSource.profile, existing, mode);
         if (!synced.shouldUpdate) {
-          skippedCount += 1;
-          continue;
+          return "skipped";
         }
 
         await this.updatePersonInfo(configuration, person, detail, synced);
@@ -90,42 +82,25 @@ export class EmbyActorInfoService {
           try {
             await refreshPerson(this.networkClient, configuration, person.Id);
           } catch (error) {
-            const detail =
-              error instanceof EmbyServiceError
-                ? `${error.code}: ${error.message}`
-                : error instanceof Error
-                  ? error.message
-                  : String(error);
-            this.logger.warn(`Failed to refresh Emby actor ${person.Name} after info sync: ${detail}`);
+            this.logger.warn(
+              `Failed to refresh Emby actor ${person.Name} after info sync: ${formatPersonSyncError(error)}`,
+            );
           }
         }
 
-        processedCount += 1;
         this.deps.signalService.showLogText(`Updated Emby actor info: ${person.Name}`);
-      } catch (error) {
-        failedCount += 1;
-        const detail =
-          error instanceof EmbyServiceError
-            ? `${error.code}: ${error.message}`
-            : error instanceof Error
-              ? error.message
-              : String(error);
-        this.logger.warn(`Failed to update Emby actor info for ${person.Name}: ${detail}`);
-      } finally {
-        completed += 1;
-        this.deps.signalService.setProgress(Math.round((completed / total) * 100), completed, total);
-      }
-    }
+        return "processed";
+      },
+      onError: (person, error) => {
+        this.logger.warn(`Failed to update Emby actor info for ${person.Name}: ${formatPersonSyncError(error)}`);
+      },
+    });
 
     this.deps.signalService.showLogText(
-      `Emby actor info sync completed. Total: ${total}, Success: ${processedCount}, Failed: ${failedCount}, Skipped: ${skippedCount}`,
+      `Emby actor info sync completed. Total: ${persons.length}, Success: ${result.processedCount}, Failed: ${result.failedCount}, Skipped: ${result.skippedCount}`,
     );
 
-    return {
-      processedCount,
-      failedCount,
-      skippedCount,
-    };
+    return result;
   }
 
   private buildUpdatePayload(

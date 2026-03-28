@@ -1,5 +1,17 @@
 import type { ActorSourceProvider } from "@main/services/actorSource";
 import { logActorSourceWarnings } from "@main/services/actorSource/logging";
+import {
+  pickAutoResolvedUserId,
+  toBooleanValue,
+  toStringArray,
+  toStringRecord,
+  toStringValue,
+} from "@main/services/common/mediaServer";
+import {
+  createEmptyPersonSyncResult,
+  formatPersonSyncError,
+  runPersonSyncBatch,
+} from "@main/services/common/personSync";
 import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
@@ -9,6 +21,7 @@ import {
   planPersonSync,
 } from "@main/services/personSync/planner";
 import type { SignalService } from "@main/services/SignalService";
+import { isRecord } from "@main/utils/common";
 import type { PersonSyncResult } from "@shared/ipcTypes";
 import { buildJellyfinHeaders, buildJellyfinUrl, isUuid, type JellyfinMode } from "./auth";
 import { JellyfinServiceError, toJellyfinServiceError } from "./errors";
@@ -39,66 +52,6 @@ export interface JellyfinActorInfoDependencies {
   actorSourceProvider: ActorSourceProvider;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const toStringValue = (value: unknown): string | undefined => {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-};
-
-const toStringArray = (value: unknown): string[] => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
-};
-
-const toStringRecord = (value: unknown): Record<string, string> => {
-  if (!isRecord(value)) {
-    return {};
-  }
-
-  const output: Record<string, string> = {};
-  for (const [key, recordValue] of Object.entries(value)) {
-    const normalized = toStringValue(recordValue);
-    if (normalized) {
-      output[key] = normalized;
-    }
-  }
-  return output;
-};
-
-const toBooleanValue = (value: unknown): boolean | undefined => {
-  return typeof value === "boolean" ? value : undefined;
-};
-
-const pickJellyfinUserId = (users: JellyfinUserResponse[]): string | undefined => {
-  let bestId: string | undefined;
-  let bestScore = -1;
-
-  for (const user of users) {
-    const id = toStringValue(user.Id);
-    if (!id) {
-      continue;
-    }
-
-    const policy = isRecord(user.Policy) ? user.Policy : undefined;
-    const isAdministrator = toBooleanValue(policy?.IsAdministrator) ?? false;
-    const enableAllFolders = toBooleanValue(policy?.EnableAllFolders) ?? false;
-    const score = isAdministrator && enableAllFolders ? 3 : isAdministrator ? 2 : enableAllFolders ? 1 : 0;
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestId = id;
-      if (score === 3) {
-        break;
-      }
-    }
-  }
-
-  return bestId;
-};
-
 const getConfiguredUserId = (configuration: Configuration): string | undefined => {
   const trimmedUserId = configuration.jellyfin.userId.trim();
   if (trimmedUserId && !isUuid(trimmedUserId)) {
@@ -116,9 +69,8 @@ const fetchAutoResolvedUserId = async (networkClient: NetworkClient, configurati
         accept: "application/json",
       }),
     });
-
     const users = Array.isArray(response) ? (response as JellyfinUserResponse[]) : [];
-    const userId = pickJellyfinUserId(users);
+    const userId = pickAutoResolvedUserId(users);
     if (!userId) {
       throw new JellyfinServiceError(
         "JELLYFIN_USER_CONTEXT_REQUIRED",
@@ -434,25 +386,14 @@ export class JellyfinActorInfoService {
       fields: ["Overview"],
       userId: resolvedUserId,
     });
-    const total = persons.length;
-
-    if (total === 0) {
-      return {
-        processedCount: 0,
-        failedCount: 0,
-        skippedCount: 0,
-      };
+    if (persons.length === 0) {
+      return createEmptyPersonSyncResult();
     }
 
-    let processedCount = 0;
-    let failedCount = 0;
-    let skippedCount = 0;
-    let completed = 0;
-
-    this.deps.signalService.resetProgress();
-
-    for (const person of persons) {
-      try {
+    const result = await runPersonSyncBatch({
+      items: persons,
+      signalService: this.deps.signalService,
+      processItem: async (person) => {
         const detail = await fetchPersonDetail(this.networkClient, configuration, person, {
           userId: resolvedUserId,
         });
@@ -469,8 +410,7 @@ export class JellyfinActorInfoService {
         logActorSourceWarnings(this.logger, person.Name, source.warnings);
         const synced = planPersonSync(source.profile, existing, mode);
         if (!synced.shouldUpdate) {
-          skippedCount += 1;
-          continue;
+          return "skipped";
         }
 
         await updatePersonInfo(this.networkClient, configuration, person, detail, synced, {
@@ -480,40 +420,23 @@ export class JellyfinActorInfoService {
           try {
             await refreshPerson(this.networkClient, configuration, person.Id);
           } catch (error) {
-            const detail =
-              error instanceof JellyfinServiceError
-                ? `${error.code}: ${error.message}`
-                : error instanceof Error
-                  ? error.message
-                  : String(error);
-            this.logger.warn(`Failed to refresh Jellyfin actor ${person.Name} after info sync: ${detail}`);
+            this.logger.warn(
+              `Failed to refresh Jellyfin actor ${person.Name} after info sync: ${formatPersonSyncError(error)}`,
+            );
           }
         }
-        processedCount += 1;
         this.deps.signalService.showLogText(`Updated Jellyfin actor info: ${person.Name}`);
-      } catch (error) {
-        failedCount += 1;
-        const detail =
-          error instanceof JellyfinServiceError
-            ? `${error.code}: ${error.message}`
-            : error instanceof Error
-              ? error.message
-              : String(error);
-        this.logger.warn(`Failed to update Jellyfin actor info for ${person.Name}: ${detail}`);
-      } finally {
-        completed += 1;
-        this.deps.signalService.setProgress(Math.round((completed / total) * 100), completed, total);
-      }
-    }
+        return "processed";
+      },
+      onError: (person, error) => {
+        this.logger.warn(`Failed to update Jellyfin actor info for ${person.Name}: ${formatPersonSyncError(error)}`);
+      },
+    });
 
     this.deps.signalService.showLogText(
-      `Jellyfin actor info sync completed. Success: ${processedCount}, Failed: ${failedCount}, Skipped: ${skippedCount}`,
+      `Jellyfin actor info sync completed. Success: ${result.processedCount}, Failed: ${result.failedCount}, Skipped: ${result.skippedCount}`,
     );
 
-    return {
-      processedCount,
-      failedCount,
-      skippedCount,
-    };
+    return result;
   }
 }

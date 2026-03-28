@@ -1,14 +1,18 @@
-import { readFile } from "node:fs/promises";
 import type { ActorSourceProvider } from "@main/services/actorSource";
 import { logActorSourceWarnings } from "@main/services/actorSource/logging";
+import {
+  createEmptyPersonSyncResult,
+  formatPersonSyncError,
+  loadPrimaryImageFromSource,
+  runPersonSyncBatch,
+} from "@main/services/common/personSync";
 import type { Configuration } from "@main/services/config";
 import { assertLocalActorImageSourceReady } from "@main/services/config/actorPhotoPath";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
-import { imageContentTypeFromPath, pathExists } from "@main/utils/file";
 import { buildJellyfinHeaders, buildJellyfinUrl, type JellyfinMode } from "./auth";
-import { getHttpStatus, JellyfinServiceError, toJellyfinServiceError } from "./errors";
+import { getHttpStatus, toJellyfinServiceError } from "./errors";
 import { fetchPersons, type JellyfinBatchResult, type JellyfinPerson, refreshPerson } from "./people";
 
 export interface JellyfinActorPhotoDependencies {
@@ -29,50 +33,36 @@ const uploadPrimaryImage = async (
   bytes: Uint8Array,
   contentType: string,
 ): Promise<void> => {
+  const primaryPath = `/Items/${encodeURIComponent(personId)}/Images/Primary`;
   const body = Buffer.from(bytes).toString("base64");
   const headers = buildJellyfinHeaders(configuration, {
     "content-type": contentType,
   });
+  const uploadError = {
+    code: "JELLYFIN_WRITE_FAILED",
+    message: "上传 Jellyfin 人物头像失败",
+  };
+  const uploadStatusMappings = {
+    400: { code: "JELLYFIN_BAD_REQUEST", message: "Jellyfin 拒绝了人物头像上传请求" },
+    401: { code: "JELLYFIN_AUTH_FAILED", message: "Jellyfin 凭据无效，无法上传人物头像" },
+    403: { code: "JELLYFIN_PERMISSION_DENIED", message: "当前 Jellyfin 凭据没有人物头像写入权限" },
+    415: { code: "JELLYFIN_UNSUPPORTED_MEDIA", message: "Jellyfin 不接受当前头像文件类型" },
+  };
 
-  const primaryPath = `/Items/${encodeURIComponent(personId)}/Images/Primary`;
   try {
     await networkClient.postText(buildJellyfinUrl(configuration, primaryPath), body, { headers });
     return;
   } catch (error) {
     const status = getHttpStatus(error);
     if (status !== 404 && status !== 405) {
-      throw toJellyfinServiceError(
-        error,
-        {
-          400: { code: "JELLYFIN_BAD_REQUEST", message: "Jellyfin 拒绝了人物头像上传请求" },
-          401: { code: "JELLYFIN_AUTH_FAILED", message: "Jellyfin 凭据无效，无法上传人物头像" },
-          403: { code: "JELLYFIN_PERMISSION_DENIED", message: "当前 Jellyfin 凭据没有人物头像写入权限" },
-          415: { code: "JELLYFIN_UNSUPPORTED_MEDIA", message: "Jellyfin 不接受当前头像文件类型" },
-        },
-        {
-          code: "JELLYFIN_WRITE_FAILED",
-          message: "上传 Jellyfin 人物头像失败",
-        },
-      );
+      throw toJellyfinServiceError(error, uploadStatusMappings, uploadError);
     }
   }
 
   try {
     await networkClient.postText(buildJellyfinUrl(configuration, `${primaryPath}/0`), body, { headers });
   } catch (error) {
-    throw toJellyfinServiceError(
-      error,
-      {
-        400: { code: "JELLYFIN_BAD_REQUEST", message: "Jellyfin 拒绝了人物头像上传请求" },
-        401: { code: "JELLYFIN_AUTH_FAILED", message: "Jellyfin 凭据无效，无法上传人物头像" },
-        403: { code: "JELLYFIN_PERMISSION_DENIED", message: "当前 Jellyfin 凭据没有人物头像写入权限" },
-        415: { code: "JELLYFIN_UNSUPPORTED_MEDIA", message: "Jellyfin 不接受当前头像文件类型" },
-      },
-      {
-        code: "JELLYFIN_WRITE_FAILED",
-        message: "上传 Jellyfin 人物头像失败",
-      },
-    );
+    throw toJellyfinServiceError(error, uploadStatusMappings, uploadError);
   }
 };
 
@@ -89,35 +79,21 @@ export class JellyfinActorPhotoService {
     assertLocalActorImageSourceReady(configuration);
 
     const persons = await fetchPersons(this.networkClient, configuration);
-    const total = persons.length;
-
-    if (total === 0) {
-      return {
-        processedCount: 0,
-        failedCount: 0,
-        skippedCount: 0,
-      };
+    if (persons.length === 0) {
+      return createEmptyPersonSyncResult();
     }
 
-    let processedCount = 0;
-    let failedCount = 0;
-    let skippedCount = 0;
-    let completed = 0;
-
-    this.deps.signalService.resetProgress();
-
-    for (const person of persons) {
-      const actorName = person.Name.trim();
-
-      try {
+    const result = await runPersonSyncBatch({
+      items: persons,
+      signalService: this.deps.signalService,
+      processItem: async (person) => {
+        const actorName = person.Name.trim();
         if (!actorName) {
-          skippedCount += 1;
-          continue;
+          return "skipped";
         }
 
         if (mode === "missing" && hasPrimaryImage(person)) {
-          skippedCount += 1;
-          continue;
+          return "skipped";
         }
 
         const actorSource = await this.deps.actorSourceProvider.lookup(configuration, {
@@ -125,69 +101,36 @@ export class JellyfinActorPhotoService {
           requiredField: "photo_url",
         });
         logActorSourceWarnings(this.logger, actorName, actorSource.warnings);
-        const photoUrl = actorSource.profile.photo_url?.trim();
+        const image = await loadPrimaryImageFromSource(this.networkClient, actorSource.profile.photo_url);
 
-        let content: Uint8Array | undefined;
-        let contentType: string | undefined;
-
-        if (photoUrl) {
-          if (await pathExists(photoUrl)) {
-            content = await readFile(photoUrl);
-          } else {
-            content = await this.networkClient.getContent(photoUrl, {
-              headers: {
-                accept: "image/*",
-              },
-            });
-          }
-          contentType = imageContentTypeFromPath(photoUrl);
-        }
-
-        if (!content || !contentType) {
-          skippedCount += 1;
+        if (!image) {
           this.deps.signalService.showLogText(`No Jellyfin actor photo source found for ${actorName}`, "warn");
-          continue;
+          return "skipped";
         }
 
-        await uploadPrimaryImage(this.networkClient, configuration, person.Id, content, contentType);
+        await uploadPrimaryImage(this.networkClient, configuration, person.Id, image.content, image.contentType);
         if (configuration.jellyfin.refreshPersonAfterSync) {
           try {
             await refreshPerson(this.networkClient, configuration, person.Id);
           } catch (error) {
-            const detail =
-              error instanceof JellyfinServiceError
-                ? `${error.code}: ${error.message}`
-                : error instanceof Error
-                  ? error.message
-                  : String(error);
-            this.logger.warn(`Failed to refresh Jellyfin actor ${person.Name} after photo sync: ${detail}`);
+            this.logger.warn(
+              `Failed to refresh Jellyfin actor ${person.Name} after photo sync: ${formatPersonSyncError(error)}`,
+            );
           }
         }
-        processedCount += 1;
         this.deps.signalService.showLogText(`Updated Jellyfin actor photo: ${actorName}`);
-      } catch (error) {
-        failedCount += 1;
-        const detail =
-          error instanceof JellyfinServiceError
-            ? `${error.code}: ${error.message}`
-            : error instanceof Error
-              ? error.message
-              : String(error);
-        this.logger.warn(`Failed to update Jellyfin actor photo for ${actorName}: ${detail}`);
-      } finally {
-        completed += 1;
-        this.deps.signalService.setProgress(Math.round((completed / total) * 100), completed, total);
-      }
-    }
+        return "processed";
+      },
+      onError: (person, error) => {
+        const actorName = person.Name.trim() || person.Name;
+        this.logger.warn(`Failed to update Jellyfin actor photo for ${actorName}: ${formatPersonSyncError(error)}`);
+      },
+    });
 
     this.deps.signalService.showLogText(
-      `Jellyfin actor photo sync completed. Success: ${processedCount}, Failed: ${failedCount}, Skipped: ${skippedCount}`,
+      `Jellyfin actor photo sync completed. Success: ${result.processedCount}, Failed: ${result.failedCount}, Skipped: ${result.skippedCount}`,
     );
 
-    return {
-      processedCount,
-      failedCount,
-      skippedCount,
-    };
+    return result;
   }
 }

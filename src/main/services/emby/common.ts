@@ -1,7 +1,15 @@
+import {
+  pickAutoResolvedUserId,
+  toStringArray,
+  toStringRecord,
+  toStringValue,
+} from "@main/services/common/mediaServer";
 import type { Configuration } from "@main/services/config";
 import type { NetworkClient } from "@main/services/network";
 import { isRecord, isString, toErrorMessage } from "@main/utils/common";
 import type { PersonSyncResult } from "@shared/ipcTypes";
+
+export { toStringArray, toStringRecord, toStringValue };
 
 export type EmbyMode = "all" | "missing";
 
@@ -84,33 +92,6 @@ export const hasPrimaryImage = (person: EmbyPerson): boolean => {
   return typeof primary === "string" && primary.trim().length > 0;
 };
 
-export const toStringValue = (value: unknown): string | undefined => {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-};
-
-export const toStringArray = (value: unknown): string[] => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
-};
-
-export const toStringRecord = (value: unknown): Record<string, string> => {
-  if (!isRecord(value)) {
-    return {};
-  }
-
-  const output: Record<string, string> = {};
-  for (const [key, recordValue] of Object.entries(value)) {
-    if (!isString(recordValue) || recordValue.trim().length === 0) {
-      continue;
-    }
-    output[key] = recordValue.trim();
-  }
-
-  return output;
-};
-
 const ACTOR_PERSON_TYPES = ["Actor", "GuestStar"] as const;
 
 const normalizePersons = (persons: EmbyPerson[]): EmbyPerson[] => {
@@ -131,37 +112,6 @@ const normalizePersons = (persons: EmbyPerson[]): EmbyPerson[] => {
   return Array.from(uniquePersons.values());
 };
 
-const toBooleanValue = (value: unknown): boolean | undefined => {
-  return typeof value === "boolean" ? value : undefined;
-};
-
-const pickEmbyUserId = (users: EmbyUserResponse[]): string | undefined => {
-  let bestId: string | undefined;
-  let bestScore = -1;
-
-  for (const user of users) {
-    const id = toStringValue(user.Id);
-    if (!id) {
-      continue;
-    }
-
-    const policy = isRecord(user.Policy) ? user.Policy : undefined;
-    const isAdministrator = toBooleanValue(policy?.IsAdministrator) ?? false;
-    const enableAllFolders = toBooleanValue(policy?.EnableAllFolders) ?? false;
-    const score = isAdministrator && enableAllFolders ? 3 : isAdministrator ? 2 : enableAllFolders ? 1 : 0;
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestId = id;
-      if (score === 3) {
-        break;
-      }
-    }
-  }
-
-  return bestId;
-};
-
 const fetchAutoResolvedEmbyUserId = async (
   networkClient: NetworkClient,
   configuration: Configuration,
@@ -174,9 +124,8 @@ const fetchAutoResolvedEmbyUserId = async (
         accept: "application/json",
       }),
     });
-
     const users = Array.isArray(response.Items) ? (response.Items as EmbyUserResponse[]) : [];
-    const userId = pickEmbyUserId(users);
+    const userId = pickAutoResolvedUserId(users);
     if (!userId) {
       throw new EmbyServiceError(
         "EMBY_USER_CONTEXT_REQUIRED",
