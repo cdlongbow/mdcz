@@ -86,8 +86,8 @@ export function ShortcutHandler() {
             if (scrapeState.isScraping) {
               try {
                 await stopScrape();
-                scrapeState.setScrapeStatus("stopping");
-                scrapeState.setStatusText("正在停止...");
+                useScrapeStore.getState().reset();
+                useUIStore.getState().setSelectedResultId(null);
                 toast.info("正在停止刮削任务...");
               } catch (error) {
                 toast.error(`停止失败: ${asMessage(error)}`);

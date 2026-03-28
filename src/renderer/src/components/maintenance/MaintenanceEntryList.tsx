@@ -1,5 +1,5 @@
 import type { LocalScanEntry } from "@shared/types";
-import { FileText, FolderOpen, Play } from "lucide-react";
+import { FileText, FolderOpen, FolderSearch, Play } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
@@ -161,7 +161,12 @@ export default function MaintenanceEntryList() {
       items={items}
       filter={filter}
       onFilterChange={(nextFilter) => setFilter(nextFilter)}
-      emptyMessage="扫描完成后，维护项目会显示在这里。"
+      emptyContent={
+        <div className="flex flex-col items-center justify-center gap-3 py-16 select-none animate-in fade-in duration-500">
+          <FolderSearch className="h-12 w-12 text-muted-foreground/20" strokeWidth={1} />
+          <span className="text-[13px] text-muted-foreground/40 tracking-wider">无维护项目</span>
+        </div>
+      }
       headerLeading={
         <>
           <Checkbox

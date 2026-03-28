@@ -1,5 +1,14 @@
 import type { MaintenanceItemResult, MaintenancePreviewItem } from "@shared/types";
-import { CheckCircle2, FileText, FolderOpen, GitCompareArrows, ImageIcon, Play, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  FileText,
+  FolderOpen,
+  GitCompareArrows,
+  ImageIcon,
+  MousePointerClick,
+  Play,
+  XCircle,
+} from "lucide-react";
 import { useMemo } from "react";
 import { toDetailViewItemFromScrapeResult } from "@/components/detail/detailViewAdapters";
 import type { DetailViewItem } from "@/components/detail/types";
@@ -34,9 +43,9 @@ interface DetailPanelProps {
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8 text-sm opacity-60">
-      <FileText className="h-12 w-12 mb-2 opacity-20" />
-      {message}
+    <div className="flex h-full flex-col items-center justify-center gap-3 p-8 select-none">
+      <MousePointerClick className="h-10 w-10 text-muted-foreground/30" strokeWidth={1.25} />
+      <span className="text-[13px] text-muted-foreground/50 tracking-wide">{message}</span>
     </div>
   );
 }

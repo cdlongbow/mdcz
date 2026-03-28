@@ -1,4 +1,4 @@
-import { Copy, FileText, Trash2 } from "lucide-react";
+import { Copy, FileText, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { deleteFile, deleteFileAndFolder, requeueScrapeByNumber, requeueScrapeByUrl } from "@/api/manual";
@@ -181,7 +181,12 @@ export function ResultTree() {
       items={items}
       filter={filter}
       onFilterChange={setFilter}
-      emptyMessage="暂无结果。启动刮削任务后，处理项将显示在此处。"
+      emptyContent={
+        <div className="flex flex-col items-center justify-center gap-3 py-16 select-none animate-in fade-in duration-500">
+          <Search className="h-12 w-12 text-muted-foreground/20" strokeWidth={1} />
+          <span className="text-[13px] text-muted-foreground/40 tracking-wider">暂无结果</span>
+        </div>
+      }
       headerTrailing={
         resultGroups.length > 0 ? (
           <Button
