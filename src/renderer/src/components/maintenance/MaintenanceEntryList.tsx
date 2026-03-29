@@ -11,7 +11,9 @@ import {
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ContextMenuItem } from "@/components/ui/ContextMenu";
 import { buildMaintenanceEntryGroups, type MaintenanceEntryGroup } from "@/lib/maintenanceGrouping";
-import { type MaintenanceFilter, useMaintenanceStore } from "@/store/maintenanceStore";
+import { type MaintenanceFilter, useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
+import { toggleMaintenanceSelectAll, toggleMaintenanceSelectedIds } from "@/store/maintenanceSession";
 
 const getTitle = (entry: LocalScanEntry) =>
   entry.crawlerData?.title_zh ?? entry.crawlerData?.title ?? entry.fileInfo.fileName;
@@ -79,32 +81,22 @@ function buildMenuContent(entry: LocalScanEntry) {
 }
 
 export default function MaintenanceEntryList() {
-  const {
-    entries,
-    selectedIds,
-    activeId,
-    filter,
-    itemResults,
-    executionStatus,
-    setFilter,
-    toggleSelectedIds,
-    toggleSelectAll,
-    setActiveId,
-  } = useMaintenanceStore(
+  const { entries, selectedIds, activeId, filter, setFilter, setActiveId } = useMaintenanceEntryStore(
     useShallow((state) => ({
       entries: state.entries,
       selectedIds: state.selectedIds,
       activeId: state.activeId,
       filter: state.filter,
-      itemResults: state.itemResults,
-      executionStatus: state.executionStatus,
       setFilter: state.setFilter,
-      toggleSelectedIds: state.toggleSelectedIds,
-      toggleSelectAll: state.toggleSelectAll,
       setActiveId: state.setActiveId,
     })),
   );
-
+  const { itemResults, executionStatus } = useMaintenanceExecutionStore(
+    useShallow((state) => ({
+      itemResults: state.itemResults,
+      executionStatus: state.executionStatus,
+    })),
+  );
   const selectionLocked = executionStatus === "executing" || executionStatus === "stopping";
   const groupedEntries = useMemo(() => buildMaintenanceEntryGroups(entries, { itemResults }), [entries, itemResults]);
 
@@ -146,7 +138,7 @@ export default function MaintenanceEntryList() {
           checked={checkedState}
           disabled={selectionLocked}
           onCheckedChange={() => {
-            toggleSelectedIds(group.items.map((entry) => entry.id));
+            toggleMaintenanceSelectedIds(group.items.map((entry) => entry.id));
           }}
           onClick={(event) => event.stopPropagation()}
         />
@@ -173,7 +165,9 @@ export default function MaintenanceEntryList() {
             id="maintenance-select-all"
             checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
             disabled={selectionLocked || visibleIds.length === 0}
-            onCheckedChange={() => toggleSelectAll(visibleIds)}
+            onCheckedChange={() => {
+              toggleMaintenanceSelectAll(visibleIds);
+            }}
           />
           <label htmlFor="maintenance-select-all" className="cursor-pointer">
             全选 ({selectedVisibleCount}/{visibleEntries.length})

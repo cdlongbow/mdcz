@@ -3,10 +3,17 @@ import type { Configuration } from "@shared/config";
 import type { Website } from "@shared/enums";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
+import type {
+  ButtonStatusPayload,
+  FailedInfoPayload,
+  LogPayload,
+  ProgressPayload,
+  ScrapeInfoPayload,
+  ShortcutPayload,
+} from "@shared/ipcEvents";
 import type { AppInfo, TranslateTestLlmInput } from "@shared/ipcTypes";
 import type {
   CrawlerData,
-  FileInfo,
   LocalScanEntry,
   MaintenanceCommitItem,
   MaintenanceItemResult,
@@ -19,40 +26,6 @@ import type {
 } from "@shared/types";
 
 type Unsubscribe = () => void;
-
-type LogPayload = {
-  text: string;
-  level?: "info" | "warn" | "error";
-  timestamp: number;
-};
-
-type ProgressPayload = {
-  value: number;
-  current: number;
-  total: number;
-};
-
-type ScrapeInfoPayload = {
-  fileInfo: FileInfo;
-  site: Website;
-  step: "search" | "parse" | "download" | "organize";
-};
-
-type FailedInfoPayload = {
-  fileInfo: FileInfo;
-  error: string;
-  site?: Website;
-};
-
-type ButtonStatusPayload = {
-  startEnabled: boolean;
-  stopEnabled: boolean;
-};
-
-type ShortcutPayload = {
-  action: string;
-  shortcut?: string;
-};
 
 const client = createClient<IpcRouterContract>({
   ipcInvoke: (channel, payload) => window.api.invoke(channel as IpcChannel, payload),

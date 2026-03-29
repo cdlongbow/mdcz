@@ -1,4 +1,4 @@
-import type { MaintenanceItemResult, MaintenancePreviewItem } from "@shared/types";
+import type { FieldDiff, LocalScanEntry, MaintenanceItemResult, MaintenancePreviewItem } from "@shared/types";
 import {
   CheckCircle2,
   FileText,
@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/Button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { Separator } from "@/components/ui/Separator";
+import type { MaintenanceFieldSelectionSide } from "@/lib/maintenance";
 import { findScrapeResultGroup } from "@/lib/scrapeResultGrouping";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
@@ -33,6 +34,10 @@ interface DetailPanelCompareProps {
   result?: MaintenanceItemResult | MaintenancePreviewItem;
   badgeLabel?: string;
   titleOverride?: string;
+  entry?: LocalScanEntry;
+  preview?: MaintenancePreviewItem;
+  fieldSelections?: Record<string, MaintenanceFieldSelectionSide>;
+  onFieldSelectionChange?: (entryId: string, field: FieldDiff["field"], side: MaintenanceFieldSelectionSide) => void;
 }
 
 interface DetailPanelProps {
@@ -152,6 +157,10 @@ export function DetailPanel({
                 diffs={compare?.result?.fieldDiffs ?? []}
                 unchangedDiffs={compare?.result?.unchangedFieldDiffs ?? []}
                 hasResult={hasComparedResult}
+                entry={compare?.entry}
+                preview={compare?.preview}
+                fieldSelections={compare?.fieldSelections}
+                onFieldSelectionChange={compare?.onFieldSelectionChange}
               />
             )}
 

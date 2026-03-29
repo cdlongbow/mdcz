@@ -1,6 +1,7 @@
 import { Website } from "@shared/enums";
 import type { CrawlerData, FieldDiff, LocalScanEntry, MaintenancePreviewItem } from "@shared/types";
 import { afterEach, describe, expect, it } from "vitest";
+import { formatMaintenanceStatus } from "@/lib/formatMaintenanceStatus";
 import {
   buildCommittedCrawlerData,
   buildMaintenanceCommitItem,
@@ -15,7 +16,17 @@ import {
   summarizeMaintenanceExecutionGroups,
   summarizeMaintenancePreviewGroups,
 } from "@/lib/maintenanceGrouping";
-import { useMaintenanceStore } from "@/store/maintenanceStore";
+import { useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
+import {
+  applyMaintenanceExecutionItemResult,
+  applyMaintenancePreviewResult,
+  changeMaintenancePreset,
+  clearMaintenancePreviewResults,
+  invalidateMaintenancePreview,
+  toggleMaintenanceSelectedIds,
+} from "@/store/maintenanceSession";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Old Title",
@@ -72,7 +83,9 @@ const createImageCollectionDiff = (overrides: ImageCollectionDiffInput): FieldDi
 });
 
 afterEach(() => {
-  useMaintenanceStore.getState().reset();
+  useMaintenancePreviewStore.getState().reset();
+  useMaintenanceExecutionStore.getState().reset();
+  useMaintenanceEntryStore.getState().reset();
 });
 
 describe("maintenance multipart grouping", () => {
@@ -812,8 +825,8 @@ describe("resolveMaintenanceDiffImageSrc", () => {
   });
 });
 
-describe("useMaintenanceStore", () => {
-  it("preserves preview diffs during optimistic execution, clears stale results on new previews, and can roll back execution state", () => {
+describe("maintenance execution stores", () => {
+  it("preserves preview diffs during optimistic execution and can roll back execution state", () => {
     const fieldDiff = createValueDiff({
       field: "title" as const,
       label: "标题",
@@ -836,26 +849,28 @@ describe("useMaintenanceStore", () => {
       targetDir: "/organized",
       changed: true,
     };
+    const previewResults = {
+      "entry-1": {
+        entryId: "entry-1",
+        status: "ready" as const,
+        fieldDiffs: [fieldDiff],
+        unchangedFieldDiffs: [unchangedFieldDiff],
+        pathDiff,
+      },
+    };
 
-    useMaintenanceStore.getState().applyPreviewResult({
-      items: [
-        {
-          entryId: "entry-1",
-          status: "ready",
-          fieldDiffs: [fieldDiff],
-          unchangedFieldDiffs: [unchangedFieldDiff],
-          pathDiff,
-        },
-      ],
+    useMaintenanceEntryStore.getState().setEntries([createEntry(createCrawlerData())], "/media");
+    useMaintenanceExecutionStore.getState().beginExecution({
+      entryIds: ["entry-1"],
+      previewResults,
+      displayCount: 1,
     });
-
-    useMaintenanceStore.getState().beginExecution(["entry-1"]);
-    useMaintenanceStore.getState().applyItemResult({
+    applyMaintenanceExecutionItemResult({
       entryId: "entry-1",
       status: "processing",
     });
 
-    expect(useMaintenanceStore.getState().itemResults["entry-1"]).toEqual({
+    expect(useMaintenanceExecutionStore.getState().itemResults["entry-1"]).toEqual({
       entryId: "entry-1",
       status: "processing",
       fieldDiffs: [fieldDiff],
@@ -863,88 +878,274 @@ describe("useMaintenanceStore", () => {
       pathDiff,
     });
 
-    useMaintenanceStore.getState().applyItemResult({
-      entryId: "entry-1",
-      status: "success",
-      fieldDiffs: [
-        createValueDiff({
-          field: "title",
-          label: "标题",
-          oldValue: "Old Title",
-          newValue: "Older Preview",
-          changed: true,
-        }),
-      ],
+    useMaintenanceExecutionStore.getState().rollbackExecutionStart();
+
+    expect(useMaintenanceExecutionStore.getState().executionStatus).toBe("idle");
+    expect(useMaintenanceExecutionStore.getState().progressTotal).toBe(0);
+    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({});
+  });
+});
+
+describe("maintenance preview store", () => {
+  it("keeps preview refresh state separate from full invalidation", () => {
+    useMaintenanceExecutionStore.setState({
+      executionStatus: "idle",
+      progressValue: 100,
+      progressCurrent: 1,
+      progressTotal: 1,
+      statusText: "执行完成 · 成功 1 · 失败 0",
+      itemResults: {
+        "entry-1": {
+          entryId: "entry-1",
+          status: "success",
+        },
+      },
+    });
+    useMaintenancePreviewStore.setState({
+      previewPending: false,
+      executeDialogOpen: true,
+      previewResults: {
+        "entry-1": {
+          entryId: "entry-1",
+          status: "ready",
+        },
+      },
+      fieldSelections: {
+        "entry-1": {
+          title: "new",
+        },
+      },
     });
 
-    useMaintenanceStore.getState().applyPreviewResult({
+    useMaintenancePreviewStore.getState().beginPreviewRequest();
+
+    expect(useMaintenancePreviewStore.getState().previewPending).toBe(true);
+    expect(useMaintenancePreviewStore.getState().executeDialogOpen).toBe(false);
+    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({
+      "entry-1": {
+        entryId: "entry-1",
+        status: "success",
+      },
+    });
+
+    clearMaintenancePreviewResults();
+
+    expect(useMaintenancePreviewStore.getState().previewPending).toBe(false);
+    expect(useMaintenancePreviewStore.getState().executeDialogOpen).toBe(false);
+    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
+    expect(useMaintenancePreviewStore.getState().fieldSelections).toEqual({});
+    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({
+      "entry-1": {
+        entryId: "entry-1",
+        status: "success",
+      },
+    });
+    useMaintenancePreviewStore.setState({
+      previewPending: true,
+      executeDialogOpen: true,
+      previewResults: {
+        "entry-1": {
+          entryId: "entry-1",
+          status: "ready",
+        },
+      },
+      fieldSelections: {
+        "entry-1": {
+          title: "new",
+        },
+      },
+    });
+
+    useMaintenanceEntryStore.getState().setEntries([createEntry(createCrawlerData())], "/media");
+    invalidateMaintenancePreview();
+
+    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({});
+    expect(useMaintenancePreviewStore.getState().previewPending).toBe(false);
+    expect(useMaintenancePreviewStore.getState().executeDialogOpen).toBe(false);
+    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
+    expect(useMaintenancePreviewStore.getState().fieldSelections).toEqual({});
+  });
+
+  it("retargets the active entry to the latest preview set and exposes preview diffs instead of stale execution results", () => {
+    const firstEntry = createEntry(createCrawlerData());
+    const secondEntry: LocalScanEntry = {
+      ...createEntry(createCrawlerData({ number: "ABC-124", title: "Another Title", title_zh: "另一个标题" })),
+      id: "entry-2",
+      videoPath: "/media/ABC-124.mp4",
+      fileInfo: {
+        ...createEntry().fileInfo,
+        filePath: "/media/ABC-124.mp4",
+        fileName: "ABC-124.mp4",
+        number: "ABC-124",
+      },
+      nfoPath: "/media/ABC-124.nfo",
+    };
+
+    useMaintenanceEntryStore.getState().setEntries([firstEntry, secondEntry], "/media");
+    useMaintenanceEntryStore.getState().setActiveId("entry-2");
+    useMaintenanceExecutionStore.setState({
+      executionStatus: "idle",
+      progressValue: 100,
+      progressCurrent: 1,
+      progressTotal: 1,
+      statusText: "执行完成 · 成功 0 · 失败 1",
+      itemResults: {
+        "entry-1": {
+          entryId: "entry-1",
+          status: "failed",
+          error: "旧执行结果",
+        },
+      },
+    });
+
+    applyMaintenancePreviewResult({
       items: [
         {
           entryId: "entry-1",
           status: "ready",
-          unchangedFieldDiffs: [
+          fieldDiffs: [
             createValueDiff({
               field: "title",
               label: "标题",
-              oldValue: "Same Title",
-              newValue: "Same Title",
-              changed: false,
+              oldValue: "Old Title",
+              newValue: "New Title",
+              changed: true,
             }),
           ],
         },
       ],
     });
 
-    expect(useMaintenanceStore.getState().itemResults).toEqual({});
-    expect(useMaintenanceStore.getState().previewResults["entry-1"]?.unchangedFieldDiffs).toEqual([
-      createValueDiff({
-        field: "title",
-        label: "标题",
-        oldValue: "Same Title",
-        newValue: "Same Title",
-        changed: false,
-      }),
-    ]);
+    const entryState = useMaintenanceEntryStore.getState();
+    const executionState = useMaintenanceExecutionStore.getState();
+    const previewState = useMaintenancePreviewStore.getState();
+    const group = findMaintenanceEntryGroup(entryState.entries, "entry-1", {
+      itemResults: executionState.itemResults,
+      previewResults: previewState.previewResults,
+    });
 
-    useMaintenanceStore.getState().beginExecution(["entry-1"]);
-    useMaintenanceStore.getState().rollbackExecutionStart();
-
-    expect(useMaintenanceStore.getState().executionStatus).toBe("idle");
-    expect(useMaintenanceStore.getState().progressTotal).toBe(0);
-    expect(useMaintenanceStore.getState().itemResults).toEqual({});
-    expect(useMaintenanceStore.getState().previewResults["entry-1"]?.unchangedFieldDiffs).toEqual([
-      createValueDiff({
-        field: "title",
-        label: "标题",
-        oldValue: "Same Title",
-        newValue: "Same Title",
-        changed: false,
-      }),
-    ]);
+    expect(entryState.activeId).toBe("entry-1");
+    expect(executionState.itemResults).toEqual({});
+    expect(group?.compareResult).toMatchObject({
+      entryId: "entry-1",
+      status: "ready",
+    });
   });
 
+  it("invalidates preview state through session actions when selections or preset change", () => {
+    useMaintenanceEntryStore.getState().setEntries(
+      [
+        createEntry(createCrawlerData()),
+        {
+          ...createEntry(createCrawlerData({ number: "ABC-124" })),
+          id: "entry-2",
+        },
+      ],
+      "/media",
+    );
+    useMaintenanceExecutionStore.setState({
+      executionStatus: "idle",
+      progressValue: 100,
+      progressCurrent: 1,
+      progressTotal: 1,
+      statusText: "执行完成 · 成功 1 · 失败 0",
+      itemResults: {
+        "entry-1": {
+          entryId: "entry-1",
+          status: "success",
+        },
+      },
+    });
+    useMaintenancePreviewStore.setState({
+      previewPending: false,
+      executeDialogOpen: true,
+      previewResults: {
+        "entry-1": {
+          entryId: "entry-1",
+          status: "ready",
+        },
+      },
+      fieldSelections: {
+        "entry-1": {
+          title: "new",
+        },
+      },
+    });
+
+    toggleMaintenanceSelectedIds(["entry-2"]);
+
+    expect(useMaintenanceEntryStore.getState().selectedIds).toEqual(["entry-1"]);
+    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
+    expect(useMaintenanceExecutionStore.getState().itemResults).toEqual({});
+
+    useMaintenancePreviewStore.setState({
+      previewPending: false,
+      executeDialogOpen: true,
+      previewResults: {
+        "entry-1": {
+          entryId: "entry-1",
+          status: "ready",
+        },
+      },
+      fieldSelections: {
+        "entry-1": {
+          title: "new",
+        },
+      },
+    });
+
+    changeMaintenancePreset("refresh_data");
+
+    expect(useMaintenanceEntryStore.getState().presetId).toBe("refresh_data");
+    expect(useMaintenancePreviewStore.getState().previewResults).toEqual({});
+  });
+});
+
+describe("formatMaintenanceStatus", () => {
   it("keeps stopped wording after an interrupted run becomes idle", () => {
-    useMaintenanceStore.getState().beginExecution(["entry-1", "entry-2"]);
-    useMaintenanceStore.getState().applyItemResult({
-      entryId: "entry-1",
-      status: "success",
-    });
-    useMaintenanceStore.getState().applyItemResult({
-      entryId: "entry-2",
-      status: "failed",
-      error: "维护已停止，项目未执行",
-    });
-    useMaintenanceStore.getState().setExecutionStatus("stopping");
-    useMaintenanceStore.getState().setStatusText("正在停止维护操作...");
+    const entries = [
+      {
+        ...createEntry(),
+        id: "entry-1",
+      },
+      {
+        ...createEntry(),
+        id: "entry-2",
+        videoPath: "/media/ABC-124.mp4",
+        fileInfo: {
+          ...createEntry().fileInfo,
+          filePath: "/media/ABC-124.mp4",
+          fileName: "ABC-124.mp4",
+          number: "ABC-124",
+        },
+      },
+    ];
+    const itemResults = {
+      "entry-1": {
+        entryId: "entry-1",
+        status: "success" as const,
+      },
+      "entry-2": {
+        entryId: "entry-2",
+        status: "failed" as const,
+        error: "维护已停止，项目未执行",
+      },
+    };
 
-    useMaintenanceStore.getState().applyStatusSnapshot({
-      state: "idle",
-      totalEntries: 0,
-      completedEntries: 0,
-      successCount: 0,
-      failedCount: 0,
-    });
+    const statusText = formatMaintenanceStatus(
+      {
+        state: "idle",
+        totalEntries: 0,
+        completedEntries: 0,
+        successCount: 0,
+        failedCount: 0,
+      },
+      entries,
+      itemResults,
+      "正在停止维护操作...",
+      "stopping",
+    );
 
-    expect(useMaintenanceStore.getState().statusText).toBe("已停止 · 成功 1 · 失败/取消 1");
+    expect(statusText).toBe("已停止 · 成功 1 · 失败/取消 1");
   });
 });

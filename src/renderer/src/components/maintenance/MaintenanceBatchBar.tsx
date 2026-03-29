@@ -22,7 +22,17 @@ import {
   summarizeMaintenancePreviewGroups,
 } from "@/lib/maintenanceGrouping";
 import { cn } from "@/lib/utils";
-import { useMaintenanceStore } from "@/store/maintenanceStore";
+import { useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
+import {
+  applyMaintenancePreviewResult,
+  applyMaintenanceScanResult,
+  beginMaintenanceExecution,
+  beginMaintenancePreviewRequest,
+  changeMaintenancePreset,
+  setMaintenancePreviewPending,
+} from "@/store/maintenanceSession";
 import { useScrapeStore } from "@/store/scrapeStore";
 
 interface MaintenanceBatchBarProps {
@@ -70,53 +80,36 @@ const buildExecutableEntries = (
 
 export default function MaintenanceBatchBar({ mediaPath, className }: MaintenanceBatchBarProps) {
   const isScraping = useScrapeStore((state) => state.isScraping);
-  const {
-    entries,
-    selectedIds,
-    presetId,
-    setPresetId,
-    executionStatus,
-    lastScannedDir,
-    currentPath,
-    executeDialogOpen,
-    previewPending,
-    previewResults,
-    itemResults,
-    setEntries,
-    setExecutionStatus,
-    setCurrentPath,
-    setStatusText,
-    setExecuteDialogOpen,
-    setPreviewPending,
-    applyPreviewResult,
-    clearPreviewResults,
-    beginExecution,
-    rollbackExecutionStart,
-  } = useMaintenanceStore(
+  const { entries, selectedIds, presetId, lastScannedDir, currentPath, setCurrentPath } = useMaintenanceEntryStore(
     useShallow((state) => ({
       entries: state.entries,
       selectedIds: state.selectedIds,
       presetId: state.presetId,
-      setPresetId: state.setPresetId,
-      executionStatus: state.executionStatus,
       lastScannedDir: state.lastScannedDir,
       currentPath: state.currentPath,
-      executeDialogOpen: state.executeDialogOpen,
-      previewPending: state.previewPending,
-      previewResults: state.previewResults,
-      itemResults: state.itemResults,
-      setEntries: state.setEntries,
-      setExecutionStatus: state.setExecutionStatus,
       setCurrentPath: state.setCurrentPath,
-      setStatusText: state.setStatusText,
-      setExecuteDialogOpen: state.setExecuteDialogOpen,
-      setPreviewPending: state.setPreviewPending,
-      applyPreviewResult: state.applyPreviewResult,
-      clearPreviewResults: state.clearPreviewResults,
-      beginExecution: state.beginExecution,
-      rollbackExecutionStart: state.rollbackExecutionStart,
     })),
   );
+  const { executionStatus, itemResults, setExecutionStatus, setStatusText, rollbackExecutionStart } =
+    useMaintenanceExecutionStore(
+      useShallow((state) => ({
+        executionStatus: state.executionStatus,
+        itemResults: state.itemResults,
+        setExecutionStatus: state.setExecutionStatus,
+        setStatusText: state.setStatusText,
+        rollbackExecutionStart: state.rollbackExecutionStart,
+      })),
+    );
+  const { previewPending, previewResults, fieldSelections, executeDialogOpen, setExecuteDialogOpen } =
+    useMaintenancePreviewStore(
+      useShallow((state) => ({
+        previewPending: state.previewPending,
+        previewResults: state.previewResults,
+        fieldSelections: state.fieldSelections,
+        executeDialogOpen: state.executeDialogOpen,
+        setExecuteDialogOpen: state.setExecuteDialogOpen,
+      })),
+    );
 
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
 
@@ -177,13 +170,17 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       return;
     }
 
+    setExecuteDialogOpen(false);
     setExecutionStatus("scanning");
     setCurrentPath(dirPath);
     setStatusText("正在扫描目录...");
 
     try {
       const result = await ipc.maintenance.scan(dirPath);
-      setEntries(result.entries, dirPath);
+      applyMaintenanceScanResult(result.entries, dirPath);
+      if (result.entries.length === 0) {
+        setStatusText("未发现可维护项目");
+      }
       toast.success(`扫描完成，共发现 ${countMaintenanceDisplayItems(result.entries)} 个项目`);
     } catch (error) {
       setExecutionStatus("idle");
@@ -208,15 +205,14 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       return false;
     }
 
-    clearPreviewResults();
-    setPreviewPending(true);
+    beginMaintenancePreviewRequest();
     setStatusText(`正在预览 ${countMaintenanceDisplayItems(selectedEntries)} 项...`);
     const requestedPresetId = presetId;
     const requestedEntries = selectedEntries;
 
     try {
       const preview = await ipc.maintenance.preview(selectedEntries, presetId);
-      const liveState = useMaintenanceStore.getState();
+      const liveState = useMaintenanceEntryStore.getState();
       const previewExpired =
         liveState.presetId !== requestedPresetId ||
         !areEntriesEqual(
@@ -228,20 +224,20 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
         return null;
       }
 
-      applyPreviewResult(preview);
+      applyMaintenancePreviewResult(preview);
       const previewMap = Object.fromEntries(preview.items.map((item) => [item.entryId, item]));
-      const previewSummary = summarizeMaintenancePreviewGroups(requestedEntries, previewMap);
-      setStatusText(formatPreviewStatusText(previewSummary.readyCount, previewSummary.blockedCount));
+      const nextPreviewSummary = summarizeMaintenancePreviewGroups(requestedEntries, previewMap);
+      setStatusText(formatPreviewStatusText(nextPreviewSummary.readyCount, nextPreviewSummary.blockedCount));
       if (usesDiffView) {
         toast.info(
-          previewSummary.readyCount > 0
+          nextPreviewSummary.readyCount > 0
             ? "预览完成，请在右侧数据对比中确认并进行数据替换。"
             : "预览完成，请在右侧数据对比中查看阻塞项。",
         );
       }
       return preview;
     } catch (error) {
-      const liveState = useMaintenanceStore.getState();
+      const liveState = useMaintenanceEntryStore.getState();
       const previewExpired =
         liveState.presetId !== requestedPresetId ||
         !areEntriesEqual(
@@ -253,9 +249,8 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
         return null;
       }
 
-      setPreviewPending(false);
+      setMaintenancePreviewPending(false);
       setStatusText("预览失败");
-      clearPreviewResults();
       toast.error(`预览失败: ${asMessage(error)}`);
       return null;
     }
@@ -272,13 +267,14 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       return;
     }
 
-    const liveState = useMaintenanceStore.getState();
-    const effectivePreviewResults = previewMapOverride ?? liveState.previewResults;
-    const effectiveFieldSelections = liveState.fieldSelections;
-    const latestSelectedEntries = liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.id));
+    const liveEntryState = useMaintenanceEntryStore.getState();
+    const effectivePreviewResults = previewMapOverride ?? previewResults;
+    const latestSelectedEntries = liveEntryState.entries.filter((entry) =>
+      liveEntryState.selectedIds.includes(entry.id),
+    );
     const executableEntries = buildExecutableEntries(latestSelectedEntries, effectivePreviewResults);
     const commitItems = executableEntries.map((entry) =>
-      buildMaintenanceCommitItem(entry, effectivePreviewResults[entry.id], effectiveFieldSelections[entry.id]),
+      buildMaintenanceCommitItem(entry, effectivePreviewResults[entry.id], fieldSelections[entry.id]),
     );
 
     if (commitItems.length === 0) {
@@ -286,7 +282,11 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       return;
     }
 
-    beginExecution(commitItems.map((item) => item.entry.id));
+    beginMaintenanceExecution(
+      commitItems.map((item) => item.entry.id),
+      effectivePreviewResults,
+      countMaintenanceDisplayItems(commitItems.map((item) => item.entry)),
+    );
     setCurrentPath(commitItems[0]?.entry.videoPath ?? currentPath);
     setStatusText(`正在执行 ${countMaintenanceDisplayItems(commitItems.map((item) => item.entry))} 项...`);
 
@@ -319,7 +319,9 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
             <span className="text-xs font-medium text-muted-foreground">预设</span>
             <Select
               value={presetId}
-              onValueChange={(value) => setPresetId(value as typeof presetId)}
+              onValueChange={(value) => {
+                changeMaintenancePreset(value as typeof presetId);
+              }}
               disabled={executing}
             >
               <SelectTrigger className="border-0 bg-transparent px-0 shadow-none focus:ring-0">
@@ -347,7 +349,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
             <Button
               variant="outline"
               onClick={handleScan}
-              disabled={isScraping || scanning}
+              disabled={isScraping || scanning || previewPending}
               className="h-9 rounded-lg px-4"
             >
               <RefreshCw className={cn("mr-2 h-4 w-4", scanning && "animate-spin")} />
@@ -377,7 +379,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
               <Button
                 variant="secondary"
                 onClick={() => setExecuteDialogOpen(true)}
-                disabled={previewPending || !hasPreviewResults || previewSummary.readyCount === 0}
+                disabled={scanning || previewPending || !hasPreviewResults || previewSummary.readyCount === 0}
                 className="h-9 rounded-lg px-4"
               >
                 数据替换

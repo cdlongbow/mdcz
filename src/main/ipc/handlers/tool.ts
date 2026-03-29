@@ -38,6 +38,7 @@ export const createToolHandlers = (
   | typeof IpcChannel.Tool_ToggleDevTools
 > => {
   const {
+    signalService,
     networkClient,
     jellyfinActorPhotoService,
     jellyfinActorInfoService,
@@ -48,6 +49,20 @@ export const createToolHandlers = (
     amazonPosterToolService,
   } = context;
   let symlinkTask: Promise<void> | null = null;
+  let symlinkTaskStarting = false;
+
+  const reportHandlerError = (operation: string, error: unknown): void => {
+    logger.error(`${operation} failed: ${toErrorMessage(error)}`);
+  };
+
+  const raiseHandlerError = <T>(operation: string, error: unknown): T => {
+    reportHandlerError(operation, error);
+    throw asSerializableIpcError(error);
+  };
+
+  const reportBackgroundError = (operation: string, error: unknown): void => {
+    signalService.showLogText(`${operation} failed: ${toErrorMessage(error)}`, "error");
+  };
 
   const ensureJellyfinReady = async () => {
     await configManager.ensureLoaded();
@@ -80,8 +95,7 @@ export const createToolHandlers = (
         if (error instanceof JellyfinServiceError) {
           throw createIpcError(error.code, error.message);
         }
-        logger.error(`Tool_JellyfinServerCheckConnection failed: ${toErrorMessage(error)}`);
-        throw asSerializableIpcError(error);
+        return raiseHandlerError("Tool_JellyfinServerCheckConnection", error);
       }
     }),
     [IpcChannel.Tool_JellyfinActorPhotoSync]: t.procedure
@@ -101,8 +115,7 @@ export const createToolHandlers = (
           if (error instanceof ActorPhotoFolderConfigurationError) {
             throw createIpcError(error.code, error.message);
           }
-          logger.error(`Tool_JellyfinActorPhotoSync failed: ${toErrorMessage(error)}`);
-          throw asSerializableIpcError(error);
+          return raiseHandlerError("Tool_JellyfinActorPhotoSync", error);
         }
       }),
     [IpcChannel.Tool_JellyfinActorInfoSync]: t.procedure
@@ -119,8 +132,7 @@ export const createToolHandlers = (
           if (error instanceof JellyfinServiceError) {
             throw createIpcError(error.code, error.message);
           }
-          logger.error(`Tool_JellyfinActorInfoSync failed: ${toErrorMessage(error)}`);
-          throw asSerializableIpcError(error);
+          return raiseHandlerError("Tool_JellyfinActorInfoSync", error);
         }
       }),
     [IpcChannel.Tool_EmbyServerCheckConnection]: t.procedure.action(async () => {
@@ -131,8 +143,7 @@ export const createToolHandlers = (
         if (error instanceof EmbyServiceError) {
           throw createIpcError(error.code, error.message);
         }
-        logger.error(`Tool_EmbyServerCheckConnection failed: ${toErrorMessage(error)}`);
-        throw asSerializableIpcError(error);
+        return raiseHandlerError("Tool_EmbyServerCheckConnection", error);
       }
     }),
     [IpcChannel.Tool_EmbyActorPhotoSync]: t.procedure
@@ -152,8 +163,7 @@ export const createToolHandlers = (
           if (error instanceof ActorPhotoFolderConfigurationError) {
             throw createIpcError(error.code, error.message);
           }
-          logger.error(`Tool_EmbyActorPhotoSync failed: ${toErrorMessage(error)}`);
-          throw asSerializableIpcError(error);
+          return raiseHandlerError("Tool_EmbyActorPhotoSync", error);
         }
       }),
     [IpcChannel.Tool_EmbyActorInfoSync]: t.procedure.input<{ mode?: "all" | "missing" }>().action(async ({ input }) => {
@@ -168,8 +178,7 @@ export const createToolHandlers = (
         if (error instanceof EmbyServiceError) {
           throw createIpcError(error.code, error.message);
         }
-        logger.error(`Tool_EmbyActorInfoSync failed: ${toErrorMessage(error)}`);
-        throw asSerializableIpcError(error);
+        return raiseHandlerError("Tool_EmbyActorInfoSync", error);
       }
     }),
     [IpcChannel.Tool_CreateSymlink]: t.procedure
@@ -183,7 +192,7 @@ export const createToolHandlers = (
       }>()
       .action(async ({ input }): Promise<{ message: string }> => {
         try {
-          if (symlinkTask) {
+          if (symlinkTaskStarting || symlinkTask) {
             throw createIpcError(IpcErrorCode.OPERATION_CANCELLED, "Softlink creation task is already running");
           }
 
@@ -195,11 +204,13 @@ export const createToolHandlers = (
             throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Source and destination directories are required");
           }
 
+          symlinkTaskStarting = true;
+          const preparedTask = await symlinkService.prepare({ sourceDir, destDir, copyFiles });
           symlinkTask = symlinkService
-            .run({ sourceDir, destDir, copyFiles })
+            .runPrepared(preparedTask)
             .then(() => undefined)
             .catch((error) => {
-              logger.error(`Tool_CreateSymlink failed: ${toErrorMessage(error)}`);
+              reportBackgroundError("Tool_CreateSymlink", error);
             })
             .finally(() => {
               symlinkTask = null;
@@ -210,8 +221,9 @@ export const createToolHandlers = (
           if (error instanceof SymlinkServiceError) {
             throw createIpcError(error.code, error.message);
           }
-          logger.error(`Tool_CreateSymlink setup failed: ${toErrorMessage(error)}`);
-          throw asSerializableIpcError(error);
+          return raiseHandlerError("Tool_CreateSymlink setup", error);
+        } finally {
+          symlinkTaskStarting = false;
         }
       }),
     [IpcChannel.Tool_AmazonPosterScan]: t.procedure.input<{ directory?: string }>().action(async ({ input }) => {
@@ -224,8 +236,7 @@ export const createToolHandlers = (
           items: await amazonPosterToolService.scan(directory),
         };
       } catch (error) {
-        logger.error(`Tool_AmazonPosterScan failed: ${toErrorMessage(error)}`);
-        throw asSerializableIpcError(error);
+        return raiseHandlerError("Tool_AmazonPosterScan", error);
       }
     }),
     [IpcChannel.Tool_AmazonPosterLookup]: t.procedure
@@ -239,8 +250,7 @@ export const createToolHandlers = (
           }
           return amazonPosterToolService.lookup(nfoPath, title);
         } catch (error) {
-          logger.error(`Tool_AmazonPosterLookup failed: ${toErrorMessage(error)}`);
-          throw asSerializableIpcError(error);
+          return raiseHandlerError("Tool_AmazonPosterLookup", error);
         }
       }),
     [IpcChannel.Tool_AmazonPosterApply]: t.procedure
@@ -251,8 +261,7 @@ export const createToolHandlers = (
             results: await amazonPosterToolService.apply(input?.items ?? []),
           };
         } catch (error) {
-          logger.error(`Tool_AmazonPosterApply failed: ${toErrorMessage(error)}`);
-          throw asSerializableIpcError(error);
+          return raiseHandlerError("Tool_AmazonPosterApply", error);
         }
       }),
     [IpcChannel.Tool_ToggleDevTools]: t.procedure.action(async () => {

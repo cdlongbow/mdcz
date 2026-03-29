@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { ipc } from "@/client/ipc";
 import { normalizeResultItem } from "@/lib/normalizeResult";
 import { createRuntimeLog, useLogStore } from "@/store/logStore";
-import { useMaintenanceStore } from "@/store/maintenanceStore";
+import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
+import { applyMaintenanceExecutionItemResult, applyMaintenanceStatusSnapshot } from "@/store/maintenanceSession";
 import { useScrapeStore } from "@/store/scrapeStore";
 
 type SyncTarget = "all" | "scrape" | "maintenance";
@@ -30,7 +31,7 @@ const getPollingInterval = (
 
 const getSyncTarget = (): SyncTarget => {
   const scrapeState = useScrapeStore.getState().scrapeStatus;
-  const maintenanceState = useMaintenanceStore.getState().executionStatus;
+  const maintenanceState = useMaintenanceExecutionStore.getState().executionStatus;
   const scrapeBusy = scrapeState !== "idle";
   const maintenanceBusy = maintenanceState !== "idle";
 
@@ -95,7 +96,7 @@ export const useIpcSync = () => {
 
       clearPollTimeout();
       const scrapeState = useScrapeStore.getState().scrapeStatus;
-      const maintenanceState = useMaintenanceStore.getState().executionStatus;
+      const maintenanceState = useMaintenanceExecutionStore.getState().executionStatus;
 
       pollTimeout = window.setTimeout(
         () => {
@@ -117,7 +118,7 @@ export const useIpcSync = () => {
         }
 
         if (target === "maintenance") {
-          useMaintenanceStore.getState().applyStatusSnapshot(await ipc.maintenance.getStatus());
+          applyMaintenanceStatusSnapshot(await ipc.maintenance.getStatus());
           return;
         }
 
@@ -126,7 +127,7 @@ export const useIpcSync = () => {
           ipc.maintenance.getStatus(),
         ]);
         applyScrapeStatusSnapshot(scrapeStatus);
-        useMaintenanceStore.getState().applyStatusSnapshot(maintenanceStatus);
+        applyMaintenanceStatusSnapshot(maintenanceStatus);
       })()
         .catch((error) => {
           reportAsyncError(`Failed to sync runtime status during ${context}`, error);
@@ -166,7 +167,7 @@ export const useIpcSync = () => {
 
         unsubscribers.push(
           ipc.on.maintenanceItemResult((payload) => {
-            useMaintenanceStore.getState().applyItemResult(payload);
+            applyMaintenanceExecutionItemResult(payload);
             safeSync("maintenance item result", "maintenance");
           }),
         );
@@ -190,7 +191,7 @@ export const useIpcSync = () => {
 
         unsubscribers.push(
           ipc.on.progress((payload) => {
-            const maintenanceState = useMaintenanceStore.getState();
+            const maintenanceState = useMaintenanceExecutionStore.getState();
             if (maintenanceState.executionStatus === "executing" || maintenanceState.executionStatus === "stopping") {
               maintenanceState.setProgress(payload.value, payload.current, payload.total);
               return;

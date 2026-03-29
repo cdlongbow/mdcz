@@ -7,30 +7,32 @@ import { WorkbenchFooter } from "@/components/shared/WorkbenchFooter";
 import { Progress } from "@/components/ui/Progress";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/Resizable";
 import { findMaintenanceEntryGroup } from "@/lib/maintenanceGrouping";
-import { useMaintenanceStore } from "@/store/maintenanceStore";
+import { useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
+import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
+import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
 
 export default function MaintenanceWorkbench() {
-  const {
-    executionStatus,
-    progressValue,
-    currentPath,
-    statusText,
-    entries,
-    activeId,
-    presetId,
-    previewResults,
-    itemResults,
-  } = useMaintenanceStore(
+  const { currentPath, entries, activeId, presetId } = useMaintenanceEntryStore(
     useShallow((state) => ({
-      executionStatus: state.executionStatus,
-      progressValue: state.progressValue,
       currentPath: state.currentPath,
-      statusText: state.statusText,
       entries: state.entries,
       activeId: state.activeId,
       presetId: state.presetId,
-      previewResults: state.previewResults,
+    })),
+  );
+  const { executionStatus, progressValue, statusText, itemResults } = useMaintenanceExecutionStore(
+    useShallow((state) => ({
+      executionStatus: state.executionStatus,
+      progressValue: state.progressValue,
+      statusText: state.statusText,
       itemResults: state.itemResults,
+    })),
+  );
+  const { previewResults, fieldSelections, setFieldSelection } = useMaintenancePreviewStore(
+    useShallow((state) => ({
+      previewResults: state.previewResults,
+      fieldSelections: state.fieldSelections,
+      setFieldSelection: state.setFieldSelection,
     })),
   );
 
@@ -52,6 +54,16 @@ export default function MaintenanceWorkbench() {
       activeGroup.representative
     );
   }, [activeGroup, activeId, compareResult]);
+  const detailPreview = useMemo(() => {
+    if (!activeGroup || !detailEntry) {
+      return undefined;
+    }
+
+    return (
+      activeGroup.previewItems.find((item) => item.entryId === detailEntry.id) ??
+      activeGroup.previewItems.find((item) => item.entryId === activeId)
+    );
+  }, [activeGroup, activeId, detailEntry]);
   const usesDiffView = presetId === "refresh_data" || presetId === "rebuild_all";
   const detailItem = useMemo(() => {
     if (!activeGroup || !detailEntry) {
@@ -112,6 +124,10 @@ export default function MaintenanceWorkbench() {
                   ? {
                       result: compareResult,
                       badgeLabel: "数据对比",
+                      entry: detailEntry ?? undefined,
+                      preview: detailPreview,
+                      fieldSelections: detailEntry ? fieldSelections[detailEntry.id] : undefined,
+                      onFieldSelectionChange: setFieldSelection,
                     }
                   : undefined
               }

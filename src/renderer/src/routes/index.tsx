@@ -16,7 +16,7 @@ import { TabButton } from "@/components/ui/TabButton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
 import { CURRENT_CONFIG_QUERY_KEY, useCurrentConfig } from "@/hooks/useCurrentConfig";
 import { buildAmbiguousUncensoredScrapeGroups } from "@/lib/scrapeResultGrouping";
-import { useMaintenanceStore } from "@/store/maintenanceStore";
+import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
 
@@ -81,7 +81,7 @@ function Index() {
       clearResults: state.clearResults,
     })),
   );
-  const maintenanceStatus = useMaintenanceStore((state) => state.executionStatus);
+  const maintenanceStatus = useMaintenanceExecutionStore((state) => state.executionStatus);
   const { workbenchMode, setWorkbenchMode, setSelectedResultId } = useUIStore(
     useShallow((state) => ({
       workbenchMode: state.workbenchMode,

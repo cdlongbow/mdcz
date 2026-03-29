@@ -105,6 +105,12 @@ export interface CreateSymlinkPayload {
   copyFiles?: boolean;
 }
 
+interface PreparedSymlinkTask {
+  sourceDir: string;
+  destDir: string;
+  copyFiles: boolean;
+}
+
 export interface SymlinkTaskResult {
   total: number;
   linked: number;
@@ -129,7 +135,7 @@ export interface SymlinkServiceDependencies {
 export class SymlinkService {
   constructor(private readonly deps: SymlinkServiceDependencies) {}
 
-  async run(payload: CreateSymlinkPayload): Promise<SymlinkTaskResult> {
+  async prepare(payload: CreateSymlinkPayload): Promise<PreparedSymlinkTask> {
     const sourceInput = payload.sourceDir.trim();
     const destInput = payload.destDir.trim();
     if (!sourceInput || !destInput) {
@@ -151,6 +157,18 @@ export class SymlinkService {
 
     await mkdir(destDir, { recursive: true });
 
+    return {
+      sourceDir,
+      destDir,
+      copyFiles,
+    };
+  }
+
+  async run(payload: CreateSymlinkPayload): Promise<SymlinkTaskResult> {
+    return this.runPrepared(await this.prepare(payload));
+  }
+
+  async runPrepared({ sourceDir, destDir, copyFiles }: PreparedSymlinkTask): Promise<SymlinkTaskResult> {
     const copyExtensions = new Set([".nfo", ".jpg", ".png", ...SUBTITLE_EXTENSIONS]);
 
     this.deps.signalService.showLogText("Starting symlink task");

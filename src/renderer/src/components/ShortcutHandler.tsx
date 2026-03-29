@@ -1,3 +1,4 @@
+import type { RendererShortcutAction } from "@shared/ipcEvents";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { toast } from "sonner";
@@ -14,17 +15,7 @@ import { buildScrapeResultGroupActionContext, findScrapeResultGroup } from "@/li
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
 
-type ShortcutAction =
-  | "start-or-stop-scrape"
-  | "search-by-number"
-  | "search-by-url"
-  | "delete-file"
-  | "delete-file-and-folder"
-  | "open-folder"
-  | "edit-nfo"
-  | "play-video";
-
-const WORKBENCH_ONLY_SHORTCUTS = new Set<ShortcutAction>([
+const WORKBENCH_ONLY_SHORTCUTS = new Set<RendererShortcutAction>([
   "start-or-stop-scrape",
   "search-by-number",
   "search-by-url",
@@ -64,7 +55,7 @@ export function ShortcutHandler() {
         return;
       }
 
-      const action = payload.action as ShortcutAction;
+      const action = payload.action;
       const uiState = useUIStore.getState();
 
       if (WORKBENCH_ONLY_SHORTCUTS.has(action) && (pathname !== "/" || uiState.workbenchMode !== "scrape")) {

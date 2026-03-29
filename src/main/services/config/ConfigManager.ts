@@ -68,7 +68,10 @@ export class ConfigManager extends EventEmitter {
 
   async ensureLoaded(): Promise<void> {
     if (!this.initializePromise) {
-      this.initializePromise = this.loadInternal();
+      this.initializePromise = this.loadInternal().catch((error) => {
+        this.initializePromise = null;
+        throw error;
+      });
     }
 
     await this.initializePromise;
