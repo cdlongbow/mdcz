@@ -1,4 +1,5 @@
 import type { UncensoredConfirmItem, UncensoredConfirmResultItem } from "@shared/types";
+import { deriveGroupingDirectoryFromPath } from "@/lib/multipartDisplay";
 import { buildRendererGroups, findRendererGroup, type RendererGroup } from "@/lib/rendererGroupModel";
 import type { ScrapeResult } from "@/store/scrapeStore";
 
@@ -11,12 +12,11 @@ export interface ScrapeResultGroupActionContext {
 }
 
 const scrapeResultMultipartSelectors = {
-  getDirectory: (result: ScrapeResult) =>
-    result.status === "success" ? (result.multipartDirectory ?? result.outputPath) : undefined,
+  getDirectory: (result: ScrapeResult) => result.outputPath ?? deriveGroupingDirectoryFromPath(result.path),
   getFileName: (result: ScrapeResult) => result.path,
-  getItemKey: (result: ScrapeResult) => result.id,
+  getItemKey: (result: ScrapeResult) => result.fileId,
   getNumber: (result: ScrapeResult) => result.number,
-  getPart: (result: ScrapeResult) => result.multipartPart,
+  getPart: (result: ScrapeResult) => result.part,
 };
 
 const pickLongerArray = <T>(incoming: T[] | undefined, existing: T[] | undefined): T[] | undefined => {
@@ -33,7 +33,7 @@ const pickLongerArray = <T>(incoming: T[] | undefined, existing: T[] | undefined
 
 const mergeGroupedScrapeResult = (existing: ScrapeResult, incoming: ScrapeResult): ScrapeResult => {
   return {
-    id: existing.id,
+    fileId: existing.fileId,
     status: existing.status,
     number: existing.number,
     path: existing.path || incoming.path,
@@ -60,18 +60,23 @@ const mergeGroupedScrapeResult = (existing: ScrapeResult, incoming: ScrapeResult
     errorMessage: incoming.errorMessage ?? existing.errorMessage,
     uncensoredAmbiguous: incoming.uncensoredAmbiguous ?? existing.uncensoredAmbiguous,
     nfoPath: incoming.nfoPath ?? existing.nfoPath,
-    multipartDirectory: existing.multipartDirectory ?? incoming.multipartDirectory,
-    multipartPart: existing.multipartPart ?? incoming.multipartPart,
+    part: existing.part ?? incoming.part,
   };
 };
+
+const getScrapeGroupStatus = (group: ScrapeResultGroup["items"]): ScrapeResult["status"] =>
+  group.some((item) => item.status === "failed") ? "failed" : "success";
+
+const getScrapeGroupErrorText = (group: ScrapeResultGroup["items"]): string | undefined =>
+  group.find((item) => item.status === "failed" && item.errorMessage)?.errorMessage;
 
 export const buildScrapeResultGroups = (results: ScrapeResult[]): ScrapeResultGroup[] => {
   return buildRendererGroups(results, {
     selectors: scrapeResultMultipartSelectors,
     buildDisplay: (group) =>
       group.items.reduce((merged, result) => mergeGroupedScrapeResult(merged, result), group.representative),
-    buildStatus: (_group, display) => display.status,
-    buildErrorText: (_group, display) => display.errorMessage,
+    buildStatus: (group) => getScrapeGroupStatus(group.items),
+    buildErrorText: (group) => getScrapeGroupErrorText(group.items),
   });
 };
 
@@ -98,7 +103,7 @@ export const findScrapeResultGroupItem = (
     return undefined;
   }
 
-  return group.items.find((item) => item.id === itemId);
+  return group.items.find((item) => item.fileId === itemId);
 };
 
 export const getScrapeResultGroupVideoPaths = (group: ScrapeResultGroup): string[] => {
@@ -122,6 +127,7 @@ export const buildUncensoredConfirmItemsForScrapeGroups = (
 ): UncensoredConfirmItem[] =>
   groups.flatMap((group) =>
     getAmbiguousUncensoredItemsForScrapeGroup(group).map((item) => ({
+      fileId: item.fileId,
       nfoPath: item.nfoPath,
       videoPath: item.path,
       choice: choicesByGroupId[group.id] ?? "uncensored",
@@ -152,5 +158,5 @@ export const findScrapeResultGroup = (
   results: ScrapeResult[],
   id: string | null | undefined,
 ): ScrapeResultGroup | undefined => {
-  return findRendererGroup(buildScrapeResultGroups(results), id, (result) => result.id);
+  return findRendererGroup(buildScrapeResultGroups(results), id, (result) => result.fileId);
 };

@@ -158,7 +158,7 @@ function SceneImageOption({
 }
 
 export default function ChangeDiffView({
-  entryId,
+  fileId,
   diffs,
   unchangedDiffs = [],
   hasResult = false,
@@ -167,17 +167,17 @@ export default function ChangeDiffView({
   fieldSelections,
   onFieldSelectionChange,
 }: {
-  entryId: string;
+  fileId: string;
   diffs: FieldDiff[];
   unchangedDiffs?: FieldDiff[];
   hasResult?: boolean;
   entry?: LocalScanEntry;
   preview?: MaintenancePreviewItem;
   fieldSelections?: Record<string, MaintenanceFieldSelectionSide>;
-  onFieldSelectionChange?: (entryId: string, field: FieldDiff["field"], side: MaintenanceFieldSelectionSide) => void;
+  onFieldSelectionChange?: (fileId: string, field: FieldDiff["field"], side: MaintenanceFieldSelectionSide) => void;
 }) {
   const selectField = (field: FieldDiff["field"], side: MaintenanceFieldSelectionSide) => {
-    onFieldSelectionChange?.(entryId, field, side);
+    onFieldSelectionChange?.(fileId, field, side);
   };
 
   const renderChangedOptions = (diff: FieldDiff) => {
@@ -304,7 +304,7 @@ export default function ChangeDiffView({
 
   const renderDiffCard = (diff: FieldDiff, mode: "changed" | "unchanged") => {
     return (
-      <Card key={`${entryId}-${mode}-${diff.field}`} className="rounded-xl border shadow-sm">
+      <Card key={`${fileId}-${mode}-${diff.field}`} className="rounded-xl border shadow-sm">
         <CardHeader className="pb-0">
           <CardTitle className="text-sm font-semibold">{diff.label}</CardTitle>
         </CardHeader>

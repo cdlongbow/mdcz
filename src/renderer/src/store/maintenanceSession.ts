@@ -24,7 +24,7 @@ const resolveNextActiveId = (
     return currentActiveId;
   }
 
-  return Object.values(previewResults)[0]?.entryId ?? currentActiveId;
+  return Object.values(previewResults)[0]?.fileId ?? currentActiveId;
 };
 
 export const beginMaintenancePreviewRequest = (): void => {
@@ -53,7 +53,7 @@ export const applyMaintenancePreviewResult = (result: MaintenancePreviewResult):
   }
 
   const entryStore = useMaintenanceEntryStore.getState();
-  const previewResults = Object.fromEntries(result.items.map((item) => [item.entryId, item]));
+  const previewResults = Object.fromEntries(result.items.map((item) => [item.fileId, item]));
   const nextActiveId = resolveNextActiveId(entryStore.activeId, previewResults);
 
   useMaintenancePreviewStore.getState().applyPreviewResult(result);
@@ -79,19 +79,9 @@ export const toggleMaintenanceSelectedIds = (ids: string[]): void => {
   useMaintenanceEntryStore.getState().toggleSelectedIds(ids);
 };
 
-export const toggleMaintenanceSelectAll = (ids: string[]): void => {
-  invalidateMaintenancePreview();
-  useMaintenanceEntryStore.getState().toggleSelectAll(ids);
-};
-
-export const beginMaintenanceExecution = (
-  entryIds: string[],
-  previewResults: Record<string, MaintenancePreviewItem>,
-  displayCount: number,
-): void => {
+export const beginMaintenanceExecution = (fileIds: string[], displayCount: number): void => {
   useMaintenanceExecutionStore.getState().beginExecution({
-    entryIds,
-    previewResults,
+    fileIds,
     displayCount,
   });
 };

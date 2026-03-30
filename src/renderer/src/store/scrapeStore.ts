@@ -2,10 +2,10 @@ import type { FileInfo, UncensoredConfirmResultItem } from "@shared/types";
 import type { StateCreator } from "zustand";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { deriveMultipartDirectoryFromPath } from "@/lib/multipartDisplay";
+import { deriveGroupingDirectoryFromPath } from "@/lib/multipartDisplay";
 
 export interface ScrapeResult {
-  id: string;
+  fileId: string;
   status: "success" | "failed";
   number: string;
   title?: string;
@@ -35,10 +35,8 @@ export interface ScrapeResult {
   uncensoredAmbiguous?: boolean;
   /** NFO path for post-scrape operations like uncensored confirmation. */
   nfoPath?: string;
-  /** Directory key used by the shared multipart display grouping rule. */
-  multipartDirectory?: string;
   /** Multipart metadata preserved from the backend file info. */
-  multipartPart?: FileInfo["part"];
+  part?: FileInfo["part"];
 }
 
 interface ScrapeState {
@@ -107,10 +105,10 @@ const storeCreator: StateCreator<ScrapeState> = (set) => ({
   setFailedCount: (count) => set({ failedCount: Math.max(0, count) }),
   resolveUncensoredResults: (updates) =>
     set((state) => {
-      const updateBySourcePath = new Map(updates.map((item) => [item.sourceVideoPath, item]));
+      const updateByFileId = new Map(updates.map((item) => [item.fileId, item]));
       return {
         results: state.results.map((result) => {
-          const matched = updateBySourcePath.get(result.path);
+          const matched = updateByFileId.get(result.fileId);
           if (!matched) {
             return result;
           }
@@ -119,8 +117,7 @@ const storeCreator: StateCreator<ScrapeState> = (set) => ({
             ...result,
             path: matched.targetVideoPath,
             nfoPath: matched.targetNfoPath,
-            outputPath: deriveMultipartDirectoryFromPath(matched.targetVideoPath),
-            multipartDirectory: deriveMultipartDirectoryFromPath(matched.targetVideoPath),
+            outputPath: deriveGroupingDirectoryFromPath(matched.targetVideoPath),
             uncensoredAmbiguous: false,
           };
         }),

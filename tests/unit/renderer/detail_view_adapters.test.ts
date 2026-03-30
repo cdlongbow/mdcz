@@ -19,8 +19,7 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
 });
 
 const createEntry = (crawlerData: CrawlerData): LocalScanEntry => ({
-  id: "entry-1",
-  videoPath: "/media/ABC-123.mp4",
+  fileId: "entry-1",
   nfoPath: "/media/ABC-123.nfo",
   fileInfo: {
     filePath: "/media/ABC-123.mp4",
@@ -38,7 +37,6 @@ const createEntry = (crawlerData: CrawlerData): LocalScanEntry => ({
     fanart: "/media/fanart.jpg",
     sceneImages: ["/media/extrafanart/fanart1.jpg"],
     trailer: "/media/trailer.mp4",
-    nfo: "/media/ABC-123.nfo",
     actorPhotos: [],
   },
   currentDir: "/media",
@@ -47,7 +45,7 @@ const createEntry = (crawlerData: CrawlerData): LocalScanEntry => ({
 describe("toDetailViewItemFromScrapeResult", () => {
   it("maps scrape result fields into the shared detail item shape", () => {
     const result: ScrapeResult = {
-      id: "scrape-1",
+      fileId: "scrape-1",
       status: "success",
       number: "ABC-123",
       title: "Remote Title",
@@ -156,7 +154,7 @@ describe("toDetailViewItemFromMaintenanceEntry", () => {
       }),
     );
     const preview: MaintenancePreviewItem = {
-      entryId: entry.id,
+      fileId: entry.fileId,
       status: "blocked",
       error: "Preview blocked",
     };
@@ -196,7 +194,7 @@ describe("toDetailViewItemFromMaintenanceEntry", () => {
       scanError: "NFO 解析失败: NFO missing website",
     };
     const preview: MaintenancePreviewItem = {
-      entryId: entry.id,
+      fileId: entry.fileId,
       status: "ready",
       proposedCrawlerData: createCrawlerData({
         title: "Remote Title",

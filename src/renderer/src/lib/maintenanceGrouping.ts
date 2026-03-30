@@ -26,31 +26,19 @@ interface MaintenancePreviewGroupSummary {
   readyCount: number;
   blockedCount: number;
 }
-
-const resolveMaintenanceGroupingDirectory = (
-  entry: LocalScanEntry,
-  options: BuildMaintenanceEntryGroupsOptions,
-): string | undefined => {
-  return (
-    options.itemResults?.[entry.id]?.pathDiff?.currentDir ??
-    options.previewResults?.[entry.id]?.pathDiff?.currentDir ??
-    entry.currentDir
-  );
-};
-
-const createMaintenanceMultipartSelectors = (options: BuildMaintenanceEntryGroupsOptions) => ({
-  getDirectory: (entry: LocalScanEntry) => resolveMaintenanceGroupingDirectory(entry, options),
+const maintenanceMultipartSelectors = {
+  getDirectory: (entry: LocalScanEntry) => entry.groupingDirectory ?? entry.currentDir,
   getFileName: (entry: LocalScanEntry) => entry.fileInfo.fileName,
-  getItemKey: (entry: LocalScanEntry) => entry.id,
+  getItemKey: (entry: LocalScanEntry) => entry.fileId,
   getNumber: (entry: LocalScanEntry) => entry.fileInfo.number,
   getPart: (entry: LocalScanEntry) => entry.fileInfo.part,
-});
+};
 
 const getMaintenanceGroupStatus = (
   group: MultipartDisplayGroup<LocalScanEntry>,
   itemResults: Record<string, MaintenanceItemResult>,
 ): MaintenanceEntryGroup["status"] => {
-  const statuses = group.items.map((entry) => getMaintenanceEntryStatus(entry, itemResults[entry.id]));
+  const statuses = group.items.map((entry) => getMaintenanceEntryStatus(entry, itemResults[entry.fileId]));
   if (statuses.some((value) => value === "failed")) {
     return "failed";
   }
@@ -76,22 +64,22 @@ const pickMaintenanceCompareResult = (
     return failedResult;
   }
 
-  const representativeResult = resultItems.find((item) => item.entryId === group.representative.id);
-  if (representativeResult) {
-    return representativeResult;
-  }
-
   const blockedPreview = previewItems.find((item) => item.status === "blocked");
   if (blockedPreview) {
     return blockedPreview;
   }
 
-  const representativePreview = previewItems.find((item) => item.entryId === group.representative.id);
+  const representativePreview = previewItems.find((item) => item.fileId === group.representative.fileId);
   if (representativePreview) {
     return representativePreview;
   }
 
-  return resultItems[0] ?? previewItems[0];
+  const representativeResult = resultItems.find((item) => item.fileId === group.representative.fileId);
+  if (representativeResult) {
+    return representativeResult;
+  }
+
+  return previewItems[0] ?? resultItems[0];
 };
 
 export const buildMaintenanceEntryGroups = (
@@ -102,19 +90,19 @@ export const buildMaintenanceEntryGroups = (
   const previewResults = options.previewResults ?? {};
 
   return buildRendererGroups(entries, {
-    selectors: createMaintenanceMultipartSelectors(options),
+    selectors: maintenanceMultipartSelectors,
     buildStatus: (group) => getMaintenanceGroupStatus(group, itemResults),
     buildErrorText: (group) =>
       group.items
-        .map((entry) => itemResults[entry.id]?.error ?? entry.scanError ?? previewResults[entry.id]?.error)
+        .map((entry) => itemResults[entry.fileId]?.error ?? entry.scanError ?? previewResults[entry.fileId]?.error)
         .find((value): value is string => Boolean(value)),
   }).map((group) => {
     const resultItems = group.items.flatMap((entry) => {
-      const result = itemResults[entry.id];
+      const result = itemResults[entry.fileId];
       return result ? [result] : [];
     });
     const previewItems = group.items.flatMap((entry) => {
-      const preview = previewResults[entry.id];
+      const preview = previewResults[entry.fileId];
       return preview ? [preview] : [];
     });
 
@@ -130,7 +118,7 @@ export const buildMaintenanceEntryGroups = (
 export const countMaintenanceDisplayItems = (
   entries: LocalScanEntry[],
   options: BuildMaintenanceEntryGroupsOptions = {},
-): number => countMultipartDisplayGroups(entries, createMaintenanceMultipartSelectors(options));
+): number => countMultipartDisplayGroups(entries, maintenanceMultipartSelectors);
 
 export const formatMaintenanceIdleStatusText = (entries: LocalScanEntry[], emptyText = "就绪"): string => {
   if (entries.length === 0) {
@@ -150,7 +138,7 @@ export const summarizeMaintenancePreviewGroups = (
 
   for (const group of buildMaintenanceEntryGroups(entries, { previewResults })) {
     const groupPreviewItems = group.items.flatMap((entry) => {
-      const preview = previewResults[entry.id];
+      const preview = previewResults[entry.fileId];
       return preview ? [preview] : [];
     });
 
@@ -188,7 +176,7 @@ export const summarizeMaintenanceExecutionGroups = (
 
   for (const group of buildMaintenanceEntryGroups(entries, { itemResults })) {
     const groupResultItems = group.items.flatMap((entry) => {
-      const result = itemResults[entry.id];
+      const result = itemResults[entry.fileId];
       return result ? [result] : [];
     });
 
@@ -257,5 +245,5 @@ export const findMaintenanceEntryGroup = (
   id: string | null | undefined,
   options: BuildMaintenanceEntryGroupsOptions = {},
 ): MaintenanceEntryGroup | undefined => {
-  return findRendererGroup(buildMaintenanceEntryGroups(entries, options), id, (entry) => entry.id);
+  return findRendererGroup(buildMaintenanceEntryGroups(entries, options), id, (entry) => entry.fileId);
 };

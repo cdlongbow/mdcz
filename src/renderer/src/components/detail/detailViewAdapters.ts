@@ -18,7 +18,7 @@ export const getMaintenanceDetailTitle = (entry: LocalScanEntry) =>
   entry.crawlerData?.title_zh ?? entry.crawlerData?.title ?? entry.fileInfo.fileName;
 
 export const toDetailViewItemFromScrapeResult = (result: ScrapeResult): DetailViewItem => ({
-  id: result.id,
+  id: result.fileId,
   status: result.status,
   number: result.number,
   title: result.title,
@@ -61,11 +61,11 @@ export const toDetailViewItemFromMaintenanceEntry = (
   const errorMessage = hasResultError ? result?.error : !result && hasEntryError ? entry.scanError : undefined;
 
   return {
-    id: entry.id,
+    id: entry.fileId,
     status: hasResultError || (!result && hasEntryError) ? "failed" : "success",
     number: entry.fileInfo.number,
     minimalErrorView,
-    path: entry.videoPath,
+    path: entry.fileInfo.filePath,
     nfoPath: entry.nfoPath,
     title: data?.title_zh ?? data?.title ?? entry.fileInfo.fileName,
     actors: data?.actors,

@@ -204,6 +204,7 @@ export const confirmUncensoredItems = async (
 
         updatedCount += 1;
         updatedItems.push({
+          fileId: processed.item.fileId,
           sourceVideoPath: processed.item.videoPath,
           sourceNfoPath: processed.effectiveNfoPath,
           targetVideoPath: processed.outputVideoPath,

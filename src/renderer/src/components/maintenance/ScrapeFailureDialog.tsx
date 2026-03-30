@@ -150,7 +150,7 @@ export function ScrapeFailureDialog({ open, onOpenChange }: ScrapeFailureDialogP
           <div className="space-y-1 py-2">
             {failedResults.map((item) => (
               <div
-                key={item.id}
+                key={item.fileId}
                 className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors group"
               >
                 <Checkbox

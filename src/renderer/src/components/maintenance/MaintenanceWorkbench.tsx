@@ -47,10 +47,10 @@ export default function MaintenanceWorkbench() {
       return null;
     }
 
-    const comparedEntryId = compareResult && "entryId" in compareResult ? compareResult.entryId : undefined;
+    const comparedFileId = compareResult && "fileId" in compareResult ? compareResult.fileId : undefined;
     return (
-      activeGroup.items.find((entry) => entry.id === comparedEntryId) ??
-      activeGroup.items.find((entry) => entry.id === activeId) ??
+      activeGroup.items.find((entry) => entry.fileId === comparedFileId) ??
+      activeGroup.items.find((entry) => entry.fileId === activeId) ??
       activeGroup.representative
     );
   }, [activeGroup, activeId, compareResult]);
@@ -60,8 +60,8 @@ export default function MaintenanceWorkbench() {
     }
 
     return (
-      activeGroup.previewItems.find((item) => item.entryId === detailEntry.id) ??
-      activeGroup.previewItems.find((item) => item.entryId === activeId)
+      activeGroup.previewItems.find((item) => item.fileId === detailEntry.fileId) ??
+      activeGroup.previewItems.find((item) => item.fileId === activeId)
     );
   }, [activeGroup, activeId, detailEntry]);
   const usesDiffView = presetId === "refresh_data" || presetId === "rebuild_all";
@@ -126,7 +126,7 @@ export default function MaintenanceWorkbench() {
                       badgeLabel: "数据对比",
                       entry: detailEntry ?? undefined,
                       preview: detailPreview,
-                      fieldSelections: detailEntry ? fieldSelections[detailEntry.id] : undefined,
+                      fieldSelections: detailEntry ? fieldSelections[detailEntry.fileId] : undefined,
                       onFieldSelectionChange: setFieldSelection,
                     }
                   : undefined

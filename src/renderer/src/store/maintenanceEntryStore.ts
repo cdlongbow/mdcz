@@ -58,9 +58,9 @@ const mergePersistedMaintenanceEntryState = (
   const persistedState = (persisted ?? {}) as Partial<PersistedMaintenanceEntryState>;
   const entries = persistedState.entries ?? current.entries;
   const activeId =
-    persistedState.activeId && entries.some((entry) => entry.id === persistedState.activeId)
+    persistedState.activeId && entries.some((entry) => entry.fileId === persistedState.activeId)
       ? persistedState.activeId
-      : (entries[0]?.id ?? null);
+      : (entries[0]?.fileId ?? null);
 
   return {
     ...current,
@@ -82,7 +82,6 @@ export interface MaintenanceEntryState {
   setEntries: (entries: LocalScanEntry[], dirPath: string) => void;
   setActiveId: (id: string | null) => void;
   toggleSelectedIds: (ids: string[]) => void;
-  toggleSelectAll: (ids: string[]) => void;
   setFilter: (filter: MaintenanceFilter) => void;
   setCurrentPath: (path: string) => void;
   applyExecutionResult: (payload: MaintenanceItemResult) => void;
@@ -97,13 +96,13 @@ const createMaintenanceEntryState: StateCreator<MaintenanceEntryState> = (set) =
   setEntries: (entries, dirPath) =>
     set((state) => {
       const nextActiveId =
-        state.activeId && entries.some((entry) => entry.id === state.activeId)
+        state.activeId && entries.some((entry) => entry.fileId === state.activeId)
           ? state.activeId
-          : (entries[0]?.id ?? null);
+          : (entries[0]?.fileId ?? null);
 
       return {
         entries,
-        selectedIds: entries.map((entry) => entry.id),
+        selectedIds: entries.map((entry) => entry.fileId),
         activeId: nextActiveId,
         currentPath: dirPath,
         lastScannedDir: dirPath,
@@ -118,21 +117,16 @@ const createMaintenanceEntryState: StateCreator<MaintenanceEntryState> = (set) =
       selectedIds: toggleIdsInSelection(state.selectedIds, ids),
     })),
 
-  toggleSelectAll: (ids) =>
-    set((state) => ({
-      selectedIds: toggleIdsInSelection(state.selectedIds, ids),
-    })),
-
   setFilter: (filter) => set({ filter }),
 
   setCurrentPath: (path) => set({ currentPath: path }),
 
   applyExecutionResult: (payload) =>
     set((state) => {
-      const targetEntry = state.entries.find((entry) => entry.id === payload.entryId);
+      const targetEntry = state.entries.find((entry) => entry.fileId === payload.fileId);
       const updatedEntry = payload.status === "success" ? payload.updatedEntry : undefined;
       const nextEntries = updatedEntry
-        ? state.entries.map((entry) => (entry.id === payload.entryId ? updatedEntry : entry))
+        ? state.entries.map((entry) => (entry.fileId === payload.fileId ? updatedEntry : entry))
         : state.entries;
       const currentEntry = updatedEntry ?? targetEntry;
 
@@ -140,9 +134,9 @@ const createMaintenanceEntryState: StateCreator<MaintenanceEntryState> = (set) =
         entries: nextEntries,
         currentPath:
           payload.status === "success"
-            ? (currentEntry?.videoPath ?? state.currentPath)
-            : (targetEntry?.videoPath ?? state.currentPath),
-        activeId: state.activeId ?? payload.entryId,
+            ? (currentEntry?.fileInfo.filePath ?? state.currentPath)
+            : (targetEntry?.fileInfo.filePath ?? state.currentPath),
+        activeId: state.activeId ?? payload.fileId,
       };
     }),
 

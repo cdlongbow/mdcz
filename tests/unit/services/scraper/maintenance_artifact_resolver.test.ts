@@ -13,7 +13,7 @@ const createTempDir = async (): Promise<string> => {
 };
 
 const createEntry = (root: string, nfoFileName = "ABC-123.nfo") => ({
-  id: "entry-1",
+  fileId: "entry-1",
   videoPath: join(root, "ABC-123.mp4"),
   fileInfo: {
     filePath: join(root, "ABC-123.mp4"),
@@ -26,7 +26,6 @@ const createEntry = (root: string, nfoFileName = "ABC-123.nfo") => ({
   assets: {
     sceneImages: [],
     actorPhotos: [],
-    nfo: join(root, nfoFileName),
   },
   currentDir: root,
 });

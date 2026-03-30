@@ -35,7 +35,7 @@ export interface MaintenanceProcessResult {
 }
 
 export interface MaintenancePreviewFileResult {
-  entryId: string;
+  fileId: string;
   status: "ready" | "blocked";
   error?: string;
   fieldDiffs?: FieldDiff[];
@@ -159,6 +159,7 @@ export class MaintenanceFileScraper {
       this.setProgress(progress, 100);
 
       const result: ScrapeResult = {
+        fileId: entry.fileId,
         fileInfo: { ...fileInfo, filePath: outputVideoPath },
         status: "success",
         crawlerData: preparedCrawlerData,
@@ -195,7 +196,7 @@ export class MaintenanceFileScraper {
       });
 
       return {
-        entryId: entry.id,
+        fileId: entry.fileId,
         status: "ready",
         fieldDiffs: prepared.fieldDiffs,
         unchangedFieldDiffs: prepared.unchangedFieldDiffs,
@@ -205,7 +206,7 @@ export class MaintenanceFileScraper {
       };
     } catch (error) {
       return {
-        entryId: entry.id,
+        fileId: entry.fileId,
         status: "blocked",
         error: error instanceof Error ? error.message : String(error),
       };
@@ -215,6 +216,7 @@ export class MaintenanceFileScraper {
   private buildFailedResult(entry: LocalScanEntry, error: string): MaintenanceProcessResult {
     return {
       scrapeResult: {
+        fileId: entry.fileId,
         fileInfo: entry.fileInfo,
         status: "failed",
         error,
@@ -234,7 +236,6 @@ export class MaintenanceFileScraper {
   ): LocalScanEntry {
     return {
       ...entry,
-      videoPath: updates.fileInfo.filePath,
       fileInfo: updates.fileInfo,
       nfoPath: updates.nfoPath,
       crawlerData: crawlerData ?? entry.crawlerData,
@@ -242,6 +243,7 @@ export class MaintenanceFileScraper {
       scanError: undefined,
       assets: updates.assets,
       currentDir: updates.currentDir,
+      groupingDirectory: entry.groupingDirectory ?? entry.currentDir,
     };
   }
 

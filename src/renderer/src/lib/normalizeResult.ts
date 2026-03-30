@@ -1,5 +1,5 @@
 import type { ScrapeResult as BackendScrapeResult } from "@shared/types";
-import { deriveMultipartDirectoryFromPath } from "@/lib/multipartDisplay";
+import { deriveGroupingDirectoryFromPath } from "@/lib/multipartDisplay";
 import type { ScrapeResult } from "@/store/scrapeStore";
 
 export const formatDuration = (durationSeconds: number | undefined): string | undefined => {
@@ -28,10 +28,9 @@ export const normalizeResultItem = (payload: BackendScrapeResult): ScrapeResult 
   const remotePoster = data?.poster_url;
   const remoteThumb = data?.thumb_url ?? data?.fanart_url;
   const remoteFanart = data?.fanart_url ?? data?.thumb_url;
-  const multipartDirectory = payload.outputPath ?? deriveMultipartDirectoryFromPath(payload.fileInfo.filePath);
 
   return {
-    id: crypto.randomUUID(),
+    fileId: payload.fileId,
     status: payload.status === "failed" ? "failed" : "success",
     number: payload.fileInfo.number,
     path: payload.fileInfo.filePath,
@@ -55,13 +54,12 @@ export const normalizeResultItem = (payload: BackendScrapeResult): ScrapeResult 
     posterUrl: assets?.poster ?? remotePoster,
     thumbUrl: assets?.thumb ?? assets?.fanart ?? remoteThumb,
     fanartUrl: assets?.fanart ?? assets?.thumb ?? remoteFanart,
-    outputPath: payload.outputPath,
     sceneImages: assets?.sceneImages,
     sources: payload.sources as Record<string, string> | undefined,
     errorMessage: payload.error,
     uncensoredAmbiguous: payload.uncensoredAmbiguous,
     nfoPath: payload.nfoPath,
-    multipartDirectory,
-    multipartPart: payload.fileInfo.part,
+    part: payload.fileInfo.part,
+    outputPath: payload.outputPath ?? deriveGroupingDirectoryFromPath(payload.fileInfo.filePath),
   };
 };

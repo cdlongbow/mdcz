@@ -49,8 +49,7 @@ const createEntry = (
   crawlerData: CrawlerData,
   overrides: Partial<LocalScanEntry> = {},
 ): LocalScanEntry => ({
-  id: "entry-1",
-  videoPath: join(root, "ABC-123.mp4"),
+  fileId: "entry-1",
   fileInfo: {
     filePath: join(root, "ABC-123.mp4"),
     fileName: "ABC-123.mp4",
@@ -63,7 +62,6 @@ const createEntry = (
   assets: {
     sceneImages: [],
     actorPhotos: [],
-    nfo: join(root, "ABC-123.nfo"),
     ...(overrides.assets ?? {}),
   },
   currentDir: root,
@@ -285,7 +283,6 @@ describe("MaintenanceFileScraper actor image parity", () => {
           assets: {
             sceneImages: [],
             actorPhotos: [],
-            nfo: join(root, "ABC-123.nfo"),
             trailer: oldTrailerPath,
           },
         },

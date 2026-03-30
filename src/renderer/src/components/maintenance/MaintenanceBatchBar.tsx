@@ -63,7 +63,7 @@ const isPreviewGroupReady = (
   previewResults: Record<string, MaintenancePreviewItem>,
 ): boolean => {
   const previews = group.items.flatMap((entry) => {
-    const preview = previewResults[entry.id];
+    const preview = previewResults[entry.fileId];
     return preview ? [preview] : [];
   });
 
@@ -120,7 +120,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
   const scanning = executionStatus === "scanning";
   const hasPreviewResults = Object.keys(previewResults).length > 0;
   const selectedEntries = useMemo(
-    () => entries.filter((entry) => selectedIds.includes(entry.id)),
+    () => entries.filter((entry) => selectedIds.includes(entry.fileId)),
     [entries, selectedIds],
   );
   const groupedSelectedEntries = useMemo(
@@ -216,7 +216,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       const previewExpired =
         liveState.presetId !== requestedPresetId ||
         !areEntriesEqual(
-          liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.id)),
+          liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.fileId)),
           requestedEntries,
         );
 
@@ -225,7 +225,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       }
 
       applyMaintenancePreviewResult(preview);
-      const previewMap = Object.fromEntries(preview.items.map((item) => [item.entryId, item]));
+      const previewMap = Object.fromEntries(preview.items.map((item) => [item.fileId, item]));
       const nextPreviewSummary = summarizeMaintenancePreviewGroups(requestedEntries, previewMap);
       setStatusText(formatPreviewStatusText(nextPreviewSummary.readyCount, nextPreviewSummary.blockedCount));
       if (usesDiffView) {
@@ -241,7 +241,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       const previewExpired =
         liveState.presetId !== requestedPresetId ||
         !areEntriesEqual(
-          liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.id)),
+          liveState.entries.filter((entry) => liveState.selectedIds.includes(entry.fileId)),
           requestedEntries,
         );
 
@@ -270,11 +270,11 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     const liveEntryState = useMaintenanceEntryStore.getState();
     const effectivePreviewResults = previewMapOverride ?? previewResults;
     const latestSelectedEntries = liveEntryState.entries.filter((entry) =>
-      liveEntryState.selectedIds.includes(entry.id),
+      liveEntryState.selectedIds.includes(entry.fileId),
     );
     const executableEntries = buildExecutableEntries(latestSelectedEntries, effectivePreviewResults);
     const commitItems = executableEntries.map((entry) =>
-      buildMaintenanceCommitItem(entry, effectivePreviewResults[entry.id], fieldSelections[entry.id]),
+      buildMaintenanceCommitItem(entry, effectivePreviewResults[entry.fileId], fieldSelections[entry.fileId]),
     );
 
     if (commitItems.length === 0) {
@@ -284,11 +284,10 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
 
     const displayCount = countMaintenanceDisplayItems(commitItems.map((item) => item.entry));
     beginMaintenanceExecution(
-      commitItems.map((item) => item.entry.id),
-      effectivePreviewResults,
+      commitItems.map((item) => item.entry.fileId),
       displayCount,
     );
-    setCurrentPath(commitItems[0]?.entry.videoPath ?? currentPath);
+    setCurrentPath(commitItems[0]?.entry.fileInfo.filePath ?? currentPath);
     setStatusText(`正在执行 ${displayCount} 项...`);
 
     try {
@@ -361,7 +360,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
                 onClick={async () => {
                   const preview = await handlePreview();
                   if (preview && !usesDiffView) {
-                    const previewMap = Object.fromEntries(preview.items.map((item) => [item.entryId, item]));
+                    const previewMap = Object.fromEntries(preview.items.map((item) => [item.fileId, item]));
                     void handleExecute(previewMap);
                   }
                 }}
@@ -435,14 +434,14 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
               <div className="max-h-72 min-w-0 space-y-2 overflow-x-hidden overflow-y-auto rounded-xl border p-3">
                 {groupedSelectedEntries.map((group) => {
                   const previews = group.items.flatMap((entry) => {
-                    const preview = previewResults[entry.id];
+                    const preview = previewResults[entry.fileId];
                     return preview ? [preview] : [];
                   });
                   const blockedPreview = previews.find((preview) => preview.status === "blocked");
                   const ready = isPreviewGroupReady(group, previewResults);
                   const diffCount = Math.max(0, ...previews.map((preview) => preview.fieldDiffs?.length ?? 0));
                   const changedPathItems = group.items.flatMap((entry) => {
-                    const preview = previewResults[entry.id];
+                    const preview = previewResults[entry.fileId];
                     return preview?.pathDiff?.changed ? [{ entry, pathDiff: preview.pathDiff }] : [];
                   });
                   const hasPathChange = changedPathItems.length > 0;
@@ -483,7 +482,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
                           {hasPathChange && (
                             <div className="mt-3 space-y-2">
                               {changedPathItems.map(({ entry, pathDiff }) => (
-                                <div key={entry.id} className="rounded-md border bg-background/50 p-2">
+                                <div key={entry.fileId} className="rounded-md border bg-background/50 p-2">
                                   <div className="mb-2 text-[11px] font-medium text-muted-foreground">
                                     {entry.fileInfo.fileName}
                                   </div>

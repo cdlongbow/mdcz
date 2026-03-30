@@ -45,8 +45,7 @@ const waitForIdle = async (service: MaintenanceService): Promise<void> => {
 
 const createCommitItem = (id: string): MaintenanceCommitItem => ({
   entry: {
-    id,
-    videoPath: `/tmp/${id}.mp4`,
+    fileId: id,
     fileInfo: {
       filePath: `/tmp/${id}.mp4`,
       fileName: `${id}.mp4`,
@@ -103,6 +102,7 @@ describe("MaintenanceService stop flow", () => {
     runningTask.resolve({
       scrapeResult: {
         status: "success",
+        fileId: "abp-123",
         fileInfo: {
           filePath: "/tmp/abp-123.mp4",
           fileName: "abp-123.mp4",
@@ -133,15 +133,15 @@ describe("MaintenanceService stop flow", () => {
     expect(signalService.itemResults).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          entryId: "abp-123",
+          fileId: "abp-123",
           status: "processing",
         }),
         expect.objectContaining({
-          entryId: "abp-123",
+          fileId: "abp-123",
           status: "success",
         }),
         expect.objectContaining({
-          entryId: "abp-456",
+          fileId: "abp-456",
           status: "failed",
           error: "维护已停止，项目未执行",
         }),

@@ -30,6 +30,7 @@ describe("formatBitrate", () => {
 describe("normalizeResultItem", () => {
   it("maps backend scrape results into renderer-friendly items", () => {
     const payload: BackendScrapeResult = {
+      fileId: "file:/library/ABC-123/ABC-123.mp4",
       status: "success",
       fileInfo: {
         filePath: "/library/ABC-123/ABC-123.mp4",
@@ -101,19 +102,20 @@ describe("normalizeResultItem", () => {
       thumbUrl: "/art/thumb.jpg",
       fanartUrl: "/art/fanart.jpg",
       sceneImages: ["/art/scene-1.jpg"],
-      multipartDirectory: "/output/ABC-123",
-      multipartPart: {
+      outputPath: "/output/ABC-123",
+      part: {
         number: 1,
         suffix: "-cd1",
       },
       uncensoredAmbiguous: true,
       score: "4.6",
     });
-    expect(result.id).toEqual(expect.any(String));
+    expect(result.fileId).toBe("file:/library/ABC-123/ABC-123.mp4");
   });
 
   it("falls back to derived directories and remote assets when downloaded assets are missing", () => {
     const payload: BackendScrapeResult = {
+      fileId: "file:C:/library/XYZ-789/XYZ-789.mp4",
       status: "failed",
       fileInfo: {
         filePath: "C:\\library\\XYZ-789\\XYZ-789.mp4",
@@ -144,7 +146,7 @@ describe("normalizeResultItem", () => {
       posterUrl: "https://example.com/poster.jpg",
       thumbUrl: "https://example.com/thumb.jpg",
       fanartUrl: "https://example.com/fanart.jpg",
-      multipartDirectory: "C:\\library\\XYZ-789",
+      outputPath: "C:/library/XYZ-789",
       errorMessage: "Lookup failed",
     });
   });

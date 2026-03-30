@@ -74,6 +74,7 @@ describe("ScraperService stop flow", () => {
 
     runningTask.resolve({
       status: "success",
+      fileId: "abp-123",
       fileInfo: {
         filePath: "/tmp/ABP-123.mp4",
         fileName: "ABP-123.mp4",
@@ -122,6 +123,7 @@ describe("ScraperService stop flow", () => {
 
     runningTask.resolve({
       status: "success",
+      fileId: "abp-456",
       fileInfo: {
         filePath: "/tmp/ABP-456.mp4",
         fileName: "ABP-456.mp4",

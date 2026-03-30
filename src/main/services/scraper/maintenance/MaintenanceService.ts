@@ -170,7 +170,7 @@ export class MaintenanceService {
   }): Promise<void> {
     const { items, preset, config } = execution;
     const queue = this.queue;
-    const completedEntryIds = new Set<string>();
+    const completedFileIds = new Set<string>();
     if (!queue) {
       throw new Error("Maintenance queue is not initialized");
     }
@@ -187,7 +187,7 @@ export class MaintenanceService {
           if (this.controller?.signal.aborted) return;
 
           this.signalService.showMaintenanceItemResult({
-            entryId: entry.id,
+            fileId: entry.fileId,
             status: "processing",
           });
 
@@ -210,10 +210,10 @@ export class MaintenanceService {
             } else {
               this.status.failedCount += 1;
             }
-            completedEntryIds.add(entry.id);
+            completedFileIds.add(entry.fileId);
 
             const itemResult: MaintenanceItemResult = {
-              entryId: entry.id,
+              fileId: entry.fileId,
               status: result.scrapeResult.status === "success" ? "success" : "failed",
               error: result.scrapeResult.error,
               crawlerData: result.scrapeResult.crawlerData,
@@ -227,10 +227,10 @@ export class MaintenanceService {
           } catch (error) {
             this.status.completedEntries += 1;
             this.status.failedCount += 1;
-            completedEntryIds.add(entry.id);
+            completedFileIds.add(entry.fileId);
             this.logger.error(`Unexpected maintenance error while processing ${entry.fileInfo.number}`);
             this.signalService.showMaintenanceItemResult({
-              entryId: entry.id,
+              fileId: entry.fileId,
               status: "failed",
               error: error instanceof Error ? error.message : String(error),
             });
@@ -243,15 +243,15 @@ export class MaintenanceService {
 
       if (wasStopped) {
         for (const item of items) {
-          if (completedEntryIds.has(item.entry.id)) {
+          if (completedFileIds.has(item.entry.fileId)) {
             continue;
           }
 
-          completedEntryIds.add(item.entry.id);
+          completedFileIds.add(item.entry.fileId);
           this.status.completedEntries += 1;
           this.status.failedCount += 1;
           this.signalService.showMaintenanceItemResult({
-            entryId: item.entry.id,
+            fileId: item.entry.fileId,
             status: "failed",
             error: "维护已停止，项目未执行",
           });

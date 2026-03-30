@@ -10,6 +10,7 @@ import { pathExists } from "@main/utils/file";
 import { classifyMovie, isLikelyUncensoredNumber } from "@main/utils/movieClassification";
 import { parseFileInfo } from "@main/utils/number";
 import { probeVideoMetadata } from "@main/utils/video";
+import { buildFileId } from "@shared/mediaIdentity";
 import type { CrawlerData, FileInfo, NfoLocalState, ScrapeResult, VideoMeta } from "@shared/types";
 import { isAbortError, throwIfAborted } from "./abort";
 import type { AggregationResult, AggregationService } from "./aggregation";
@@ -64,6 +65,7 @@ export class FileScraper {
   ): Promise<ScrapeResult> {
     const taskId = randomUUID();
     const parsedFileInfo = parseFileInfo(filePath);
+    const fileId = buildFileId(parsedFileInfo.filePath);
     const fileInfoWithSubtitlesPromise = resolveFileInfoWithSubtitles(filePath, {
       parsedFileInfo,
     });
@@ -99,6 +101,7 @@ export class FileScraper {
           this.setProgress(progress, 100);
           fileInfo = await this.handleFailedFileMove(fileInfo, configuration);
           const failedResult: ScrapeResult = {
+            fileId,
             fileInfo,
             status: "failed",
             error: "No crawler returned metadata",
@@ -212,6 +215,7 @@ export class FileScraper {
           !isLikelyUncensoredNumber(preparedData.number || fileInfo.number);
 
         const result: ScrapeResult = {
+          fileId,
           fileInfo: {
             ...fileInfo,
             filePath: outputVideoPath,
@@ -235,6 +239,7 @@ export class FileScraper {
         this.logger.info(`Scrape aborted for ${fileInfo.filePath}`);
         this.setProgress(progress, 100);
         const skippedResult: ScrapeResult = {
+          fileId,
           fileInfo,
           status: "skipped",
           error: "Operation aborted",
@@ -256,6 +261,7 @@ export class FileScraper {
       }
 
       const failedResult: ScrapeResult = {
+        fileId,
         fileInfo,
         status: "failed",
         error: message,

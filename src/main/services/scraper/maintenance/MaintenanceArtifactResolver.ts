@@ -34,7 +34,6 @@ export class MaintenanceArtifactResolver {
           fanart: input.assets.fanart,
           sceneImages: input.assets.sceneImages,
           trailer: input.assets.trailer,
-          nfo: nfoPath,
           actorPhotos:
             (input.preparedActorPhotoPaths?.length ?? 0) > 0
               ? (input.preparedActorPhotoPaths ?? [])
@@ -60,7 +59,6 @@ export class MaintenanceArtifactResolver {
         trailer: await this.resolvePrimaryAsset(input.entry.assets.trailer, input.assets.trailer, outputDir, {
           discardExisting: input.assetDecisions?.trailer === "replace" && !input.assets.trailer,
         }),
-        nfo: nfoPath,
         actorPhotos:
           (input.preparedActorPhotoPaths?.length ?? 0) > 0
             ? (input.preparedActorPhotoPaths ?? [])

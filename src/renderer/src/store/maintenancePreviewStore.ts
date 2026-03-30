@@ -22,7 +22,7 @@ export interface MaintenancePreviewState {
   clearPreviewResults: () => void;
   setPreviewPending: (pending: boolean) => void;
   setExecuteDialogOpen: (open: boolean) => void;
-  setFieldSelection: (entryId: string, field: FieldDiff["field"], side: MaintenanceFieldSelectionSide) => void;
+  setFieldSelection: (fileId: string, field: FieldDiff["field"], side: MaintenanceFieldSelectionSide) => void;
   applyPreviewResult: (result: MaintenancePreviewResult) => void;
   reset: () => void;
 }
@@ -74,12 +74,12 @@ const createMaintenancePreviewState: StateCreator<MaintenancePreviewState> = (se
 
   setExecuteDialogOpen: (executeDialogOpen) => set({ executeDialogOpen }),
 
-  setFieldSelection: (entryId, field, side) =>
+  setFieldSelection: (fileId, field, side) =>
     set((state) => ({
       fieldSelections: {
         ...state.fieldSelections,
-        [entryId]: {
-          ...state.fieldSelections[entryId],
+        [fileId]: {
+          ...state.fieldSelections[fileId],
           [field]: side,
         },
       },
@@ -88,7 +88,7 @@ const createMaintenancePreviewState: StateCreator<MaintenancePreviewState> = (se
   applyPreviewResult: (result) =>
     set({
       previewPending: false,
-      previewResults: Object.fromEntries(result.items.map((item) => [item.entryId, item])),
+      previewResults: Object.fromEntries(result.items.map((item) => [item.fileId, item])),
       fieldSelections: {},
       executeDialogOpen: false,
     }),

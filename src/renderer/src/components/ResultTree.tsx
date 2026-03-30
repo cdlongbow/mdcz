@@ -164,13 +164,15 @@ export function ResultTree() {
     () =>
       resultGroups.map((group) => ({
         id: group.id,
-        active: group.items.some((item) => item.id === selectedResultId),
+        active: group.items.some((item) => item.fileId === selectedResultId),
         title: group.display.number || "Unknown",
         subtitle: group.display.title || getFileNameFromPath(group.display.path),
-        errorText: group.display.errorMessage,
-        status: group.display.status,
+        errorText: group.errorText ?? group.display.errorMessage,
+        status: group.status,
         onClick: () =>
-          setSelectedResultId(group.items.find((item) => item.id === selectedResultId)?.id ?? group.representative.id),
+          setSelectedResultId(
+            group.items.find((item) => item.fileId === selectedResultId)?.fileId ?? group.representative.fileId,
+          ),
         menuContent: buildMenuContent(group, selectedResultId),
       })),
     [resultGroups, selectedResultId, setSelectedResultId],

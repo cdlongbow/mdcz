@@ -37,7 +37,7 @@ interface DetailPanelCompareProps {
   entry?: LocalScanEntry;
   preview?: MaintenancePreviewItem;
   fieldSelections?: Record<string, MaintenanceFieldSelectionSide>;
-  onFieldSelectionChange?: (entryId: string, field: FieldDiff["field"], side: MaintenanceFieldSelectionSide) => void;
+  onFieldSelectionChange?: (fileId: string, field: FieldDiff["field"], side: MaintenanceFieldSelectionSide) => void;
 }
 
 interface DetailPanelProps {
@@ -153,7 +153,7 @@ export function DetailPanel({
 
             {shouldRenderDiffs && (
               <ChangeDiffView
-                entryId={item.id}
+                fileId={item.id}
                 diffs={compare?.result?.fieldDiffs ?? []}
                 unchangedDiffs={compare?.result?.unchangedFieldDiffs ?? []}
                 hasResult={hasComparedResult}

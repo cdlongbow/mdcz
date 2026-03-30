@@ -13,7 +13,7 @@ import { ContextMenuItem } from "@/components/ui/ContextMenu";
 import { buildMaintenanceEntryGroups, type MaintenanceEntryGroup } from "@/lib/maintenanceGrouping";
 import { type MaintenanceFilter, useMaintenanceEntryStore } from "@/store/maintenanceEntryStore";
 import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
-import { toggleMaintenanceSelectAll, toggleMaintenanceSelectedIds } from "@/store/maintenanceSession";
+import { toggleMaintenanceSelectedIds } from "@/store/maintenanceSession";
 
 const getTitle = (entry: LocalScanEntry) =>
   entry.crawlerData?.title_zh ?? entry.crawlerData?.title ?? entry.fileInfo.fileName;
@@ -45,9 +45,7 @@ function buildMenuContent(entry: LocalScanEntry) {
       toast.info("打开目录功能仅在桌面客户端可用");
       return;
     }
-    const slash = Math.max(entry.videoPath.lastIndexOf("/"), entry.videoPath.lastIndexOf("\\"));
-    const dir = slash > 0 ? entry.videoPath.slice(0, slash) : entry.videoPath;
-    void window.electron.openPath(dir);
+    void window.electron.openPath(entry.currentDir);
   };
 
   const handlePlay = () => {
@@ -55,11 +53,13 @@ function buildMenuContent(entry: LocalScanEntry) {
       toast.info("播放功能仅在桌面客户端可用");
       return;
     }
-    void window.electron.openPath(entry.videoPath);
+    void window.electron.openPath(entry.fileInfo.filePath);
   };
 
   const handleOpenNfo = () => {
-    window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path: entry.nfoPath ?? entry.videoPath } }));
+    window.dispatchEvent(
+      new CustomEvent("app:open-nfo", { detail: { path: entry.nfoPath ?? entry.fileInfo.filePath } }),
+    );
   };
 
   return (
@@ -111,11 +111,11 @@ export default function MaintenanceEntryList() {
   );
 
   const visibleEntries = sortedEntries.filter((group) => matchesFilter(filter, group.status));
-  const visibleIds = visibleEntries.flatMap((group) => group.items.map((entry) => entry.id));
+  const visibleIds = visibleEntries.flatMap((group) => group.items.map((entry) => entry.fileId));
   const isGroupFullySelected = (group: MaintenanceEntryGroup): boolean =>
-    group.items.every((entry) => selectedIds.includes(entry.id));
+    group.items.every((entry) => selectedIds.includes(entry.fileId));
   const isGroupPartiallySelected = (group: MaintenanceEntryGroup): boolean =>
-    group.items.some((entry) => selectedIds.includes(entry.id)) && !isGroupFullySelected(group);
+    group.items.some((entry) => selectedIds.includes(entry.fileId)) && !isGroupFullySelected(group);
   const allVisibleSelected = visibleEntries.length > 0 && visibleEntries.every((group) => isGroupFullySelected(group));
   const someVisibleSelected = visibleEntries.some(
     (group) => isGroupPartiallySelected(group) || isGroupFullySelected(group),
@@ -128,7 +128,7 @@ export default function MaintenanceEntryList() {
 
     return {
       id: group.id,
-      active: group.items.some((entry) => activeId === entry.id),
+      active: group.items.some((entry) => activeId === entry.fileId),
       title: representative.fileInfo.number,
       subtitle: buildGroupSubtitle(group),
       errorText: group.errorText,
@@ -138,13 +138,14 @@ export default function MaintenanceEntryList() {
           checked={checkedState}
           disabled={selectionLocked}
           onCheckedChange={() => {
-            toggleMaintenanceSelectedIds(group.items.map((entry) => entry.id));
+            toggleMaintenanceSelectedIds(group.items.map((entry) => entry.fileId));
           }}
           onClick={(event) => event.stopPropagation()}
         />
       ),
-      onClick: () => setActiveId(group.items.find((entry) => entry.id === activeId)?.id ?? representative.id),
-      menuContent: buildMenuContent(group.items.find((entry) => entry.id === activeId) ?? representative),
+      onClick: () =>
+        setActiveId(group.items.find((entry) => entry.fileId === activeId)?.fileId ?? representative.fileId),
+      menuContent: buildMenuContent(group.items.find((entry) => entry.fileId === activeId) ?? representative),
     };
   });
 
@@ -166,7 +167,7 @@ export default function MaintenanceEntryList() {
             checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
             disabled={selectionLocked || visibleIds.length === 0}
             onCheckedChange={() => {
-              toggleMaintenanceSelectAll(visibleIds);
+              toggleMaintenanceSelectedIds(visibleIds);
             }}
           />
           <label htmlFor="maintenance-select-all" className="cursor-pointer">

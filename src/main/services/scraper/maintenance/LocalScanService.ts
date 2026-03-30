@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
 import { loggerService } from "@main/services/LoggerService";
 import { listVideoFiles } from "@main/utils/file";
 import { parseNfoSnapshot } from "@main/utils/nfo";
+import { buildFileId } from "@shared/mediaIdentity";
 import type { CrawlerData, DiscoveredAssets, LocalScanEntry } from "@shared/types";
 import { resolveFileInfoWithSubtitles } from "../fileInfoWithSubtitles";
 import { isGeneratedSidecarVideo } from "../generatedSidecarVideos";
@@ -90,34 +90,37 @@ export class LocalScanService {
     const { fileInfo } = await resolveFileInfoWithSubtitles(videoPath);
     const dir = dirname(videoPath);
 
-    const assets = await this.discoverAssets(dir, fileInfo, sceneImagesFolder);
+    const [assets, nfoPath] = await Promise.all([
+      this.discoverAssets(dir, fileInfo, sceneImagesFolder),
+      this.findNfo(dir, fileInfo),
+    ]);
     let crawlerData: CrawlerData | undefined;
     let nfoLocalState: LocalScanEntry["nfoLocalState"];
     let scanError: string | undefined;
 
-    if (assets.nfo) {
+    if (nfoPath) {
       try {
-        const nfoContent = await readFile(assets.nfo, "utf-8");
+        const nfoContent = await readFile(nfoPath, "utf-8");
         const snapshot = parseNfoSnapshot(nfoContent);
         crawlerData = snapshot.crawlerData;
         nfoLocalState = snapshot.localState;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         scanError = `NFO 解析失败: ${message}`;
-        this.logger.warn(`Failed to parse NFO at ${assets.nfo}: ${message}`);
+        this.logger.warn(`Failed to parse NFO at ${nfoPath}: ${message}`);
       }
     }
 
     return {
-      id: randomUUID(),
-      videoPath,
+      fileId: buildFileId(videoPath),
       fileInfo,
-      nfoPath: assets.nfo,
+      nfoPath,
       crawlerData,
       nfoLocalState,
       scanError,
       assets,
       currentDir: dir,
+      groupingDirectory: dir,
     };
   }
 
@@ -127,8 +130,7 @@ export class LocalScanService {
     fileInfo: LocalScanEntry["fileInfo"],
     sceneImagesFolder: string,
   ): Promise<DiscoveredAssets> {
-    const [nfo, thumb, poster, fanart, trailer, sceneImages, actorPhotos] = await Promise.all([
-      this.findNfo(dir, fileInfo),
+    const [thumb, poster, fanart, trailer, sceneImages, actorPhotos] = await Promise.all([
       findAssetByName(dir, "thumb", IMAGE_EXTENSIONS),
       findAssetByName(dir, "poster", IMAGE_EXTENSIONS),
       findAssetByName(dir, "fanart", IMAGE_EXTENSIONS),
@@ -143,7 +145,6 @@ export class LocalScanService {
       fanart,
       sceneImages,
       trailer,
-      nfo,
       actorPhotos,
     };
   }

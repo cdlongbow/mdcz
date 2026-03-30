@@ -1,8 +1,7 @@
-import type { LocalScanEntry, MaintenanceItemResult, MaintenancePreviewItem, MaintenanceStatus } from "@shared/types";
+import type { LocalScanEntry, MaintenanceItemResult, MaintenanceStatus } from "@shared/types";
 import { create, type StateCreator } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { formatMaintenanceStatus } from "@/lib/formatMaintenanceStatus";
-import { countMaintenanceDisplayItems } from "@/lib/maintenanceGrouping";
 
 type MaintenanceExecutionStatus = MaintenanceStatus["state"];
 const isDev = import.meta.env.DEV;
@@ -27,11 +26,7 @@ export interface MaintenanceExecutionState {
   setExecutionStatus: (status: MaintenanceExecutionStatus) => void;
   setStatusText: (text: string) => void;
   setProgress: (value: number, current: number, total: number) => void;
-  beginExecution: (input: {
-    entryIds: string[];
-    previewResults?: Record<string, MaintenancePreviewItem>;
-    displayCount: number;
-  }) => void;
+  beginExecution: (input: { fileIds: string[]; displayCount: number }) => void;
   rollbackExecutionStart: () => void;
   applyStatusSnapshot: (status: MaintenanceStatus, entries: LocalScanEntry[]) => void;
   applyItemResult: (payload: MaintenanceItemResult) => void;
@@ -86,20 +81,15 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
       progressTotal: total,
     }),
 
-  beginExecution: ({ entryIds, previewResults = {}, displayCount }) =>
+  beginExecution: ({ fileIds, displayCount }) =>
     set((state) => {
       const nextResults = { ...state.itemResults };
 
-      for (const entryId of entryIds) {
-        const preview = previewResults[entryId];
-        nextResults[entryId] = {
-          ...nextResults[entryId],
-          entryId,
+      for (const fileId of fileIds) {
+        nextResults[fileId] = {
+          ...nextResults[fileId],
+          fileId,
           status: "pending",
-          error: preview?.status === "blocked" ? preview.error : undefined,
-          fieldDiffs: preview?.fieldDiffs,
-          unchangedFieldDiffs: preview?.unchangedFieldDiffs,
-          pathDiff: preview?.pathDiff,
         };
       }
 
@@ -107,8 +97,8 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
         executionStatus: "executing",
         progressValue: 0,
         progressCurrent: 0,
-        progressTotal: entryIds.length,
-        statusText: `正在执行 ${displayCount || countMaintenanceDisplayItems([])} 项...`,
+        progressTotal: fileIds.length,
+        statusText: `正在执行 ${displayCount} 项...`,
         itemResults: nextResults,
       };
     }),
@@ -148,12 +138,12 @@ const createMaintenanceExecutionState: StateCreator<MaintenanceExecutionState> =
 
   applyItemResult: (payload) =>
     set((state) => {
-      const previousResult = state.itemResults[payload.entryId];
+      const previousResult = state.itemResults[payload.fileId];
 
       return {
         itemResults: {
           ...state.itemResults,
-          [payload.entryId]: {
+          [payload.fileId]: {
             ...previousResult,
             ...payload,
           },
