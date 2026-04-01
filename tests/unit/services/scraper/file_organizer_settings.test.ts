@@ -1,6 +1,6 @@
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, parse } from "node:path";
+import { dirname, join, parse, resolve } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { FileOrganizer } from "@main/services/scraper/FileOrganizer";
 import { buildGeneratedVideoSidecarTargetPath, isGeneratedSidecarVideo } from "@main/services/scraper/media";
@@ -564,6 +564,117 @@ describe("FileOrganizer naming settings", () => {
     await expect(access(failedSubtitlePath)).rejects.toThrow();
   });
 
+  it("rewrites relative .strm targets to absolute paths when moving to a different success directory", async () => {
+    const organizer = new FileOrganizer();
+    const root = await createTempDir();
+    const sourceDir = join(root, "library");
+    const sourcePath = join(sourceDir, "ABC-123.strm");
+
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(sourcePath, "../videos/ABC-123.mp4", "utf8");
+
+    const fileInfo = createFileInfo({
+      filePath: sourcePath,
+      fileName: "ABC-123",
+      extension: ".strm",
+    });
+    const config = createConfig({
+      paths: {
+        mediaPath: root,
+        successOutputFolder: "output",
+      },
+      naming: {
+        folderTemplate: "{number}",
+        fileTemplate: "{number}",
+      },
+      behavior: {
+        successFileMove: true,
+        successFileRename: true,
+      },
+    });
+    const plan = organizer.plan(
+      fileInfo,
+      createCrawlerData({
+        number: "ABC-123",
+      }),
+      config,
+    );
+    const preparedPlan = await organizer.ensureOutputReady(plan, sourcePath);
+    const movedPath = await organizer.organizeVideo(fileInfo, preparedPlan, config);
+
+    expect(movedPath).toBe(join(root, "output", "ABC-123-CEN", "ABC-123-CEN.strm"));
+    await expect(readFile(movedPath, "utf8")).resolves.toBe(join(root, "videos", "ABC-123.mp4"));
+    await expect(access(sourcePath)).rejects.toThrow();
+  });
+
+  it("rewrites relative .strm targets to absolute paths when moving to the failed directory", async () => {
+    const organizer = new FileOrganizer();
+    const root = await createTempDir();
+    const sourcePath = join(root, "FAIL-001.strm");
+
+    await writeFile(sourcePath, "../videos/FAIL-001.mp4", "utf8");
+
+    const fileInfo = createFileInfo({
+      filePath: sourcePath,
+      fileName: "FAIL-001",
+      number: "FAIL-001",
+      extension: ".strm",
+    });
+    const config = createConfig({
+      paths: {
+        mediaPath: root,
+        failedOutputFolder: "failed",
+      },
+    });
+
+    const movedPath = await organizer.moveToFailedFolder(fileInfo, config);
+
+    expect(movedPath).toBe(join(root, "failed", "FAIL-001.strm"));
+    await expect(readFile(movedPath, "utf8")).resolves.toBe(resolve(dirname(sourcePath), "../videos/FAIL-001.mp4"));
+    await expect(access(sourcePath)).rejects.toThrow();
+  });
+
+  it("allows moving .strm files with KODIPROP-backed stream urls", async () => {
+    const organizer = new FileOrganizer();
+    const root = await createTempDir();
+    const sourceDir = join(root, "library");
+    const sourcePath = join(sourceDir, "ABC-123.strm");
+
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(sourcePath, "#KODIPROP:rtsp_transport=tcp\nrtsp://example.com/live", "utf8");
+
+    const fileInfo = createFileInfo({
+      filePath: sourcePath,
+      fileName: "ABC-123",
+      extension: ".strm",
+    });
+    const config = createConfig({
+      paths: {
+        mediaPath: root,
+        successOutputFolder: "output",
+      },
+      naming: {
+        folderTemplate: "{number}",
+        fileTemplate: "{number}",
+      },
+      behavior: {
+        successFileMove: true,
+        successFileRename: true,
+      },
+    });
+    const plan = organizer.plan(
+      fileInfo,
+      createCrawlerData({
+        number: "ABC-123",
+      }),
+      config,
+    );
+
+    await expect(organizer.ensureOutputReady(plan, sourcePath)).resolves.toMatchObject({
+      targetVideoPath: join(root, "output", "ABC-123-CEN", "ABC-123-CEN.strm"),
+    });
+  });
+
   it("supports absolute success and failed output directories without duplicating the base path", async () => {
     const organizer = new FileOrganizer();
     const root = await createTempDir();
@@ -708,6 +819,60 @@ describe("FileOrganizer naming settings", () => {
     await expectPathExists(subtitlePath);
     await expect(access(join(root, "output", "XYZ-999-CEN", "XYZ-999-CEN.mp4"))).rejects.toThrow();
     await expect(access(join(root, "output", "XYZ-999-CEN", "XYZ-999-CEN.zh.srt"))).rejects.toThrow();
+  });
+
+  it("restores the original relative .strm content when a move is rolled back", async () => {
+    const organizer = new FileOrganizer();
+    const root = await createTempDir();
+    const sourcePath = join(root, "source.strm");
+    const subtitlePath = join(root, "source.zh.srt");
+
+    await writeFile(sourcePath, "../videos/source.mp4", "utf8");
+    await writeFile(subtitlePath, "subtitle", "utf8");
+
+    const config = createConfig({
+      paths: {
+        mediaPath: root,
+        successOutputFolder: "output",
+      },
+      naming: {
+        folderTemplate: "{number}",
+        fileTemplate: "{number}",
+      },
+      behavior: {
+        successFileMove: true,
+        successFileRename: true,
+      },
+    });
+    const fileInfo = createFileInfo({
+      filePath: sourcePath,
+      fileName: "source",
+      extension: ".strm",
+      number: "XYZ-999",
+    });
+    const plan = await organizer.ensureOutputReady(
+      organizer.plan(
+        fileInfo,
+        createCrawlerData({
+          number: "XYZ-999",
+        }),
+        config,
+      ),
+      sourcePath,
+    );
+
+    const originalMoveFileSafely = fileUtils.moveFileSafely;
+    vi.spyOn(fileUtils, "moveFileSafely").mockImplementation(async (fromPath, toPath) => {
+      if (fromPath === subtitlePath) {
+        throw new Error("mock subtitle move failure");
+      }
+
+      return originalMoveFileSafely(fromPath, toPath);
+    });
+
+    await expect(organizer.organizeVideo(fileInfo, plan, config)).rejects.toThrow("Failed to move bundled media");
+    await expect(readFile(sourcePath, "utf8")).resolves.toBe("../videos/source.mp4");
+    await expect(access(join(root, "output", "XYZ-999-CEN", "XYZ-999-CEN.strm"))).rejects.toThrow();
   });
 
   it("rolls back the movie move when a generated FC2 feature move fails", async () => {

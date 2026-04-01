@@ -1,6 +1,7 @@
-import { readdir, rm } from "node:fs/promises";
+import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, normalize, resolve } from "node:path";
 import { moveFileSafely, pathExists } from "@main/utils/file";
+import { inspectStrmTarget, isStrmFile, writeStrmTarget } from "@main/utils/strm";
 import {
   buildGeneratedVideoSidecarTargetPath,
   buildSubtitleSidecarTargetPath,
@@ -35,9 +36,23 @@ export class FileMover {
     const sidecars = await this.sidecarResolver.resolve(sourceVideoPath, options.subtitleSidecars);
     const movedArtifacts: MovedArtifact[] = [];
     let movedVideoPath: string | undefined;
+    let originalStrmContent: string | undefined;
+    let rewrittenStrmTarget: string | undefined;
+
+    if (isStrmFile(sourceVideoPath) && resolve(dirname(sourceVideoPath)) !== resolve(dirname(targetVideoPath))) {
+      const strmTarget = await inspectStrmTarget(sourceVideoPath);
+      if (strmTarget?.kind === "relative_path" && strmTarget.resolvedPath) {
+        originalStrmContent = await readFile(sourceVideoPath, "utf8");
+        rewrittenStrmTarget = strmTarget.resolvedPath;
+      }
+    }
 
     try {
       movedVideoPath = await moveFileSafely(sourceVideoPath, targetVideoPath);
+      if (movedVideoPath && rewrittenStrmTarget) {
+        await writeStrmTarget(movedVideoPath, rewrittenStrmTarget);
+        this.logger.info(`Rewrote relative STRM target to absolute path: ${movedVideoPath}`);
+      }
 
       for (const subtitleSidecar of sidecars.subtitleSidecars) {
         const targetSubtitlePath = buildSubtitleSidecarTargetPath(subtitleSidecar, movedVideoPath);
@@ -67,7 +82,12 @@ export class FileMover {
 
       return movedVideoPath;
     } catch (error) {
-      const rollbackErrors = await this.rollbackMovedArtifacts(movedArtifacts, movedVideoPath, sourceVideoPath);
+      const rollbackErrors = await this.rollbackMovedArtifacts(
+        movedArtifacts,
+        movedVideoPath,
+        sourceVideoPath,
+        originalStrmContent,
+      );
       const message = error instanceof Error ? error.message : String(error);
       if (rollbackErrors.length > 0) {
         throw new Error(`Failed to move bundled media: ${message}. Rollback failed: ${rollbackErrors.join("; ")}`);
@@ -100,6 +120,7 @@ export class FileMover {
     movedArtifacts: MovedArtifact[],
     movedVideoPath: string | undefined,
     sourceVideoPath: string,
+    originalVideoContent?: string,
   ): Promise<string[]> {
     const rollbackErrors: string[] = [];
 
@@ -113,6 +134,15 @@ export class FileMover {
     }
 
     if (movedVideoPath && (await pathExists(movedVideoPath))) {
+      if (originalVideoContent !== undefined) {
+        try {
+          await writeFile(movedVideoPath, originalVideoContent, "utf8");
+        } catch (rollbackError) {
+          const rollbackMessage = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+          rollbackErrors.push(`video content ${movedVideoPath}: ${rollbackMessage}`);
+        }
+      }
+
       try {
         await moveFileSafely(movedVideoPath, sourceVideoPath);
       } catch (rollbackError) {

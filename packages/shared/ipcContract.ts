@@ -28,6 +28,7 @@ import type {
 export type IpcRouterContract = {
   [IpcChannel.App_Info]: IpcProcedure<void, AppInfo>;
   [IpcChannel.App_OpenExternal]: IpcProcedure<{ url: string }, { success: true }>;
+  [IpcChannel.App_PlayMedia]: IpcProcedure<{ path?: string }, { success: true }>;
   [IpcChannel.Config_Get]: IpcProcedure<{ path?: string }, Configuration | unknown>;
   [IpcChannel.Config_Save]: IpcProcedure<{ config?: Partial<Configuration> }, { success: true }>;
   [IpcChannel.Config_List]: IpcProcedure<void, { configPath: string; dataDir: string }>;

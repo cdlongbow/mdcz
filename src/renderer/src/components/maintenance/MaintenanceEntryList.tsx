@@ -15,6 +15,7 @@ import { type MaintenanceFilter, useMaintenanceEntryStore } from "@/store/mainte
 import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
 import { useMaintenancePreviewStore } from "@/store/maintenancePreviewStore";
 import { toggleMaintenanceSelectedIds } from "@/store/maintenanceSession";
+import { playMediaPath } from "@/utils/playback";
 
 const getTitle = (entry: LocalScanEntry) =>
   entry.crawlerData?.title_zh ?? entry.crawlerData?.title ?? entry.fileInfo.fileName;
@@ -49,13 +50,7 @@ function buildMenuContent(entry: LocalScanEntry) {
     void window.electron.openPath(entry.currentDir);
   };
 
-  const handlePlay = () => {
-    if (!window.electron?.openPath) {
-      toast.info("播放功能仅在桌面客户端可用");
-      return;
-    }
-    void window.electron.openPath(entry.fileInfo.filePath);
-  };
+  const handlePlay = () => void playMediaPath(entry.fileInfo.filePath, "播放功能仅在桌面客户端可用");
 
   const handleOpenNfo = () => {
     window.dispatchEvent(

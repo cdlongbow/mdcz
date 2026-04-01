@@ -35,6 +35,7 @@ export const ipc = {
   app: {
     info: () => client[IpcChannel.App_Info](undefined) as Promise<AppInfo>,
     openExternal: (url: string) => client[IpcChannel.App_OpenExternal]({ url }),
+    playMedia: (path: string) => client[IpcChannel.App_PlayMedia]({ path }),
   },
   config: {
     get: (path?: string) => client[IpcChannel.Config_Get]({ path }),

@@ -14,6 +14,7 @@ import { ipc } from "@/client/ipc";
 import { buildScrapeResultGroupActionContext, findScrapeResultGroup } from "@/lib/scrapeResultGrouping";
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
+import { playMediaPath } from "@/utils/playback";
 
 const WORKBENCH_ONLY_SHORTCUTS = new Set<RendererShortcutAction>([
   "start-or-stop-scrape",
@@ -200,11 +201,7 @@ export function ShortcutHandler() {
               toast.info("请先选择一个结果项");
               return;
             }
-            if (!window.electron?.openPath) {
-              toast.info("仅桌面客户端支持播放");
-              return;
-            }
-            void window.electron.openPath(selectedPath);
+            await playMediaPath(selectedPath, "仅桌面客户端支持播放");
             return;
           }
 

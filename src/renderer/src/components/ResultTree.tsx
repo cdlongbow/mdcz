@@ -14,6 +14,7 @@ import {
 import { useScrapeStore } from "@/store/scrapeStore";
 import { useUIStore } from "@/store/uiStore";
 import { getDirFromPath } from "@/utils/path";
+import { playMediaPath } from "@/utils/playback";
 
 function getFileNameFromPath(filePath: string) {
   const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
@@ -100,13 +101,7 @@ function buildMenuContent(group: ScrapeResultGroup, selectedResultId: string | n
     }
   };
 
-  const handlePlay = () => {
-    if (window.electron?.openPath) {
-      window.electron.openPath(resultPath);
-    } else {
-      toast.info("Play is only available in desktop mode");
-    }
-  };
+  const handlePlay = () => void playMediaPath(resultPath, "Play is only available in desktop mode", "Play failed");
 
   const handleOpenNfo = () => {
     window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path: nfoPath } }));

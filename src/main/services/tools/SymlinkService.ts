@@ -3,6 +3,7 @@ import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path
 
 import type { SignalService } from "@main/services/SignalService";
 import { toErrorMessage } from "@main/utils/common";
+import { inspectStrmTarget } from "@main/utils/strm";
 import { SUBTITLE_EXTENSIONS } from "@main/utils/subtitles";
 
 const DEFAULT_MEDIA_EXTENSIONS = new Set([
@@ -212,6 +213,20 @@ export class SymlinkService {
       if (destinationState === "broken_symlink") {
         await unlink(destinationPath).catch(() => undefined);
         this.deps.signalService.showLogText(`Removed broken symlink: ${destinationPath}`);
+      }
+
+      const strmTarget = extension === ".strm" ? await inspectStrmTarget(sourcePath).catch(() => undefined) : undefined;
+      if (strmTarget?.kind === "relative_path") {
+        try {
+          await copyFile(sourcePath, destinationPath);
+          this.deps.signalService.showLogText(`Copied relative STRM file: ${sourcePath}`);
+          result.copied += 1;
+        } catch (error) {
+          result.failed += 1;
+          const message = toErrorMessage(error);
+          this.deps.signalService.showLogText(`Failed to copy relative STRM file: ${sourcePath}. ${message}`, "warn");
+        }
+        continue;
       }
 
       if (copyExtensions.has(extension)) {
