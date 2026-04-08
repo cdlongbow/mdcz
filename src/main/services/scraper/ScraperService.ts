@@ -163,6 +163,10 @@ export class ScraperService {
 
   private restGate: ScrapeRestGate | null = null;
 
+  private readonly actorImageService: ActorImageService;
+
+  private readonly actorSourceProvider: ActorSourceProvider | undefined;
+
   private readonly sharedNetworkClient: NetworkClient;
 
   private readonly aggregationService: AggregationService;
@@ -173,9 +177,11 @@ export class ScraperService {
     private readonly signalService: SignalService,
     networkClient: NetworkClient,
     crawlerProvider: CrawlerProvider,
-    private readonly actorImageService = new ActorImageService(),
-    private readonly actorSourceProvider?: ActorSourceProvider,
+    actorImageService?: ActorImageService,
+    actorSourceProvider?: ActorSourceProvider,
   ) {
+    this.actorImageService = actorImageService ?? new ActorImageService();
+    this.actorSourceProvider = actorSourceProvider;
     this.sharedNetworkClient = networkClient;
     this.aggregationService = new AggregationService(crawlerProvider);
   }

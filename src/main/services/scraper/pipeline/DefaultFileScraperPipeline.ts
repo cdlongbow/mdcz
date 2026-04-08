@@ -105,8 +105,8 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
     const runtime = this.createStageRuntime();
     return [
       new ParseStage(),
-      new AggregateStage(runtime),
       new ProbeStage(runtime),
+      new AggregateStage(runtime),
       new TranslateStage(runtime),
       new PlanStage(runtime),
       new PrepareOutputStage(runtime),

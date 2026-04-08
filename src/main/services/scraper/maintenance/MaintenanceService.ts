@@ -48,6 +48,10 @@ export class MaintenanceService {
 
   private readonly localScanService = new LocalScanService();
 
+  private readonly actorImageService: ActorImageService;
+
+  private readonly actorSourceProvider: ActorSourceProvider | undefined;
+
   private status: MaintenanceStatus = createIdleMaintenanceStatus();
 
   private operationController: AbortController | null = null;
@@ -60,9 +64,12 @@ export class MaintenanceService {
     private readonly signalService: SignalService,
     private readonly networkClient: NetworkClient,
     private readonly crawlerProvider: CrawlerProvider,
-    private readonly actorImageService = new ActorImageService(),
-    private readonly actorSourceProvider?: ActorSourceProvider,
-  ) {}
+    actorImageService?: ActorImageService,
+    actorSourceProvider?: ActorSourceProvider,
+  ) {
+    this.actorImageService = actorImageService ?? new ActorImageService();
+    this.actorSourceProvider = actorSourceProvider;
+  }
 
   getStatus(): MaintenanceStatus {
     return { ...this.status };

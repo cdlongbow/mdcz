@@ -8,6 +8,7 @@ import type { DownloadManager } from "@main/services/scraper/DownloadManager";
 import type { FileOrganizer, OrganizePlan } from "@main/services/scraper/FileOrganizer";
 import { createFileScraper } from "@main/services/scraper/FileScraper";
 import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
+import * as scraperOutput from "@main/services/scraper/output";
 import type { TranslateService } from "@main/services/scraper/TranslateService";
 import { Website } from "@shared/enums";
 import type { CrawlerData, FileInfo } from "@shared/types";
@@ -69,6 +70,13 @@ describe("FileScraper subtitle sidecars", () => {
 
   const createScraper = (plan: OrganizePlan, writeNfo: ReturnType<typeof vi.fn>) => {
     mockConfigManager(config);
+    vi.spyOn(scraperOutput, "probeVideoMetadataOrWarn").mockResolvedValue({
+      durationSeconds: 120,
+      width: 1920,
+      height: 1080,
+      codec: "h264",
+      bitrate: 1_000_000,
+    });
     return createFileScraper({
       aggregationService: {
         aggregate: vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData())),
