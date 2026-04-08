@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
 import { loggerService } from "@main/services/LoggerService";
+import { toErrorMessage } from "@main/utils/common";
 import { listVideoFiles } from "@main/utils/file";
 import { parseNfoSnapshot } from "@main/utils/nfo";
 import { buildFileId } from "@shared/mediaIdentity";
@@ -83,7 +84,7 @@ export class LocalScanService {
         if (error instanceof Error && error.name === "AbortError") {
           throw error;
         }
-        const message = error instanceof Error ? error.message : String(error);
+        const message = toErrorMessage(error);
         this.logger.warn(`Failed to scan ${videoPath}: ${message}`);
       }
     }
@@ -113,7 +114,7 @@ export class LocalScanService {
         crawlerData = snapshot.crawlerData;
         nfoLocalState = snapshot.localState;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = toErrorMessage(error);
         scanError = `NFO 解析失败: ${message}`;
         this.logger.warn(`Failed to parse NFO at ${nfoPath}: ${message}`);
       }

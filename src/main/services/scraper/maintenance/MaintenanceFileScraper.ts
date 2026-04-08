@@ -2,6 +2,7 @@ import { dirname } from "node:path";
 import { ActorImageService } from "@main/services/ActorImageService";
 import type { Configuration } from "@main/services/config/models";
 import { loggerService } from "@main/services/LoggerService";
+import { toErrorMessage } from "@main/utils/common";
 import type {
   CrawlerData,
   DiscoveredAssets,
@@ -171,7 +172,7 @@ export class MaintenanceFileScraper {
         return this.buildFailedResult(entry, "Operation aborted");
       }
 
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       this.logger.error(`Maintenance failed for ${fileInfo.filePath}: ${message}`);
       this.setProgress(progress, 100);
       return this.buildFailedResult(entry, message);
@@ -203,7 +204,7 @@ export class MaintenanceFileScraper {
       return {
         fileId: entry.fileId,
         status: "blocked",
-        error: error instanceof Error ? error.message : String(error),
+        error: toErrorMessage(error),
       };
     }
   }

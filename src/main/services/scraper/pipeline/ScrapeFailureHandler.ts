@@ -1,5 +1,6 @@
 import type { Configuration } from "@main/services/config";
 import { configManager } from "@main/services/config";
+import { toErrorMessage } from "@main/utils/common";
 import { pathExists } from "@main/utils/file";
 import { parseFileInfo } from "@main/utils/number";
 import type { FileInfo, ScrapeResult } from "@shared/types";
@@ -35,7 +36,7 @@ export class ScrapeFailureHandler {
   }
 
   async handleError(context: ScrapeContext, error: unknown): Promise<ScrapeResult> {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     this.logger.error(`Scrape failed for ${context.fileInfo.filePath}: ${message}`);
     this.setProgress(context.progress, 100);
 
@@ -77,7 +78,7 @@ export class ScrapeFailureHandler {
         subtitleTag: fileInfo.subtitleTag ?? movedFileInfo.subtitleTag,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       this.logger.warn(`Failed to move file to failed folder: ${message}`);
       return fileInfo;
     }

@@ -7,7 +7,7 @@ import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
 import { didPromiseTimeout } from "@main/utils/async";
-import { mergeDeep } from "@main/utils/common";
+import { mergeDeep, toErrorMessage } from "@main/utils/common";
 import type {
   LocalScanEntry,
   MaintenanceCommitItem,
@@ -217,7 +217,7 @@ export class MaintenanceService {
           this.signalService.showMaintenanceItemResult({
             fileId: entry.fileId,
             status: "failed",
-            error: error instanceof Error ? error.message : String(error),
+            error: toErrorMessage(error),
           });
         }
       });

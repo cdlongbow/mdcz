@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@shared/error";
 import type { MaintenancePreviewItem } from "@shared/types";
 import { Play, RefreshCw, StopCircle } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -35,14 +36,6 @@ interface MaintenanceBatchBarProps {
   mediaPath?: string;
   className?: string;
 }
-
-const asMessage = (error: unknown): string => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return String(error);
-};
 
 const formatPreviewStatusText = (readyCount: number, blockedCount: number): string => {
   return blockedCount > 0
@@ -160,7 +153,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       setExecutionStatus("idle");
       setCurrentPath(dirPath);
       setStatusText("扫描失败");
-      toast.error(`扫描失败: ${asMessage(error)}`);
+      toast.error(`扫描失败: ${toErrorMessage(error)}`);
     }
   };
 
@@ -227,7 +220,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
 
       setMaintenancePreviewPending(false);
       setStatusText("预览失败");
-      toast.error(`预览失败: ${asMessage(error)}`);
+      toast.error(`预览失败: ${toErrorMessage(error)}`);
       return null;
     }
   };
@@ -275,7 +268,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     } catch (error) {
       rollbackExecutionStart();
       setStatusText("启动失败");
-      toast.error(`启动失败: ${asMessage(error)}`);
+      toast.error(`启动失败: ${toErrorMessage(error)}`);
     }
   };
 
@@ -286,7 +279,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       setStatusText("正在停止维护操作...");
       toast.info("正在停止维护操作...");
     } catch (error) {
-      toast.error(`停止失败: ${asMessage(error)}`);
+      toast.error(`停止失败: ${toErrorMessage(error)}`);
     }
   };
 

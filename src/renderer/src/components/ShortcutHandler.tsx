@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@shared/error";
 import type { RendererShortcutAction } from "@shared/ipcEvents";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
@@ -36,13 +37,6 @@ const isEditingText = () => {
     return true;
   }
   return ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName);
-};
-
-const asMessage = (error: unknown) => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return String(error);
 };
 
 export function ShortcutHandler() {
@@ -84,7 +78,7 @@ export function ShortcutHandler() {
                 useScrapeStore.getState().setStatusText("正在停止...");
                 toast.info("正在停止刮削任务...");
               } catch (error) {
-                toast.error(`停止失败: ${asMessage(error)}`);
+                toast.error(`停止失败: ${toErrorMessage(error)}`);
               }
               return;
             }
@@ -98,7 +92,7 @@ export function ShortcutHandler() {
               toast.success(response.data.message);
             } catch (error) {
               scrapeState.setScraping(false);
-              toast.error(`启动失败: ${asMessage(error)}`);
+              toast.error(`启动失败: ${toErrorMessage(error)}`);
             }
             return;
           }
@@ -117,7 +111,7 @@ export function ShortcutHandler() {
               const response = await requeueScrapeByNumber(groupedVideoPaths, number);
               toast.success(response.data.message);
             } catch (error) {
-              toast.error(`重试失败: ${asMessage(error)}`);
+              toast.error(`重试失败: ${toErrorMessage(error)}`);
             }
             return;
           }
@@ -136,7 +130,7 @@ export function ShortcutHandler() {
               const response = await requeueScrapeByUrl(groupedVideoPaths, url);
               toast.success(response.data.message);
             } catch (error) {
-              toast.error(`重试失败: ${asMessage(error)}`);
+              toast.error(`重试失败: ${toErrorMessage(error)}`);
             }
             return;
           }
@@ -159,7 +153,7 @@ export function ShortcutHandler() {
               await deleteFile(groupedVideoPaths);
               toast.success(groupedVideoPaths.length > 1 ? `已删除 ${groupedVideoPaths.length} 个文件` : "文件已删除");
             } catch (error) {
-              toast.error(`删除失败: ${asMessage(error)}`);
+              toast.error(`删除失败: ${toErrorMessage(error)}`);
             }
             return;
           }
@@ -176,7 +170,7 @@ export function ShortcutHandler() {
               await deleteFileAndFolder(selectedPath);
               toast.success("文件和文件夹已删除");
             } catch (error) {
-              toast.error(`删除失败: ${asMessage(error)}`);
+              toast.error(`删除失败: ${toErrorMessage(error)}`);
             }
             return;
           }

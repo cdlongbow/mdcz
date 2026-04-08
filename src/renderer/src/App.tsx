@@ -1,4 +1,5 @@
 import "./index.css";
+import { toErrorMessage } from "@shared/error";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createHashHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { Suspense, useEffect, useMemo, useRef } from "react";
@@ -68,7 +69,7 @@ const App = () => {
         useScrapeStore.getState().setScrapeStatus("running");
         toast.success(result.message);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = toErrorMessage(error);
         toast.error(`处理恢复任务失败: ${message}`);
       }
     })();

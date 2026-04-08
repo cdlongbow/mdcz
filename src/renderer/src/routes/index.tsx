@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@shared/error";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { AlertTriangle, LayoutDashboard, PauseCircle, Play, StopCircle } from "lucide-react";
@@ -43,14 +44,6 @@ function DisabledModeButton({ label, tooltip, active }: { label: string; tooltip
     </Tooltip>
   );
 }
-
-const asMessage = (error: unknown) => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return String(error);
-};
 
 function Index() {
   const queryClient = useQueryClient();
@@ -118,7 +111,7 @@ function Index() {
       if (isMediaDirectorySelectionCancelled(error)) {
         return;
       }
-      toast.error(`目录设置失败: ${asMessage(error)}`);
+      toast.error(`目录设置失败: ${toErrorMessage(error)}`);
     }
   };
 
@@ -137,7 +130,7 @@ function Index() {
       await refreshCurrentConfig();
       toast.success(response.data.message);
     } catch (error) {
-      const errorMessage = asMessage(error);
+      const errorMessage = toErrorMessage(error);
 
       if (isMediaDirectorySelectionCancelled(error)) {
         return;

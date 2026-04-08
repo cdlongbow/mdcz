@@ -8,6 +8,7 @@ import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
 import { didPromiseTimeout } from "@main/utils/async";
+import { toErrorMessage } from "@main/utils/common";
 import { listVideoFiles } from "@main/utils/file";
 import type { ScraperStatus } from "@shared/types";
 import { createAbortError } from "./abort";
@@ -416,7 +417,7 @@ export class ScraperService {
       try {
         outputs.push(...(await listVideoFiles(dirPath, true)));
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = toErrorMessage(error);
         throw new ScraperServiceError("DIR_NOT_FOUND", message);
       }
     }
@@ -470,7 +471,7 @@ export class ScraperService {
       this.logger.info(`Scanned softlink path "${softlinkDir}": found ${softlinkFiles.length} files`);
       return softlinkFiles;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       this.logger.warn(`Failed to scan softlink path "${softlinkDir}": ${message}`);
       return [];
     }

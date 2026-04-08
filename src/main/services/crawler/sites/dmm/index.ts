@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@main/utils/common";
 import { normalizeDmmNumberVariants } from "@main/utils/dmmImage";
 import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
@@ -114,7 +115,7 @@ export class DmmCrawler extends BaseDmmCrawler {
           return candidateResult;
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = toErrorMessage(error);
         this.logger.warn(`DMM search candidate failed for ${candidateSearchUrl}: ${message}`);
       }
     }

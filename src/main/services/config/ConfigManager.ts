@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { IpcErrorCode } from "@main/ipc/errors";
 import { loggerService } from "@main/services/LoggerService";
-import { getProperty, mergeDeep, setProperty } from "@main/utils/common";
+import { getProperty, mergeDeep, setProperty, toErrorMessage } from "@main/utils/common";
 import { app } from "electron";
 import { ComputedConfig, type ComputedConfiguration } from "./computed";
 import { ConfigMigrationError, runMigrations } from "./migrator";
@@ -256,7 +256,7 @@ export class ConfigManager extends EventEmitter {
         return;
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       this.logger.warn(`Failed to read config directory metadata, fallback to default: ${message}`);
     }
 
@@ -287,7 +287,7 @@ export class ConfigManager extends EventEmitter {
         return;
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       this.logger.warn(`Failed to read active profile metadata, fallback to default: ${message}`);
     }
 
@@ -326,7 +326,7 @@ export class ConfigManager extends EventEmitter {
         this.computedConfig.invalidate();
         return;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = toErrorMessage(error);
         this.logger.warn(`Failed to load config file ${configPath}; using in-memory defaults: ${message}`);
         this.configuration = defaultConfiguration;
         this.syncConfigDirectoryFromConfiguration();

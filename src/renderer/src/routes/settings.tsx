@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@shared/error";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useBlocker } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
@@ -45,18 +46,6 @@ const toFieldErrors = (value: unknown): Record<string, string> => {
   return Object.fromEntries(
     Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
   );
-};
-
-const getErrorMessage = (error: unknown): string => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  if (isRecord(error) && typeof error.message === "string" && error.message) {
-    return error.message;
-  }
-
-  return String(error);
 };
 
 const getValidationErrorState = (error: unknown): { fields: string[]; fieldErrors: Record<string, string> } => {
@@ -128,7 +117,7 @@ function SettingsComponent() {
       } else {
         setServerErrors([]);
         setServerFieldErrors({});
-        toast.error(`保存失败: ${getErrorMessage(error)}`);
+        toast.error(`保存失败: ${toErrorMessage(error)}`);
       }
     },
   });
@@ -142,7 +131,7 @@ function SettingsComponent() {
       toast.success("已恢复默认设置");
       setResetDialogOpen(false);
     } catch (error) {
-      toast.error(`重置失败: ${getErrorMessage(error)}`);
+      toast.error(`重置失败: ${toErrorMessage(error)}`);
     }
   };
 
@@ -156,7 +145,7 @@ function SettingsComponent() {
       setNewProfileName("");
       setNewProfileDialogOpen(false);
     } catch (error) {
-      toast.error(`创建失败: ${getErrorMessage(error)}`);
+      toast.error(`创建失败: ${toErrorMessage(error)}`);
     }
   };
 
@@ -174,7 +163,7 @@ function SettingsComponent() {
       setServerFieldErrors({});
       toast.success(`已切换到配置档案 "${name}"`);
     } catch (error) {
-      toast.error(`切换失败: ${getErrorMessage(error)}`);
+      toast.error(`切换失败: ${toErrorMessage(error)}`);
     }
   };
 
@@ -187,7 +176,7 @@ function SettingsComponent() {
       setDeleteProfileDialogOpen(false);
       setDeleteProfileName("");
     } catch (error) {
-      toast.error(`删除失败: ${getErrorMessage(error)}`);
+      toast.error(`删除失败: ${toErrorMessage(error)}`);
     }
   };
 

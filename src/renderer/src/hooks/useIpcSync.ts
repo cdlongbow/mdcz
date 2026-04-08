@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@shared/error";
 import type { MaintenanceStatus, ScraperStatus } from "@shared/types";
 import { useEffect, useState } from "react";
 import { ipc } from "@/client/ipc";
@@ -77,7 +78,7 @@ export const useIpcSync = () => {
     const unsubscribers: Array<() => void> = [];
 
     const reportAsyncError = (context: string, error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       useLogStore.getState().addLog(createRuntimeLog("error", `${context}: ${message}`, Date.now()));
       console.error(`[useIpcSync] ${context}`, error);
     };
@@ -214,7 +215,7 @@ export const useIpcSync = () => {
           }),
         );
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = toErrorMessage(error);
         setRuntimeError(`Failed to initialize IPC subscriptions: ${message}`);
         setRuntimeReady(true);
         return;
@@ -223,7 +224,7 @@ export const useIpcSync = () => {
       try {
         await syncStatusNow("all", "bootstrap");
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = toErrorMessage(error);
         setRuntimeError(`Failed to initialize runtime state: ${message}`);
         setRuntimeReady(true);
         return;

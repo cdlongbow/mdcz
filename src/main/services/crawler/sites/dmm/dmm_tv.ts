@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@main/utils/common";
 import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import type { CheerioAPI } from "cheerio";
@@ -290,7 +291,7 @@ export class DmmTvCrawler extends BaseDmmCrawler {
           return videoData;
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = toErrorMessage(error);
         this.logger.debug(`DMM VIDEO GraphQL miss for ${contentId}: ${message}`);
       }
     }

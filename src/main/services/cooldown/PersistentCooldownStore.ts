@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { loggerService } from "@main/services/LoggerService";
+import { toErrorMessage } from "@main/utils/common";
 import { app } from "electron";
 
 export interface CooldownEntry {
@@ -245,7 +246,7 @@ export class PersistentCooldownStore {
         this.entries.set(key, entry);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       this.logger.warn(`Failed to load cooldown store ${this.filePath}: ${message}`);
     }
   }
@@ -263,7 +264,7 @@ export class PersistentCooldownStore {
           await this.persist();
         })
         .catch((error) => {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = toErrorMessage(error);
           this.logger.warn(`Failed to persist cooldown store ${this.filePath}: ${message}`);
         });
     });

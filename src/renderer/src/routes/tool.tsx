@@ -1,4 +1,5 @@
 import type { Website } from "@shared/enums";
+import { toErrorMessage } from "@shared/error";
 import type {
   AmazonPosterScanItem,
   EmbyConnectionCheckResult,
@@ -124,11 +125,6 @@ function extensionFromName(fileName: string) {
   const dot = fileName.lastIndexOf(".");
   if (dot < 0) return "";
   return normalizeExtension(fileName.slice(dot));
-}
-
-function formatError(error: unknown) {
-  if (error instanceof Error && error.message) return error.message;
-  return String(error);
 }
 
 function getFirstDiagnosticError(result: ConnectionCheckResult) {
@@ -563,7 +559,7 @@ function ToolComponent() {
       showSuccess(result.data.message);
       setTimeout(() => navigate({ to: "/logs" }), 1000);
     } catch (error) {
-      showError(`软链接创建任务启动失败: ${formatError(error)}`);
+      showError(`软链接创建任务启动失败: ${toErrorMessage(error)}`);
     }
   };
 
@@ -582,7 +578,7 @@ function ToolComponent() {
       }
       return result;
     } catch (error) {
-      showError(`Jellyfin 连通性测试失败: ${formatError(error)}`);
+      showError(`Jellyfin 连通性测试失败: ${toErrorMessage(error)}`);
       setJellyfinCheckResult(null);
       return null;
     }
@@ -603,7 +599,7 @@ function ToolComponent() {
       }
       return result;
     } catch (error) {
-      showError(`Emby 连通性测试失败: ${formatError(error)}`);
+      showError(`Emby 连通性测试失败: ${toErrorMessage(error)}`);
       setEmbyCheckResult(null);
       return null;
     }
@@ -643,7 +639,7 @@ function ToolComponent() {
       setJellyfinSyncProgress(100);
       showSuccess(formatSyncResult("Jellyfin 演员信息同步完成", result));
     } catch (error) {
-      showError(`Jellyfin 演员信息同步失败: ${formatError(error)}`);
+      showError(`Jellyfin 演员信息同步失败: ${toErrorMessage(error)}`);
     } finally {
       setJellyfinInfoSyncRunning(false);
       clearProgressResetTimer(jellyfinProgressResetTimerRef);
@@ -678,7 +674,7 @@ function ToolComponent() {
       setJellyfinSyncProgress(100);
       showSuccess(formatSyncResult("Jellyfin 头像同步完成", result));
     } catch (error) {
-      showError(`Jellyfin 头像同步失败: ${formatError(error)}`);
+      showError(`Jellyfin 头像同步失败: ${toErrorMessage(error)}`);
     } finally {
       setJellyfinPhotoSyncRunning(false);
       clearProgressResetTimer(jellyfinProgressResetTimerRef);
@@ -713,7 +709,7 @@ function ToolComponent() {
       setEmbySyncProgress(100);
       showSuccess(formatSyncResult("Emby 演员信息同步完成", result));
     } catch (error) {
-      showError(`Emby 演员信息同步失败: ${formatError(error)}`);
+      showError(`Emby 演员信息同步失败: ${toErrorMessage(error)}`);
     } finally {
       setEmbyInfoSyncRunning(false);
       clearProgressResetTimer(embyProgressResetTimerRef);
@@ -753,7 +749,7 @@ function ToolComponent() {
       setEmbySyncProgress(100);
       showSuccess(formatSyncResult("Emby 头像同步完成", result));
     } catch (error) {
-      showError(`Emby 头像同步失败: ${formatError(error)}`);
+      showError(`Emby 头像同步失败: ${toErrorMessage(error)}`);
     } finally {
       setEmbyPhotoSyncRunning(false);
       clearProgressResetTimer(embyProgressResetTimerRef);
@@ -852,7 +848,7 @@ function ToolComponent() {
         showSuccess(`扫描完成，共找到 ${found.length} 个匹配文件。`);
       }
     } catch (error) {
-      showError(`扫描失败: ${formatError(error)}`);
+      showError(`扫描失败: ${toErrorMessage(error)}`);
     } finally {
       setCleanupScanning(false);
     }
@@ -965,7 +961,7 @@ function ToolComponent() {
         showError(result.error ?? "未获取到数据");
       }
     } catch (error) {
-      showError(`爬虫测试失败: ${formatError(error)}`);
+      showError(`爬虫测试失败: ${toErrorMessage(error)}`);
     } finally {
       setCrawlerTesting(false);
     }
@@ -997,7 +993,7 @@ function ToolComponent() {
         showSuccess(`扫描完成，共找到 ${result.items.length} 个条目。`);
       }
     } catch (error) {
-      showError(`Amazon 海报扫描失败: ${formatError(error)}`);
+      showError(`Amazon 海报扫描失败: ${toErrorMessage(error)}`);
     } finally {
       setAmazonScanning(false);
     }

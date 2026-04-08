@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@shared/error";
 import type { UncensoredChoice } from "@shared/types";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -81,7 +82,7 @@ export function UncensoredConfirmDialog({ open, onOpenChange, items }: Uncensore
 
       toast.error(`成功 0 条，失败 ${failedCount} 条`);
     } catch (error) {
-      toast.error(`更新失败: ${error instanceof Error ? error.message : "未知错误"}`);
+      toast.error(`更新失败: ${toErrorMessage(error, "未知错误")}`);
     } finally {
       setSubmitting(false);
     }

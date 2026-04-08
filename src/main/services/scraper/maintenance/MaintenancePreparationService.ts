@@ -1,6 +1,7 @@
 import type { Configuration } from "@main/services/config/models";
 import { loggerService } from "@main/services/LoggerService";
 import type { SignalService } from "@main/services/SignalService";
+import { toErrorMessage } from "@main/utils/common";
 import type {
   CrawlerData,
   FieldDiff,
@@ -236,7 +237,7 @@ export class MaintenancePreparationService {
         throw error;
       }
 
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       this.logger.warn(`Translation failed for ${crawlerData.number}: ${message}`);
       return crawlerData;
     }

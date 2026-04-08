@@ -2,6 +2,7 @@ import { ActorImageService } from "@main/services/ActorImageService";
 import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { LocalScanService } from "@main/services/scraper/maintenance/LocalScanService";
+import { toErrorMessage } from "@main/utils/common";
 import type { CrawlerData, NfoLocalState, ScrapeResult } from "@shared/types";
 import { isAbortError, throwIfAborted } from "../abort";
 import type { FileScrapeProgress, FileScraperDependencies } from "../FileScraper";
@@ -130,7 +131,7 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
         throw error;
       }
 
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       this.logger.warn(`Translation failed for ${crawlerData.number}: ${message}`);
       return crawlerData;
     }
@@ -148,7 +149,7 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
       const entry = await this.localScanService.scanVideo(filePath, configuration.paths.sceneImagesFolder);
       return entry.nfoLocalState;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       this.logger.warn(`Failed to read existing NFO local state for ${filePath}: ${message}`);
       return undefined;
     }

@@ -2,6 +2,7 @@ import type { ActorImageService } from "@main/services/ActorImageService";
 import type { ActorSourceProvider } from "@main/services/actorSource";
 import type { Configuration } from "@main/services/config";
 import type { SignalService } from "@main/services/SignalService";
+import { toErrorMessage } from "@main/utils/common";
 import { probeVideoMetadata } from "@main/utils/video";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@shared/types";
 import type { Logger } from "winston";
@@ -137,7 +138,7 @@ export const probeVideoMetadataOrWarn = async (input: {
   try {
     return await probeVideoMetadata(input.sourceVideoPath);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     input.logger.warn(`${input.warningPrefix}: ${message}`);
     return undefined;
   }

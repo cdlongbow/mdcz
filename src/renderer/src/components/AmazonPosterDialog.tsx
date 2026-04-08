@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@shared/error";
 import type { AmazonPosterLookupResult, AmazonPosterScanItem } from "@shared/ipcTypes";
 import { ArrowRight, Check, ImageIcon, LoaderCircle, Minus } from "lucide-react";
 import type { ComponentType } from "react";
@@ -33,13 +34,6 @@ interface AmazonPosterDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   items: AmazonPosterScanItem[];
-}
-
-function formatError(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return String(error);
 }
 
 function formatElapsed(elapsedMs: number | null | undefined): string {
@@ -166,7 +160,7 @@ export function AmazonPosterDialog({ open, onOpenChange, items }: AmazonPosterDi
           result = {
             nfoPath: items[currentIndex].nfoPath,
             amazonPosterUrl: null,
-            reason: `查询失败: ${formatError(error)}`,
+            reason: `查询失败: ${toErrorMessage(error)}`,
             elapsedMs: 0,
           };
         }
@@ -237,7 +231,7 @@ export function AmazonPosterDialog({ open, onOpenChange, items }: AmazonPosterDi
       setConfirmOpen(false);
       onOpenChange(false);
     } catch (error) {
-      showError(`海报替换失败: ${formatError(error)}`);
+      showError(`海报替换失败: ${toErrorMessage(error)}`);
     } finally {
       setApplying(false);
     }
