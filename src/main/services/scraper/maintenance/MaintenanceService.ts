@@ -2,6 +2,10 @@ import { ActorImageService } from "@main/services/ActorImageService";
 import type { ActorSourceProvider } from "@main/services/actorSource";
 import { type Configuration, configManager } from "@main/services/config";
 import type { DeepPartial } from "@main/services/config/models";
+import {
+  createImageHostCooldownStore,
+  type PersistentCooldownStore,
+} from "@main/services/cooldown/PersistentCooldownStore";
 import type { CrawlerProvider } from "@main/services/crawler";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
@@ -48,6 +52,8 @@ export class MaintenanceService {
 
   private readonly localScanService = new LocalScanService();
 
+  private readonly imageHostCooldownStore: PersistentCooldownStore;
+
   private readonly actorImageService: ActorImageService;
 
   private readonly actorSourceProvider: ActorSourceProvider | undefined;
@@ -66,7 +72,9 @@ export class MaintenanceService {
     private readonly crawlerProvider: CrawlerProvider,
     actorImageService?: ActorImageService,
     actorSourceProvider?: ActorSourceProvider,
+    imageHostCooldownStore?: PersistentCooldownStore,
   ) {
+    this.imageHostCooldownStore = imageHostCooldownStore ?? createImageHostCooldownStore();
     this.actorImageService = actorImageService ?? new ActorImageService();
     this.actorSourceProvider = actorSourceProvider;
   }
@@ -281,23 +289,23 @@ export class MaintenanceService {
 
   async shutdown(options: { timeoutMs?: number } = {}): Promise<void> {
     const operationPromise = this.currentOperationPromise;
-    if (!operationPromise) {
-      return;
-    }
-
     const timeoutMs = Math.max(0, Math.trunc(options.timeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS));
-    this.logger.info("Shutting down maintenance service");
-    if (this.status.state === "executing") {
-      this.stop();
-    } else {
-      this.operationController?.abort(createAbortError());
-      this.queue?.clear();
+    if (operationPromise) {
+      this.logger.info("Shutting down maintenance service");
+      if (this.status.state === "executing") {
+        this.stop();
+      } else {
+        this.operationController?.abort(createAbortError());
+        this.queue?.clear();
+      }
+
+      const timedOut = await didPromiseTimeout(operationPromise, timeoutMs);
+      if (timedOut) {
+        this.logger.warn(`Timed out waiting ${timeoutMs}ms for maintenance service shutdown`);
+      }
     }
 
-    const timedOut = await didPromiseTimeout(operationPromise, timeoutMs);
-    if (timedOut) {
-      this.logger.warn(`Timed out waiting ${timeoutMs}ms for maintenance service shutdown`);
-    }
+    await this.imageHostCooldownStore.flush();
   }
 
   private createDependencies(): FileScraperDependencies {
@@ -305,7 +313,9 @@ export class MaintenanceService {
       aggregationService: new AggregationService(this.crawlerProvider),
       translateService: new TranslateService(this.networkClient),
       nfoGenerator: new NfoGenerator(),
-      downloadManager: new DownloadManager(this.networkClient),
+      downloadManager: new DownloadManager(this.networkClient, {
+        imageHostCooldownStore: this.imageHostCooldownStore,
+      }),
       fileOrganizer,
       signalService: this.signalService,
       actorImageService: this.actorImageService,

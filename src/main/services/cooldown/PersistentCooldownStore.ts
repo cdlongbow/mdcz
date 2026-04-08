@@ -28,9 +28,13 @@ interface PersistentCooldownStoreOptions {
   fileName?: string;
   filePath?: string;
   loggerName?: string;
+  persistDelayMs?: number;
 }
 
 const DEFAULT_FILE_NAME = "cooldowns.json";
+const DEFAULT_PERSIST_DELAY_MS = 250;
+const IMAGE_HOST_COOLDOWN_FILE_NAME = "image-host-cooldowns.json";
+const IMAGE_HOST_COOLDOWN_LOGGER_NAME = "ImageHostCooldownStore";
 
 const resolveStorePath = (fileName: string): string => {
   try {
@@ -76,15 +80,20 @@ export class PersistentCooldownStore {
 
   private readonly filePath: string;
 
+  private readonly persistDelayMs: number;
+
   private readonly entries = new Map<string, CooldownEntry>();
 
-  private persistQueued = false;
+  private dirty = false;
+
+  private persistTimer: NodeJS.Timeout | null = null;
 
   private writePromise = Promise.resolve();
 
   constructor(options: PersistentCooldownStoreOptions = {}) {
     this.logger = loggerService.getLogger(options.loggerName ?? "PersistentCooldownStore");
     this.filePath = options.filePath ?? resolveStorePath(options.fileName ?? DEFAULT_FILE_NAME);
+    this.persistDelayMs = Math.max(0, Math.trunc(options.persistDelayMs ?? DEFAULT_PERSIST_DELAY_MS));
     this.loadFromDisk();
   }
 
@@ -209,9 +218,8 @@ export class PersistentCooldownStore {
   }
 
   async flush(): Promise<void> {
-    if (this.persistQueued) {
-      await Promise.resolve();
-    }
+    this.clearPersistTimer();
+    this.queuePersistIfDirty();
     await this.writePromise;
   }
 
@@ -252,22 +260,46 @@ export class PersistentCooldownStore {
   }
 
   private schedulePersist(): void {
-    if (this.persistQueued) {
+    this.dirty = true;
+
+    if (this.persistDelayMs === 0) {
+      this.queuePersistIfDirty();
       return;
     }
 
-    this.persistQueued = true;
-    queueMicrotask(() => {
-      this.persistQueued = false;
-      this.writePromise = this.writePromise
-        .then(async () => {
-          await this.persist();
-        })
-        .catch((error) => {
-          const message = toErrorMessage(error);
-          this.logger.warn(`Failed to persist cooldown store ${this.filePath}: ${message}`);
-        });
-    });
+    if (this.persistTimer) {
+      return;
+    }
+
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.queuePersistIfDirty();
+    }, this.persistDelayMs);
+  }
+
+  private clearPersistTimer(): void {
+    if (!this.persistTimer) {
+      return;
+    }
+
+    clearTimeout(this.persistTimer);
+    this.persistTimer = null;
+  }
+
+  private queuePersistIfDirty(): void {
+    if (!this.dirty) {
+      return;
+    }
+
+    this.dirty = false;
+    this.writePromise = this.writePromise
+      .then(async () => {
+        await this.persist();
+      })
+      .catch((error) => {
+        const message = toErrorMessage(error);
+        this.logger.warn(`Failed to persist cooldown store ${this.filePath}: ${message}`);
+      });
   }
 
   private async persist(): Promise<void> {
@@ -281,3 +313,9 @@ export class PersistentCooldownStore {
     await writeFile(this.filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
   }
 }
+
+export const createImageHostCooldownStore = (): PersistentCooldownStore =>
+  new PersistentCooldownStore({
+    fileName: IMAGE_HOST_COOLDOWN_FILE_NAME,
+    loggerName: IMAGE_HOST_COOLDOWN_LOGGER_NAME,
+  });

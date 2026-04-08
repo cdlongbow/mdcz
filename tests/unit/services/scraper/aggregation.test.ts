@@ -241,6 +241,15 @@ class MultiResultCrawlerProvider extends CrawlerProvider {
   }
 }
 
+class RecordingCrawlerProvider extends MultiResultCrawlerProvider {
+  readonly calledNumbers: string[] = [];
+
+  override async crawl(input: CrawlerInput): Promise<CrawlerResponse> {
+    this.calledNumbers.push(input.number);
+    return super.crawl(input);
+  }
+}
+
 describe("AggregationService", () => {
   const makeConfig = (overrides: Record<string, unknown> = {}) =>
     configurationSchema.parse({
@@ -451,6 +460,48 @@ describe("AggregationService", () => {
     service.clearCache();
     await service.aggregate("ABF-075", config);
     expect(provider.calledSites.length).toBe(firstCallCount * 2);
+  });
+
+  it("caps the cache and keeps recently used entries", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.DMM,
+        makeCrawlerData({
+          number: undefined,
+          thumb_url: "https://example.com/thumb.jpg",
+          website: Website.DMM,
+        }),
+      ],
+    ]);
+
+    const provider = new RecordingCrawlerProvider(siteResults);
+    const service = new AggregationService(provider);
+    const config = makeConfig({
+      scrape: {
+        ...defaultConfiguration.scrape,
+        enabledSites: [Website.DMM],
+        siteOrder: [Website.DMM],
+      },
+    });
+
+    for (let index = 1; index <= 200; index++) {
+      await service.aggregate(`ABF-${index.toString().padStart(3, "0")}`, config);
+    }
+
+    await service.aggregate("ABF-001", config);
+    await service.aggregate("ABF-201", config);
+    await service.aggregate("ABF-002", config);
+    await service.aggregate("ABF-001", config);
+
+    const callCountByNumber = provider.calledNumbers.reduce<Record<string, number>>((counts, number) => {
+      counts[number] = (counts[number] ?? 0) + 1;
+      return counts;
+    }, {});
+
+    expect(callCountByNumber["ABF-001"]).toBe(1);
+    expect(callCountByNumber["ABF-002"]).toBe(2);
+    expect(callCountByNumber["ABF-201"]).toBe(1);
+    expect((service as unknown as { cache: Map<string, unknown> }).cache.size).toBe(200);
   });
 
   it("stops launching lower-priority sites once minimum threshold is satisfied", async () => {

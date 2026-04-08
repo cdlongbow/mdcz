@@ -13,6 +13,7 @@ import {
   OfficialActorSource,
 } from "@main/services/actorSource";
 import { configManager } from "@main/services/config";
+import { createImageHostCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
 import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
 import { loggerService } from "@main/services/LoggerService";
 import { EmbyActorInfoService, EmbyActorPhotoService } from "@main/services/mediaServer/emby";
@@ -62,6 +63,7 @@ const ensureMainWindow = async (): Promise<void> => {
       fetchGateway,
       siteRequestConfigRegistrar: sharedNetworkClient,
     });
+    const imageHostCooldownStore = createImageHostCooldownStore();
     const amazonJpImageService = new AmazonJpImageService(sharedNetworkClient);
     const actorImageService = new ActorImageService({ networkClient: sharedNetworkClient });
     const avjohoCookieResolver = createElectronCookieResolver({
@@ -83,6 +85,7 @@ const ensureMainWindow = async (): Promise<void> => {
       crawlerProvider,
       actorImageService,
       actorSourceProvider,
+      imageHostCooldownStore,
     );
     const maintenanceService = new MaintenanceService(
       signalService,
@@ -90,6 +93,7 @@ const ensureMainWindow = async (): Promise<void> => {
       crawlerProvider,
       actorImageService,
       actorSourceProvider,
+      imageHostCooldownStore,
     );
     const container: ServiceContainer = {
       signalService,
@@ -124,7 +128,11 @@ const ensureMainWindow = async (): Promise<void> => {
       symlinkService: new SymlinkService({ signalService }),
       amazonPosterToolService: new AmazonPosterToolService(sharedNetworkClient, amazonJpImageService),
       shutdown: async () => {
-        await Promise.allSettled([scraperService.shutdown(), maintenanceService.shutdown()]);
+        await Promise.allSettled([
+          scraperService.shutdown(),
+          maintenanceService.shutdown(),
+          crawlerProvider.shutdown(),
+        ]);
       },
     };
 

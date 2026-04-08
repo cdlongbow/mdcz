@@ -1,5 +1,8 @@
 import type { Configuration } from "@main/services/config";
-import { PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
+import {
+  createImageHostCooldownStore,
+  type PersistentCooldownStore,
+} from "@main/services/cooldown/PersistentCooldownStore";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
 import type { CrawlerData, DownloadedAssets } from "@shared/types";
@@ -35,12 +38,7 @@ export class DownloadManager {
   private readonly downloaders: AssetDownloader[];
 
   constructor(networkClient: NetworkClient, options: DownloadManagerOptions = {}) {
-    const imageHostCooldownStore =
-      options.imageHostCooldownStore ??
-      new PersistentCooldownStore({
-        fileName: "image-host-cooldowns.json",
-        loggerName: "ImageHostCooldownStore",
-      });
+    const imageHostCooldownStore = options.imageHostCooldownStore ?? createImageHostCooldownStore();
     const hostCooldownTracker = new ImageHostCooldownTracker(imageHostCooldownStore, this.logger);
 
     this.imageDownloader = new ImageDownloadService(networkClient, hostCooldownTracker, this.logger);

@@ -3,6 +3,10 @@ import { resolve, sep } from "node:path";
 import { ActorImageService } from "@main/services/ActorImageService";
 import type { ActorSourceProvider } from "@main/services/actorSource";
 import { type Configuration, configManager } from "@main/services/config";
+import {
+  createImageHostCooldownStore,
+  type PersistentCooldownStore,
+} from "@main/services/cooldown/PersistentCooldownStore";
 import type { CrawlerProvider } from "@main/services/crawler";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
@@ -172,6 +176,8 @@ export class ScraperService {
 
   private readonly aggregationService: AggregationService;
 
+  private readonly imageHostCooldownStore: PersistentCooldownStore;
+
   private currentRunPromise: Promise<void> | null = null;
 
   constructor(
@@ -180,11 +186,13 @@ export class ScraperService {
     crawlerProvider: CrawlerProvider,
     actorImageService?: ActorImageService,
     actorSourceProvider?: ActorSourceProvider,
+    imageHostCooldownStore?: PersistentCooldownStore,
   ) {
     this.actorImageService = actorImageService ?? new ActorImageService();
     this.actorSourceProvider = actorSourceProvider;
     this.sharedNetworkClient = networkClient;
     this.aggregationService = new AggregationService(crawlerProvider);
+    this.imageHostCooldownStore = imageHostCooldownStore ?? createImageHostCooldownStore();
   }
 
   getStatus(): ScraperStatus {
@@ -261,17 +269,17 @@ export class ScraperService {
   }
 
   async shutdown(options: { timeoutMs?: number } = {}): Promise<void> {
-    if (!this.session.getStatus().running) {
-      return;
+    const timeoutMs = Math.max(0, Math.trunc(options.timeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS));
+    if (this.session.getStatus().running) {
+      this.logger.info("Shutting down scraper service");
+      this.stop();
+      const timedOut = this.currentRunPromise ? await didPromiseTimeout(this.currentRunPromise, timeoutMs) : false;
+      if (timedOut) {
+        this.logger.warn(`Timed out waiting ${timeoutMs}ms for scraper service shutdown`);
+      }
     }
 
-    const timeoutMs = Math.max(0, Math.trunc(options.timeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS));
-    this.logger.info("Shutting down scraper service");
-    this.stop();
-    const timedOut = this.currentRunPromise ? await didPromiseTimeout(this.currentRunPromise, timeoutMs) : false;
-    if (timedOut) {
-      this.logger.warn(`Timed out waiting ${timeoutMs}ms for scraper service shutdown`);
-    }
+    await this.imageHostCooldownStore.flush();
   }
 
   pause(): void {
@@ -482,7 +490,9 @@ export class ScraperService {
       aggregationService: this.aggregationService,
       translateService: new TranslateService(this.sharedNetworkClient),
       nfoGenerator: new NfoGenerator(),
-      downloadManager: new DownloadManager(this.sharedNetworkClient),
+      downloadManager: new DownloadManager(this.sharedNetworkClient, {
+        imageHostCooldownStore: this.imageHostCooldownStore,
+      }),
       fileOrganizer,
       signalService: this.signalService,
       actorImageService: this.actorImageService,

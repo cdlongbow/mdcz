@@ -154,6 +154,10 @@ export class CrawlerProvider {
     }));
   }
 
+  async shutdown(): Promise<void> {
+    await this.siteCooldownStore.flush();
+  }
+
   private updateSiteCooldown(site: Website, result: CrawlerResponse["result"]): void {
     if (result.success || result.failureReason === "not_found") {
       this.siteCooldownStore.reset(site);

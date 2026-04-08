@@ -87,7 +87,7 @@ describe("CrawlerProvider cooldowns", () => {
 
     expect(provider.isSiteCoolingDown(Website.DMM)).toBe(true);
 
-    await store.flush();
+    await provider.shutdown();
 
     const reloadedStore = new PersistentCooldownStore({
       filePath: storePath,

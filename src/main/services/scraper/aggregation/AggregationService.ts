@@ -14,6 +14,7 @@ interface CacheEntry {
 }
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_CACHE_ENTRIES = 200;
 const FC2_SITE_WHITELIST = new Set<Website>([Website.FC2, Website.FC2HUB, Website.JAVDB]);
 const FC2_ONLY_SITES = new Set<Website>([Website.FC2, Website.FC2HUB]);
 const FC2_NUMBER_PATTERN = /^FC2-?\d+$/iu;
@@ -412,30 +413,45 @@ export class AggregationService {
     const entry = this.cache.get(key);
     if (!entry) return null;
 
-    if (Date.now() > entry.expiresAt) {
+    if (Date.now() >= entry.expiresAt) {
       this.cache.delete(key);
       return null;
     }
 
+    this.cache.delete(key);
+    this.cache.set(key, entry);
     return entry.result;
   }
 
   private putInCache(key: string, result: AggregationResult): void {
-    // Evict expired entries periodically
-    if (this.cache.size > 100) {
-      this.evictExpired();
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
     }
 
     this.cache.set(key, {
       result,
       expiresAt: Date.now() + CACHE_TTL_MS,
     });
+    this.pruneCache();
+  }
+
+  private pruneCache(): void {
+    this.evictExpired();
+
+    while (this.cache.size > MAX_CACHE_ENTRIES) {
+      const oldestKey = this.cache.keys().next().value;
+      if (!oldestKey) {
+        return;
+      }
+
+      this.cache.delete(oldestKey);
+    }
   }
 
   private evictExpired(): void {
     const now = Date.now();
     for (const [key, entry] of this.cache) {
-      if (now > entry.expiresAt) {
+      if (now >= entry.expiresAt) {
         this.cache.delete(key);
       }
     }
