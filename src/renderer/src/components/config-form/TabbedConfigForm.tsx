@@ -138,6 +138,7 @@ const FIELD_REGISTRY: FieldEntry[] = [
   // download
   { key: "download.downloadThumb", label: "下载横版缩略图", section: "download" },
   { key: "download.downloadPoster", label: "下载海报", section: "download" },
+  { key: "download.tagBadges", label: "封面标签角标", section: "download" },
   { key: "download.downloadFanart", label: "下载背景图", section: "download" },
   { key: "download.downloadSceneImages", label: "下载剧照", section: "download" },
   { key: "download.downloadTrailer", label: "下载预告片", section: "download" },
@@ -398,6 +399,13 @@ function DownloadSection(_props: SectionRenderProps) {
       )}
       <BoolField name="download.downloadThumb" label="下载横版缩略图" />
       <BoolField name="download.downloadPoster" label="下载海报" />
+      {downloadPoster && (
+        <BoolField
+          name="download.tagBadges"
+          label="为封面添加标签角标"
+          description="按现有影片标签自动添加角标，当前支持中字、无码、破解、流出；仅处理本次新下载的海报。"
+        />
+      )}
       <BoolField name="download.downloadFanart" label="下载背景图" />
       <BoolField name="download.downloadSceneImages" label="下载剧照" />
       <BoolField name="download.downloadTrailer" label="下载预告片" />

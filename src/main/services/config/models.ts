@@ -90,6 +90,7 @@ const translateSchema = z.object({
 const downloadSchema = z.object({
   downloadThumb: z.boolean().default(true),
   downloadPoster: z.boolean().default(true),
+  tagBadges: z.boolean().default(false),
   downloadFanart: z.boolean().default(true),
   downloadSceneImages: z.boolean().default(true),
   downloadTrailer: z.boolean().default(true),
