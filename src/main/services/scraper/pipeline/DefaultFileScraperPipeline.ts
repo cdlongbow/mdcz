@@ -5,7 +5,7 @@ import { LocalScanService } from "@main/services/scraper/maintenance/LocalScanSe
 import { toErrorMessage } from "@main/utils/common";
 import type { CrawlerData, NfoLocalState, ScrapeResult } from "@shared/types";
 import { isAbortError, throwIfAborted } from "../abort";
-import type { FileScrapeProgress, FileScraperDependencies } from "../FileScraper";
+import type { FileScrapeProgress, FileScraperDependencies, ScrapeExecutionMode } from "../FileScraper";
 import { AggregateStage } from "./AggregateStage";
 import { AggregationCoordinator } from "./AggregationCoordinator";
 import { DownloadStage } from "./DownloadStage";
@@ -50,7 +50,10 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
 
   readonly stages: readonly ScrapeStage[];
 
-  constructor(private readonly deps: FileScraperDependencies) {
+  constructor(
+    private readonly deps: FileScraperDependencies,
+    private readonly scrapeMode: ScrapeExecutionMode = "batch",
+  ) {
     this.actorImageService = deps.actorImageService ?? new ActorImageService();
     this.localScanService = deps.localScanService ?? new LocalScanService();
     this.aggregationCoordinator = new AggregationCoordinator(deps.aggregationService);
@@ -59,7 +62,7 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
   }
 
   createContext(filePath: string, progress: FileScrapeProgress = { fileIndex: 1, totalFiles: 1 }): ScrapeContext {
-    return new ScrapeContext(filePath, progress);
+    return new ScrapeContext(filePath, progress, this.scrapeMode);
   }
 
   setProgress(progress: FileScrapeProgress, stepPercent: number): void {
@@ -91,7 +94,7 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
       aggregateMetadata: async (fileInfo, configuration, signal) =>
         await this.aggregationCoordinator.aggregate(fileInfo, configuration, signal),
       handleFailedFileMove: async (fileInfo, configuration) =>
-        await this.failureHandler.moveToFailedFolder(fileInfo, configuration),
+        await this.failureHandler.moveToFailedFolder(fileInfo, configuration, this.scrapeMode),
       loadExistingNfoLocalState: async (filePath, configuration) =>
         await this.loadExistingNfoLocalState(filePath, configuration),
       setProgress: (progress, stepPercent) => {

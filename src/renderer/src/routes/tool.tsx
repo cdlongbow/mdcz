@@ -30,6 +30,7 @@ import { type MutableRefObject, useCallback, useEffect, useMemo, useRef, useStat
 import { deleteFile } from "@/api/manual";
 import { createSymlink, listEntries, scrapeSingleFile } from "@/client/api";
 import { ipc } from "@/client/ipc";
+import { chooseScrapeFilePath } from "@/client/scrapeFilePath";
 import type { CreateSoftlinksBody, FileItem, ScrapeFileBody } from "@/client/types";
 import { AmazonPosterDialog } from "@/components/AmazonPosterDialog";
 import { PageHeader } from "@/components/PageHeader";
@@ -547,6 +548,17 @@ function ToolComponent() {
       setTimeout(() => navigate({ to: "/logs" }), 1000);
     } catch (error) {
       showError(`单文件刮削任务启动失败: ${error}`);
+    }
+  };
+
+  const handleBrowseSingleFile = async () => {
+    try {
+      const selectedPath = await chooseScrapeFilePath();
+      if (selectedPath) {
+        setSingleFilePath(selectedPath);
+      }
+    } catch (error) {
+      showError(`文件选择失败: ${toErrorMessage(error)}`);
     }
   };
 
@@ -1218,13 +1230,23 @@ function ToolComponent() {
                     <Label htmlFor="filePath" className="text-xs font-medium text-muted-foreground">
                       文件路径
                     </Label>
-                    <Input
-                      id="filePath"
-                      value={singleFilePath}
-                      onChange={(e) => setSingleFilePath(e.target.value)}
-                      placeholder="/path/to/video.mp4"
-                      className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2"
-                    />
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="filePath"
+                        value={singleFilePath}
+                        onChange={(e) => setSingleFilePath(e.target.value)}
+                        placeholder="/path/to/video.mp4"
+                        className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleBrowseSingleFile}
+                        className="h-9 shrink-0 rounded-lg px-3"
+                      >
+                        <FolderOpen className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                   <Button
                     variant="secondary"

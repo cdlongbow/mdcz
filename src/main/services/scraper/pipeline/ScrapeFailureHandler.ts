@@ -6,7 +6,7 @@ import { parseFileInfo } from "@main/utils/number";
 import type { FileInfo, ScrapeResult } from "@shared/types";
 import type { Logger } from "winston";
 import type { FileOrganizer } from "../FileOrganizer";
-import type { FileScrapeProgress } from "../FileScraper";
+import type { FileScrapeProgress, ScrapeExecutionMode } from "../FileScraper";
 import { updateScrapeProgress } from "../output";
 import type { ScrapeContext } from "./ScrapeContext";
 import type { FileScraperStageRuntime } from "./types";
@@ -42,7 +42,7 @@ export class ScrapeFailureHandler {
 
     try {
       const configuration = await configManager.getValidated();
-      context.fileInfo = await this.moveToFailedFolder(context.fileInfo, configuration);
+      context.fileInfo = await this.moveToFailedFolder(context.fileInfo, configuration, context.mode);
     } catch (moveError) {
       const moveMsg = moveError instanceof Error ? moveError.message : String(moveError);
       this.logger.warn(`Failed to move file to failed folder: ${moveMsg}`);
@@ -59,8 +59,12 @@ export class ScrapeFailureHandler {
     return failedResult;
   }
 
-  async moveToFailedFolder(fileInfo: FileInfo, config: Configuration): Promise<FileInfo> {
-    if (!config.behavior.failedFileMove) {
+  async moveToFailedFolder(
+    fileInfo: FileInfo,
+    config: Configuration,
+    mode: ScrapeExecutionMode = "batch",
+  ): Promise<FileInfo> {
+    if (mode === "single" || !config.behavior.failedFileMove) {
       return fileInfo;
     }
     if (!(await pathExists(fileInfo.filePath))) {

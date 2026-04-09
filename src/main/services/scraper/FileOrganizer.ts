@@ -6,6 +6,7 @@ import { loggerService } from "@main/services/LoggerService";
 import { ensureParentDirectory, hasEnoughDiskSpace, listVideoFiles } from "@main/utils/file";
 import { parseFileInfo } from "@main/utils/number";
 import type { CrawlerData, FileInfo, NamingPreviewItem, NfoLocalState } from "@shared/types";
+import type { ScrapeExecutionMode } from "./FileScraper";
 import { isGeneratedSidecarVideo, type SubtitleSidecarMatch } from "./media";
 import { FileMover } from "./organize/FileMover";
 import { NamingEngine } from "./organize/NamingEngine";
@@ -23,6 +24,10 @@ interface ResolveOutputPlanOptions {
   createDirectories?: boolean;
 }
 
+interface PlanOptions {
+  executionMode?: ScrapeExecutionMode;
+}
+
 export class FileOrganizer {
   private readonly logger = loggerService.getLogger("FileOrganizer");
 
@@ -34,15 +39,24 @@ export class FileOrganizer {
 
   private readonly fileMover = new FileMover(this.logger, this.sidecarResolver);
 
-  plan(fileInfo: FileInfo, data: CrawlerData, config: Configuration, localState?: NfoLocalState): OrganizePlan {
+  plan(
+    fileInfo: FileInfo,
+    data: CrawlerData,
+    config: Configuration,
+    localState?: NfoLocalState,
+    options: PlanOptions = {},
+  ): OrganizePlan {
     const sourceVideo = parse(fileInfo.filePath);
     const layout = this.namingEngine.buildLayout(fileInfo, data, config, localState);
 
     let outputDir: string;
     if (config.behavior.successFileMove) {
-      const baseOutput = this.resolveBaseOutput(fileInfo, config);
+      const baseOutput = this.resolveBaseOutput(fileInfo, config, options);
       const sourceDir = resolve(sourceVideo.dir);
-      const isAlreadyInOutput = sourceDir.startsWith(resolve(baseOutput) + sep);
+      const isAlreadyInOutput =
+        options.executionMode === "single"
+          ? this.isSingleModeOutputDirectory(sourceDir, layout.folderRelativePath)
+          : sourceDir.startsWith(resolve(baseOutput) + sep);
       outputDir = isAlreadyInOutput ? sourceDir : join(baseOutput, layout.folderRelativePath);
     } else {
       outputDir = sourceVideo.dir;
@@ -173,10 +187,36 @@ export class FileOrganizer {
     return movedPath;
   }
 
-  private resolveBaseOutput(fileInfo: FileInfo, config: Configuration): string {
+  private resolveBaseOutput(fileInfo: FileInfo, config: Configuration, options: PlanOptions): string {
+    if (options.executionMode === "single") {
+      return dirname(fileInfo.filePath);
+    }
+
     const mediaRoot = config.paths.mediaPath.trim();
     const base = mediaRoot.length > 0 ? mediaRoot : dirname(fileInfo.filePath);
     return resolve(base, config.paths.successOutputFolder.trim());
+  }
+
+  private isSingleModeOutputDirectory(sourceDir: string, folderRelativePath: string): boolean {
+    const relativeSegments = folderRelativePath.split(/[\\/]+/u).filter((segment) => segment.length > 0);
+    if (relativeSegments.length === 0) {
+      return true;
+    }
+
+    const sourceSegments = resolve(sourceDir)
+      .split(/[\\/]+/u)
+      .filter((segment) => segment.length > 0);
+    if (relativeSegments.length > sourceSegments.length) {
+      return false;
+    }
+
+    const startIndex = sourceSegments.length - relativeSegments.length;
+    return relativeSegments.every((segment, index) => {
+      const sourceSegment = sourceSegments[startIndex + index];
+      return process.platform === "win32"
+        ? sourceSegment.toLowerCase() === segment.toLowerCase()
+        : sourceSegment === segment;
+    });
   }
 }
 

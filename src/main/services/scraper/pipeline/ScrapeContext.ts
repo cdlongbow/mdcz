@@ -13,6 +13,7 @@ import type {
 } from "@shared/types";
 import type { AggregationResult } from "../aggregation";
 import type { OrganizePlan } from "../FileOrganizer";
+import type { ScrapeExecutionMode } from "../FileScraper";
 import { type FileInfoWithSubtitles, resolveFileInfoWithSubtitles, type SubtitleSidecarMatch } from "../media";
 
 export class ScrapeContext {
@@ -55,6 +56,7 @@ export class ScrapeContext {
   constructor(
     readonly filePath: string,
     readonly progress: { fileIndex: number; totalFiles: number } = { fileIndex: 1, totalFiles: 1 },
+    readonly mode: ScrapeExecutionMode = "batch",
   ) {
     this.parsedFileInfo = parseFileInfo(filePath);
     this.fileId = buildFileId(this.parsedFileInfo.filePath);

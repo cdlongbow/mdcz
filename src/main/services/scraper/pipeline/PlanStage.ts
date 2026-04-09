@@ -11,7 +11,9 @@ export class PlanStage implements ScrapeStage {
     const crawlerData = context.requireCrawlerData();
 
     let plan: OrganizePlan = {
-      ...this.runtime.fileOrganizer.plan(context.fileInfo, crawlerData, configuration, context.existingNfoLocalState),
+      ...this.runtime.fileOrganizer.plan(context.fileInfo, crawlerData, configuration, context.existingNfoLocalState, {
+        executionMode: context.mode,
+      }),
       subtitleSidecars: context.subtitleSidecars,
     };
 

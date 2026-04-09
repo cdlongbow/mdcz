@@ -1,4 +1,4 @@
-import { realpath } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { ActorImageService } from "@main/services/ActorImageService";
 import type { ActorSourceProvider } from "@main/services/actorSource";
@@ -19,13 +19,13 @@ import { createAbortError } from "./abort";
 import { AggregationService } from "./aggregation";
 import { DownloadManager } from "./DownloadManager";
 import { fileOrganizer } from "./FileOrganizer";
-import { createFileScraper } from "./FileScraper";
+import { createFileScraper, type ScrapeExecutionMode } from "./FileScraper";
 import { isGeneratedSidecarVideo } from "./media";
 import { NfoGenerator } from "./NfoGenerator";
 import { ScrapeSession } from "./session/ScrapeSession";
 import { TranslateService } from "./TranslateService";
 
-export type ScraperMode = "single" | "batch";
+export type ScraperMode = ScrapeExecutionMode;
 
 export interface StartScrapeResult {
   taskId: string;
@@ -253,7 +253,7 @@ export class ScraperService {
 
     this.configureRuntimeSettings(configuration);
     const concurrency = mode === "single" ? 1 : Math.max(1, configuration.scrape.threadNumber);
-    return this.beginSession(filePaths, concurrency, configuration);
+    return this.beginSession(filePaths, concurrency, configuration, mode);
   }
 
   stop(): { pendingCount: number } {
@@ -299,7 +299,7 @@ export class ScraperService {
     // Supports both single-item and batch manual retry from frontend.
     const pending = uniquePaths(filePaths);
     const totalFiles = Math.max(1, this.session.getStatus().totalFiles);
-    const fileScraper = createFileScraper(this.createFileScraperDependencies());
+    const fileScraper = createFileScraper(this.createFileScraperDependencies(), { mode: "batch" });
     const failedFiles = new Set(this.session.getFailedFiles());
 
     let requeuedCount = 0;
@@ -351,7 +351,7 @@ export class ScraperService {
 
     this.configureRuntimeSettings(configuration);
     const concurrency = Math.max(1, configuration.scrape.threadNumber);
-    return this.beginSession(pending, concurrency, configuration);
+    return this.beginSession(pending, concurrency, configuration, "batch");
   }
 
   private async finish(taskId: string): Promise<void> {
@@ -368,8 +368,7 @@ export class ScraperService {
 
   private async resolveFilePaths(mode: ScraperMode, paths: string[], configuration: Configuration): Promise<string[]> {
     if (mode === "single") {
-      const filePath = paths[0]?.trim();
-      return filePath ? [filePath] : [];
+      return await this.resolveSingleFilePaths(paths);
     }
 
     const includeRealPathComparisons = configuration.behavior.scrapeSoftlinkPath;
@@ -390,6 +389,41 @@ export class ScraperService {
     return filteredOutputPaths;
   }
 
+  private async resolveSingleFilePaths(paths: string[]): Promise<string[]> {
+    const filePath = paths[0]?.trim();
+    if (!filePath) {
+      return [];
+    }
+
+    try {
+      const targetStats = await stat(filePath);
+      if (!targetStats.isDirectory()) {
+        return [filePath];
+      }
+    } catch {
+      throw new ScraperServiceError("FILE_NOT_FOUND", `Selected media file not found: ${filePath}`);
+    }
+
+    let candidatePaths: string[];
+    try {
+      candidatePaths = (await listVideoFiles(filePath, false)).filter(
+        (candidatePath) => !isGeneratedSidecarVideo(candidatePath),
+      );
+    } catch (error) {
+      throw new ScraperServiceError("DIR_NOT_FOUND", toErrorMessage(error));
+    }
+
+    if (candidatePaths.length === 0) {
+      return [];
+    }
+
+    if (candidatePaths.length > 1) {
+      throw new ScraperServiceError("MULTIPLE_FILES", "Directory contains multiple media files; choose a file path");
+    }
+
+    return candidatePaths;
+  }
+
   private async buildExcludedOutputPaths(
     scanRoots: string[],
     configuration: Configuration,
@@ -407,8 +441,23 @@ export class ScraperService {
       }),
     );
 
-    const comparablePathGroups = await mapWithConcurrency(
+    const comparableScanRootGroups = await mapWithConcurrency(scanRoots, BATCH_PATH_RESOLUTION_CONCURRENCY, (dirPath) =>
+      collectComparablePaths(dirPath, includeRealPathComparisons),
+    );
+    const comparableScanRootPaths = new Set(comparableScanRootGroups.flat());
+    const distinctOutputDirectories = await mapWithConcurrency(
       outputDirectories,
+      BATCH_PATH_RESOLUTION_CONCURRENCY,
+      async (dirPath) => {
+        const comparablePaths = await collectComparablePaths(dirPath, includeRealPathComparisons);
+        return comparablePaths.some((candidatePath) => comparableScanRootPaths.has(candidatePath)) ? null : dirPath;
+      },
+    );
+    const filteredOutputDirectories = distinctOutputDirectories.filter(
+      (dirPath): dirPath is string => typeof dirPath === "string",
+    );
+    const comparablePathGroups = await mapWithConcurrency(
+      filteredOutputDirectories,
       BATCH_PATH_RESOLUTION_CONCURRENCY,
       (dirPath) => collectComparablePaths(dirPath, includeRealPathComparisons),
     );
@@ -510,14 +559,19 @@ export class ScraperService {
     return new ScrapeRestGate(restAfterCount, restDurationSeconds * 1000, this.logger);
   }
 
-  private beginSession(filePaths: string[], concurrency: number, configuration: Configuration): StartScrapeResult {
+  private beginSession(
+    filePaths: string[],
+    concurrency: number,
+    configuration: Configuration,
+    mode: ScraperMode,
+  ): StartScrapeResult {
     const taskId = this.session.begin(filePaths, concurrency);
     this.restGate = this.createRestGate(configuration);
 
     this.signalService.setButtonStatus(false, true);
     this.signalService.resetProgress();
 
-    const fileScraper = createFileScraper(this.createFileScraperDependencies());
+    const fileScraper = createFileScraper(this.createFileScraperDependencies(), { mode });
 
     for (const [index, filePath] of filePaths.entries()) {
       const fileIndex = index + 1;

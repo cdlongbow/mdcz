@@ -23,9 +23,15 @@ export interface FileScraperDependencies {
   localScanService?: Pick<LocalScanService, "scanVideo">;
 }
 
+export type ScrapeExecutionMode = "single" | "batch";
+
 export interface FileScrapeProgress {
   fileIndex: number;
   totalFiles: number;
+}
+
+export interface CreateFileScraperOptions {
+  mode?: ScrapeExecutionMode;
 }
 
 export class FileScraper {
@@ -60,5 +66,5 @@ export class FileScraper {
   }
 }
 
-export const createFileScraper = (deps: FileScraperDependencies): FileScraper =>
-  new FileScraper(new DefaultFileScraperPipeline(deps));
+export const createFileScraper = (deps: FileScraperDependencies, options: CreateFileScraperOptions = {}): FileScraper =>
+  new FileScraper(new DefaultFileScraperPipeline(deps, options.mode));
