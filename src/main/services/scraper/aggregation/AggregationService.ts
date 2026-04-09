@@ -15,8 +15,8 @@ interface CacheEntry {
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_CACHE_ENTRIES = 200;
-const FC2_SITE_WHITELIST = new Set<Website>([Website.FC2, Website.FC2HUB, Website.JAVDB]);
-const FC2_ONLY_SITES = new Set<Website>([Website.FC2, Website.FC2HUB]);
+const FC2_SITE_WHITELIST = new Set<Website>([Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB]);
+const FC2_ONLY_SITES = new Set<Website>([Website.FC2, Website.FC2HUB, Website.PPVDATABANK]);
 const FC2_NUMBER_PATTERN = /^FC2-?\d+$/iu;
 const EARLY_STOP_IMAGE_FIELDS = ["thumb_url", "poster_url"] as const;
 

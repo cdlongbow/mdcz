@@ -7,7 +7,7 @@ import { parseDate } from "../base/parser";
 import type { Context, SearchPageResolution } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
 import { BaseFc2Crawler } from "./BaseFc2Crawler";
-import { toAbsoluteUrl, uniqueStrings } from "./helpers";
+import { parseClockDurationToSeconds, toAbsoluteUrl, uniqueStrings } from "./helpers";
 
 const FC2_WATERMARK_PATTERNS = [/\s*\*{2,}[a-z]+(?:\*+[a-z]+)+\*{0,}\s*/g, /\s*-[a-z]+(?:-[a-z]+)+\s*/g];
 const LATIN_OR_DIGIT_PATTERN = /[A-Za-z0-9]/u;
@@ -17,23 +17,6 @@ const FC2_NOT_FOUND_MARKERS = [
 ] as const;
 
 const BASE_URL = "https://adult.contents.fc2.com";
-
-const parseClockDurationToSeconds = (value: string | undefined): number | undefined => {
-  if (!value) {
-    return undefined;
-  }
-
-  const matched = normalizeText(value).match(/^(?:(\d+):)?(\d{1,2}):(\d{2})$/u);
-  if (!matched) {
-    return undefined;
-  }
-
-  const hours = Number.parseInt(matched[1] ?? "0", 10);
-  const minutes = Number.parseInt(matched[2], 10);
-  const seconds = Number.parseInt(matched[3], 10);
-  const total = hours * 3600 + minutes * 60 + seconds;
-  return total > 0 ? total : undefined;
-};
 
 const findPreviousNonSpaceChar = (value: string, index: number): string | undefined => {
   for (let cursor = index - 1; cursor >= 0; cursor -= 1) {

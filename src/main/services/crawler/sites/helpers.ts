@@ -128,8 +128,22 @@ export const normalizeFc2Number = (value: string): string => {
     .trim();
 };
 
-/** @deprecated Use normalizeFc2Number instead — they are identical. */
-export const normalizeFc2Digits = normalizeFc2Number;
+export const parseClockDurationToSeconds = (value: string | undefined): number | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const matched = normalizeText(value).match(/^(?:(\d+):)?(\d{1,2}):(\d{2})$/u);
+  if (!matched) {
+    return undefined;
+  }
+
+  const hours = Number.parseInt(matched[1] ?? "0", 10);
+  const minutes = Number.parseInt(matched[2], 10);
+  const seconds = Number.parseInt(matched[3], 10);
+  const total = hours * 3600 + minutes * 60 + seconds;
+  return total > 0 ? total : undefined;
+};
 
 export const extractByLabels = ($: CheerioAPI, labels: string[]): string | undefined => {
   for (const label of labels) {
