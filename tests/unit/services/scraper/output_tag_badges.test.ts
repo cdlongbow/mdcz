@@ -48,6 +48,7 @@ describe("applyPosterTagBadgesIfNeeded", () => {
       fileInfo: createFileInfo({
         isSubtitled: true,
         subtitleTag: "中文字幕",
+        isUncensored: true,
       }),
       logger: {
         warn: vi.fn(),
@@ -57,7 +58,7 @@ describe("applyPosterTagBadgesIfNeeded", () => {
 
     expect(watermarkService.applyTagBadges).toHaveBeenCalledWith(
       "/tmp/poster.jpg",
-      expect.arrayContaining([expect.objectContaining({ label: "中字" })]),
+      expect.arrayContaining([expect.objectContaining({ label: "中字" }), expect.objectContaining({ label: "无码" })]),
     );
   });
 

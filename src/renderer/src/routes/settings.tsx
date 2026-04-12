@@ -117,7 +117,8 @@ function SettingsComponent() {
       } else {
         setServerErrors([]);
         setServerFieldErrors({});
-        toast.error(`保存失败: ${toErrorMessage(error)}`);
+        const message = toErrorMessage(error);
+        toast.error(message.includes("配置校验失败") ? message : `保存失败: ${message}`);
       }
     },
   });

@@ -59,6 +59,17 @@ Reason: Custom {
     expect(toSharedErrorMessage(undefined, "未知错误")).toBe("未知错误");
     expect(toErrorMessage({ message: "   " }, "未知错误")).toBe("未知错误");
   });
+
+  it("strips Electron IPC wrappers and config validation error prefixes", () => {
+    expect(
+      toErrorMessage(
+        "Error invoking remote method 'config:save': CONFIG_VALIDATION_ERROR: 配置校验失败：文件夹模板：[] 可选段不能包含路径分隔符",
+      ),
+    ).toBe("配置校验失败：文件夹模板：[] 可选段不能包含路径分隔符");
+    expect(toErrorMessage("Error invoking remote method 'scraper:start': NO_FILES: No files selected")).toBe(
+      "NO_FILES: No files selected",
+    );
+  });
 });
 
 describe("toArray", () => {

@@ -103,11 +103,12 @@ describe("FileScraper subtitle sidecars", () => {
   };
 
   it.each([
-    ["ABC-123.srt", "字幕"],
-    ["ABC-123.zh.srt", "中文字幕"],
-  ] as const)("propagates %s into the merged subtitle tag", async (subtitleFileName, expectedSubtitleTag) => {
+    ["ABC-123.mp4", "ABC-123.srt", "字幕"],
+    ["ABC-123.mp4", "ABC-123.zh.srt", "中文字幕"],
+    ["ABC-123-U.mp4", "ABC-123.zh.srt", "中文字幕"],
+  ] as const)("propagates %s for %s into the merged subtitle tag", async (videoFileName, subtitleFileName, expectedSubtitleTag) => {
     const root = await createTempDir();
-    const videoPath = join(root, "ABC-123.mp4");
+    const videoPath = join(root, videoFileName);
     const subtitlePath = join(root, subtitleFileName);
     const outputDir = join(root, "output", "ABC-123");
     const plan: OrganizePlan = {

@@ -100,8 +100,7 @@ const NFO_NAMING_OPTIONS: EnumOption[] = [
   { value: "filename", label: "仅 文件名.nfo" },
 ];
 
-export const NAMING_TEMPLATE_DESCRIPTION =
-  "可用占位符：{actor} {number} {date} {title} {studio}；可用 [{series}] 这种 [] 包裹单个路径片段内的可选内容，[] 内不能包含 / 或 \\";
+export const NAMING_TEMPLATE_DESCRIPTION = "可用占位符：{actor} {number} {date} {title} {studio}";
 
 // ── Field registry for search/filter ──
 
@@ -394,7 +393,7 @@ function DownloadSection(_props: SectionRenderProps) {
     <>
       {sharedDirectoryMode && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
-          当前为共享目录模式：多个影片会写入同一目录。此模式下必须使用“仅 文件名.nfo”，且不支持下载剧照。
+          当前为共享目录模式：多个影片会写入同一目录。保存时会校验 NFO 命名与剧照下载设置。
         </div>
       )}
       <BoolField name="download.downloadThumb" label="下载横版缩略图" />
@@ -513,13 +512,13 @@ export function NamingSection(_props: SectionRenderProps) {
       <EnumField
         name="naming.assetNamingMode"
         label="附属文件命名"
-        description="海报、横版缩略图、背景图与预告片的文件名规则。共享目录模式下必须使用“跟随影片文件名”。"
+        description="海报、横版缩略图、背景图与预告片的文件名规则。"
         options={ASSET_NAMING_OPTIONS}
       />
       {sharedDirectoryMode && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
           当前文件夹模板不会为每部影片创建独立目录，属于共享目录模式。推荐默认使用 <code>{`{actor}/{number}`}</code>；
-          如需共享目录，请同时将附属文件命名切换为“跟随影片文件名”。
+          如需共享目录，保存时会校验相关命名规则。
         </div>
       )}
       <TextField

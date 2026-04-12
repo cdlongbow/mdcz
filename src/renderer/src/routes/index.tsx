@@ -1,14 +1,13 @@
 import { toErrorMessage } from "@shared/error";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, LayoutDashboard, PauseCircle, Play, StopCircle } from "lucide-react";
+import { LayoutDashboard, PauseCircle, Play, RotateCcw, StopCircle } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
-import { pauseScrape, resumeScrape, startBatchScrape, stopScrape } from "@/api/manual";
+import { pauseScrape, resumeScrape, retryScrapeSelection, startBatchScrape, stopScrape } from "@/api/manual";
 import { chooseMediaDirectory, isMediaDirectorySelectionCancelled } from "@/client/mediaPath";
 import MaintenanceBatchBar from "@/components/maintenance/MaintenanceBatchBar";
-import { ScrapeFailureDialog } from "@/components/maintenance/ScrapeFailureDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { UncensoredConfirmDialog } from "@/components/UncensoredConfirmDialog";
 import { Badge } from "@/components/ui/Badge";
@@ -47,14 +46,12 @@ function DisabledModeButton({ label, tooltip, active }: { label: string; tooltip
 
 function Index() {
   const queryClient = useQueryClient();
-  const [failDialogOpen, setFailDialogOpen] = useState(false);
   const [uncensoredDialogOpen, setUncensoredDialogOpen] = useState(false);
   const configQ = useCurrentConfig();
 
   const {
     isScraping,
     scrapeStatus,
-    failedCount,
     results,
     setScraping,
     setScrapeStatus,
@@ -65,7 +62,6 @@ function Index() {
     useShallow((state) => ({
       isScraping: state.isScraping,
       scrapeStatus: state.scrapeStatus,
-      failedCount: state.failedCount,
       results: state.results,
       setScraping: state.setScraping,
       setScrapeStatus: state.setScrapeStatus,
@@ -85,6 +81,10 @@ function Index() {
 
   const maintenanceBusy = maintenanceStatus !== "idle";
   const ambiguousItems = useMemo(() => buildAmbiguousUncensoredScrapeGroups(results), [results]);
+  const failedPaths = useMemo(
+    () => results.filter((result) => result.status === "failed").map((result) => result.fileInfo.filePath),
+    [results],
+  );
   const mediaPath = configQ.data?.paths?.mediaPath?.trim() ?? "";
 
   // Detect scrape completion and check for ambiguous uncensored items
@@ -176,6 +176,37 @@ function Index() {
       toast.success("任务已恢复");
     } catch (_error) {
       toast.error("恢复失败");
+    }
+  };
+
+  const resetForNewTask = () => {
+    clearResults();
+    updateProgress(0, 0);
+    setScraping(true);
+    setScrapeStatus("running");
+    setSelectedResultId(null);
+  };
+
+  const handleRetryFailed = async () => {
+    if (failedPaths.length === 0) {
+      toast.info("当前没有可重试的失败项目");
+      return;
+    }
+
+    if (!window.confirm(`确定要批量重试 ${failedPaths.length} 个失败项目吗？`)) {
+      return;
+    }
+
+    try {
+      const result = await retryScrapeSelection(failedPaths, {
+        scrapeStatus,
+      });
+      if (result.data.strategy === "new-task") {
+        resetForNewTask();
+      }
+      toast.success(result.data.message);
+    } catch (error) {
+      toast.error(`重试失败: ${toErrorMessage(error)}`);
     }
   };
 
@@ -273,17 +304,17 @@ function Index() {
             )}
           </div>
 
-          {failedCount > 0 && !isScraping && workbenchMode === "scrape" && (
+          {failedPaths.length > 0 && !isScraping && workbenchMode === "scrape" && (
             <Button
               variant="ghost"
               size="sm"
               className="rounded-lg h-9 px-4 gap-2 text-destructive hover:text-destructive hover:bg-destructive/10 whitespace-nowrap"
-              onClick={() => setFailDialogOpen(true)}
+              onClick={handleRetryFailed}
             >
-              <AlertTriangle className="h-4 w-4" />
-              失败处理
+              <RotateCcw className="h-4 w-4" />
+              重试失败
               <Badge variant="destructive" className="h-4 px-1 text-[10px]">
-                {failedCount}
+                {failedPaths.length}
               </Badge>
             </Button>
           )}
@@ -308,7 +339,6 @@ function Index() {
         </Suspense>
       </div>
 
-      <ScrapeFailureDialog open={failDialogOpen} onOpenChange={setFailDialogOpen} />
       <UncensoredConfirmDialog
         open={uncensoredDialogOpen && ambiguousItems.length > 0}
         onOpenChange={setUncensoredDialogOpen}

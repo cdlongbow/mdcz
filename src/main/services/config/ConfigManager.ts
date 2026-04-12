@@ -26,6 +26,23 @@ export class ConfigValidationError extends Error {
   }
 }
 
+const CONFIG_FIELD_LABELS: Record<string, string> = {
+  "naming.folderTemplate": "文件夹模板",
+  "naming.fileTemplate": "文件名模板",
+  "naming.assetNamingMode": "附属文件命名",
+  "download.nfoNaming": "NFO 文件命名",
+  "download.downloadSceneImages": "下载剧照",
+  "jellyfin.userId": "Jellyfin 用户 ID",
+};
+
+const formatConfigValidationError = (fieldErrors: Record<string, string>): string => {
+  const details = Object.entries(fieldErrors)
+    .map(([field, message]) => `${CONFIG_FIELD_LABELS[field] ?? field}：${message}`)
+    .join("；");
+
+  return details ? `配置校验失败：${details}` : "配置校验失败";
+};
+
 const PROFILE_NAME_PATTERN = /^[\p{L}\p{N}_-]+$/u;
 
 const normalizeProfileName = (name: string): string => {
@@ -99,7 +116,7 @@ export class ConfigManager extends EventEmitter {
         }
       }
       const fields = Object.keys(fieldErrors);
-      throw new ConfigValidationError("Configuration validation failed", fields, fieldErrors);
+      throw new ConfigValidationError(formatConfigValidationError(fieldErrors), fields, fieldErrors);
     }
 
     this.configuration = parsed.data;

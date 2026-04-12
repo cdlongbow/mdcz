@@ -5,6 +5,7 @@ import { configurationSchema, defaultConfiguration } from "@main/services/config
 import { FileOrganizer } from "@main/services/scraper/FileOrganizer";
 import { buildGeneratedVideoSidecarTargetPath, isGeneratedSidecarVideo } from "@main/services/scraper/media";
 import * as fileUtils from "@main/utils/file";
+import { parseFileInfo } from "@main/utils/number";
 import { Website } from "@shared/enums";
 import type { CrawlerData, FileInfo } from "@shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -341,6 +342,24 @@ describe("FileOrganizer naming settings", () => {
 
     expect(parse(plan.targetVideoPath).base).toBe("XYZ-999-CEN-Part1.MP4");
     expect(parse(plan.nfoPath).base).toBe("XYZ-999-CEN.nfo");
+  });
+
+  it("keeps the configured Chinese subtitle marker when the source filename already has one", () => {
+    const organizer = new FileOrganizer();
+    const plan = organizer.plan(
+      parseFileInfo("/input/ABF-252-C.mp4"),
+      createCrawlerData({
+        number: "ABF-252",
+      }),
+      createConfig({
+        naming: {
+          fileTemplate: "{number}",
+          censoredStyle: "",
+        },
+      }),
+    );
+
+    expect(parse(plan.targetVideoPath).base).toBe("ABF-252-C.mp4");
   });
 
   it("keeps video and NFO basenames aligned across move and rename modes", () => {
