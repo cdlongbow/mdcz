@@ -5,6 +5,7 @@ export enum Website {
   FALENO = "faleno",
   FC2 = "fc2",
   FC2HUB = "fc2hub",
+  PPVDATABANK = "ppvdatabank",
   JAV321 = "jav321",
   JAVBUS = "javbus",
   JAVDB = "javdb",

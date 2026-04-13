@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@shared/error";
 import type { AppInfo } from "@shared/ipcTypes";
 import { createFileRoute } from "@tanstack/react-router";
 import { Bug, ExternalLink, Github } from "lucide-react";
@@ -69,7 +70,7 @@ function About() {
       });
     } catch (error) {
       setUpdateCheck(previous);
-      toast.error(`保存失败: ${error instanceof Error ? error.message : "未知错误"}`);
+      toast.error(`保存失败: ${toErrorMessage(error, "未知错误")}`);
     } finally {
       setIsSavingUpdateCheck(false);
     }

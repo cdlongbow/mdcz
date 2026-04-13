@@ -1,3 +1,4 @@
+import { parse } from "node:path";
 import { throwIfAborted } from "../abort";
 import { applyResolvedSceneImageMetadata, downloadCrawlerAssets } from "../output";
 import type { ScrapeContext } from "./ScrapeContext";
@@ -23,8 +24,11 @@ export class DownloadStage implements ScrapeStage {
       config: configuration,
       crawlerData,
       downloadManager: this.runtime.downloadManager,
-      fileNumber: context.fileInfo.number,
+      fileInfo: context.fileInfo,
       imageAlternatives: aggregationResult.imageAlternatives,
+      localState: context.existingNfoLocalState,
+      logger: this.runtime.logger,
+      movieBaseName: parse(plan.nfoPath).name,
       outputDir: plan.outputDir,
       signalService: this.runtime.signalService,
       sources: aggregationResult.sources,

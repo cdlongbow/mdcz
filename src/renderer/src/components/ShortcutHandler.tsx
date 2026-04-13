@@ -1,15 +1,9 @@
+import { toErrorMessage } from "@shared/error";
 import type { RendererShortcutAction } from "@shared/ipcEvents";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { toast } from "sonner";
-import {
-  deleteFile,
-  deleteFileAndFolder,
-  requeueScrapeByNumber,
-  requeueScrapeByUrl,
-  startBatchScrape,
-  stopScrape,
-} from "@/api/manual";
+import { deleteFile, deleteFileAndFolder, retryScrapeSelection, startBatchScrape, stopScrape } from "@/api/manual";
 import { ipc } from "@/client/ipc";
 import { buildScrapeResultGroupActionContext, findScrapeResultGroup } from "@/lib/scrapeResultGrouping";
 import { useScrapeStore } from "@/store/scrapeStore";
@@ -18,8 +12,7 @@ import { playMediaPath } from "@/utils/playback";
 
 const WORKBENCH_ONLY_SHORTCUTS = new Set<RendererShortcutAction>([
   "start-or-stop-scrape",
-  "search-by-number",
-  "search-by-url",
+  "retry-scrape",
   "delete-file",
   "delete-file-and-folder",
   "open-folder",
@@ -36,13 +29,6 @@ const isEditingText = () => {
     return true;
   }
   return ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName);
-};
-
-const asMessage = (error: unknown) => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return String(error);
 };
 
 export function ShortcutHandler() {
@@ -74,6 +60,34 @@ export function ShortcutHandler() {
         const groupedVideoPaths = actionContext?.videoPaths ?? [];
         const selectedPath = selectedItem?.fileInfo.filePath;
         const selectedNumber = selectedItem?.fileInfo.number;
+        const resetForNewTask = () => {
+          scrapeState.clearResults();
+          uiState.setSelectedResultId(null);
+          scrapeState.updateProgress(0, 0);
+          scrapeState.setScraping(true);
+          scrapeState.setScrapeStatus("running");
+        };
+        const handleRetrySelectedScrape = async () => {
+          if (!selectedPath) {
+            toast.info("请先选择一个结果项");
+            return;
+          }
+
+          try {
+            const response = await retryScrapeSelection(groupedVideoPaths, {
+              scrapeStatus: scrapeState.scrapeStatus,
+              canRequeueCurrentRun: selectedGroup?.status === "failed",
+            });
+
+            if (response.data.strategy === "new-task") {
+              resetForNewTask();
+            }
+
+            toast.success(response.data.message);
+          } catch (error) {
+            toast.error(`重试失败: ${toErrorMessage(error)}`);
+          }
+        };
 
         switch (action) {
           case "start-or-stop-scrape": {
@@ -84,7 +98,7 @@ export function ShortcutHandler() {
                 useScrapeStore.getState().setStatusText("正在停止...");
                 toast.info("正在停止刮削任务...");
               } catch (error) {
-                toast.error(`停止失败: ${asMessage(error)}`);
+                toast.error(`停止失败: ${toErrorMessage(error)}`);
               }
               return;
             }
@@ -98,46 +112,13 @@ export function ShortcutHandler() {
               toast.success(response.data.message);
             } catch (error) {
               scrapeState.setScraping(false);
-              toast.error(`启动失败: ${asMessage(error)}`);
+              toast.error(`启动失败: ${toErrorMessage(error)}`);
             }
             return;
           }
 
-          case "search-by-number": {
-            if (!selectedPath) {
-              toast.info("请先选择一个结果项");
-              return;
-            }
-            navigate({ to: "/" });
-            const number = window.prompt("输入番号重新刮削", selectedNumber || "")?.trim();
-            if (!number) {
-              return;
-            }
-            try {
-              const response = await requeueScrapeByNumber(groupedVideoPaths, number);
-              toast.success(response.data.message);
-            } catch (error) {
-              toast.error(`重试失败: ${asMessage(error)}`);
-            }
-            return;
-          }
-
-          case "search-by-url": {
-            if (!selectedPath) {
-              toast.info("请先选择一个结果项");
-              return;
-            }
-            navigate({ to: "/" });
-            const url = window.prompt("输入网址重新刮削", "")?.trim();
-            if (!url) {
-              return;
-            }
-            try {
-              const response = await requeueScrapeByUrl(groupedVideoPaths, url);
-              toast.success(response.data.message);
-            } catch (error) {
-              toast.error(`重试失败: ${asMessage(error)}`);
-            }
+          case "retry-scrape": {
+            await handleRetrySelectedScrape();
             return;
           }
 
@@ -159,7 +140,7 @@ export function ShortcutHandler() {
               await deleteFile(groupedVideoPaths);
               toast.success(groupedVideoPaths.length > 1 ? `已删除 ${groupedVideoPaths.length} 个文件` : "文件已删除");
             } catch (error) {
-              toast.error(`删除失败: ${asMessage(error)}`);
+              toast.error(`删除失败: ${toErrorMessage(error)}`);
             }
             return;
           }
@@ -176,7 +157,7 @@ export function ShortcutHandler() {
               await deleteFileAndFolder(selectedPath);
               toast.success("文件和文件夹已删除");
             } catch (error) {
-              toast.error(`删除失败: ${asMessage(error)}`);
+              toast.error(`删除失败: ${toErrorMessage(error)}`);
             }
             return;
           }

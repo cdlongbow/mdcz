@@ -1,8 +1,9 @@
 import { getProperty, isRecord, isString, mergeDeep, setProperty, toArray, toErrorMessage } from "@main/utils/common";
+import { toErrorMessage as toSharedErrorMessage } from "@shared/error";
 import { describe, expect, it } from "vitest";
 
 describe("toErrorMessage", () => {
-  it("covers native, impit, string, and primitive errors", () => {
+  it("covers native, impit, object, string, and primitive errors", () => {
     const cases = [
       {
         input: new Error("boom"),
@@ -34,6 +35,10 @@ Reason: Custom {
         expected: "just a string",
       },
       {
+        input: { message: "from object" },
+        expected: "from object",
+      },
+      {
         input: 42,
         expected: "42",
       },
@@ -45,7 +50,25 @@ Reason: Custom {
 
     for (const { input, expected } of cases) {
       expect(toErrorMessage(input)).toBe(expected);
+      expect(toSharedErrorMessage(input)).toBe(expected);
     }
+  });
+
+  it("falls back for empty or nullish messages when requested", () => {
+    expect(toErrorMessage(null, "未知错误")).toBe("未知错误");
+    expect(toSharedErrorMessage(undefined, "未知错误")).toBe("未知错误");
+    expect(toErrorMessage({ message: "   " }, "未知错误")).toBe("未知错误");
+  });
+
+  it("strips Electron IPC wrappers and config validation error prefixes", () => {
+    expect(
+      toErrorMessage(
+        "Error invoking remote method 'config:save': CONFIG_VALIDATION_ERROR: 配置校验失败：文件夹模板：[] 可选段不能包含路径分隔符",
+      ),
+    ).toBe("配置校验失败：文件夹模板：[] 可选段不能包含路径分隔符");
+    expect(toErrorMessage("Error invoking remote method 'scraper:start': NO_FILES: No files selected")).toBe(
+      "NO_FILES: No files selected",
+    );
   });
 });
 

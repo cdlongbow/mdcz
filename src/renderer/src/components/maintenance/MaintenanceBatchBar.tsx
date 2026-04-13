@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@shared/error";
 import type { MaintenancePreviewItem } from "@shared/types";
 import { Play, RefreshCw, StopCircle } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -35,14 +36,6 @@ interface MaintenanceBatchBarProps {
   mediaPath?: string;
   className?: string;
 }
-
-const asMessage = (error: unknown): string => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return String(error);
-};
 
 const formatPreviewStatusText = (readyCount: number, blockedCount: number): string => {
   return blockedCount > 0
@@ -94,6 +87,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
   const usesDiffView = presetId === "refresh_data" || presetId === "rebuild_all";
   const executing = executionStatus === "executing" || executionStatus === "stopping";
   const scanning = executionStatus === "scanning";
+  const previewing = executionStatus === "previewing";
   const hasPreviewResults = Object.keys(previewResults).length > 0;
   const selectedEntries = useMemo(
     () => entries.filter((entry) => selectedIds.includes(entry.fileId)),
@@ -111,7 +105,8 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
   const entriesCount = allEntriesViewModel.displayCount;
   const selectedCount = selectedEntriesViewModel.displayCount;
   const previewSummary = selectedEntriesViewModel.previewSummary;
-  const previewActionLabel = previewPending
+  const previewInProgress = previewPending || previewing;
+  const previewActionLabel = previewInProgress
     ? "正在预览..."
     : usesDiffView
       ? hasPreviewResults
@@ -158,7 +153,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       setExecutionStatus("idle");
       setCurrentPath(dirPath);
       setStatusText("扫描失败");
-      toast.error(`扫描失败: ${asMessage(error)}`);
+      toast.error(`扫描失败: ${toErrorMessage(error)}`);
     }
   };
 
@@ -225,7 +220,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
 
       setMaintenancePreviewPending(false);
       setStatusText("预览失败");
-      toast.error(`预览失败: ${asMessage(error)}`);
+      toast.error(`预览失败: ${toErrorMessage(error)}`);
       return null;
     }
   };
@@ -273,7 +268,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
     } catch (error) {
       rollbackExecutionStart();
       setStatusText("启动失败");
-      toast.error(`启动失败: ${asMessage(error)}`);
+      toast.error(`启动失败: ${toErrorMessage(error)}`);
     }
   };
 
@@ -284,7 +279,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
       setStatusText("正在停止维护操作...");
       toast.info("正在停止维护操作...");
     } catch (error) {
-      toast.error(`停止失败: ${asMessage(error)}`);
+      toast.error(`停止失败: ${toErrorMessage(error)}`);
     }
   };
 
@@ -326,7 +321,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
             <Button
               variant="outline"
               onClick={handleScan}
-              disabled={isScraping || scanning || previewPending}
+              disabled={isScraping || scanning || previewInProgress}
               className="h-9 rounded-lg px-4"
             >
               <RefreshCw className={cn("mr-2 h-4 w-4", scanning && "animate-spin")} />
@@ -341,10 +336,10 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
                     void handleExecute(previewMap);
                   }
                 }}
-                disabled={isScraping || scanning || previewPending || entriesCount === 0 || selectedCount === 0}
+                disabled={isScraping || scanning || previewInProgress || entriesCount === 0 || selectedCount === 0}
                 className="h-9 rounded-lg px-4"
               >
-                {previewPending ? (
+                {previewInProgress ? (
                   <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Play className="mr-2 h-4 w-4" />
@@ -356,7 +351,7 @@ export default function MaintenanceBatchBar({ mediaPath, className }: Maintenanc
               <Button
                 variant="secondary"
                 onClick={() => setExecuteDialogOpen(true)}
-                disabled={scanning || previewPending || !hasPreviewResults || previewSummary.readyCount === 0}
+                disabled={scanning || previewInProgress || !hasPreviewResults || previewSummary.readyCount === 0}
                 className="h-9 rounded-lg px-4"
               >
                 数据替换

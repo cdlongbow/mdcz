@@ -1,5 +1,6 @@
 import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, normalize, resolve } from "node:path";
+import { toErrorMessage } from "@main/utils/common";
 import { moveFileSafely, pathExists } from "@main/utils/file";
 import { inspectStrmTarget, isStrmFile, writeStrmTarget } from "@main/utils/strm";
 import {
@@ -88,7 +89,7 @@ export class FileMover {
         sourceVideoPath,
         originalStrmContent,
       );
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       if (rollbackErrors.length > 0) {
         throw new Error(`Failed to move bundled media: ${message}. Rollback failed: ${rollbackErrors.join("; ")}`);
       }

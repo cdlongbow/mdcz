@@ -241,6 +241,15 @@ class MultiResultCrawlerProvider extends CrawlerProvider {
   }
 }
 
+class RecordingCrawlerProvider extends MultiResultCrawlerProvider {
+  readonly calledNumbers: string[] = [];
+
+  override async crawl(input: CrawlerInput): Promise<CrawlerResponse> {
+    this.calledNumbers.push(input.number);
+    return super.crawl(input);
+  }
+}
+
 describe("AggregationService", () => {
   const makeConfig = (overrides: Record<string, unknown> = {}) =>
     configurationSchema.parse({
@@ -396,6 +405,72 @@ describe("AggregationService", () => {
     expect(result?.sources.rating).toBe(Website.FC2HUB);
   });
 
+  it("uses PPVDATABANK as an FC2 fallback when higher-priority sources miss seller and image fields", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.FC2HUB,
+        makeCrawlerData({
+          title: "FC2HUB Title",
+          number: "FC2-4663355",
+          thumb_url: undefined,
+          poster_url: undefined,
+          studio: undefined,
+          publisher: undefined,
+          release_date: undefined,
+          durationSeconds: undefined,
+          website: Website.FC2HUB,
+        }),
+      ],
+      [
+        Website.PPVDATABANK,
+        makeCrawlerData({
+          title: "PPVDATABANK Title",
+          number: "FC2-4663355",
+          thumb_url: "https://ppvdatabank.example/thumb.webp",
+          poster_url: "https://ppvdatabank.example/thumb.webp",
+          scene_images: ["https://ppvdatabank.example/pl1.webp"],
+          studio: "ゆず故障",
+          publisher: "ゆず故障",
+          release_date: "2025-04-03",
+          durationSeconds: 3_080,
+          website: Website.PPVDATABANK,
+        }),
+      ],
+    ]);
+
+    const config = configurationSchema.parse({
+      ...defaultConfiguration,
+      scrape: {
+        ...defaultConfiguration.scrape,
+        enabledSites: [Website.FC2HUB, Website.PPVDATABANK],
+        siteOrder: [Website.FC2HUB, Website.PPVDATABANK],
+      },
+    });
+
+    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults)).aggregate(
+      "FC2-4663355",
+      config,
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.data.title).toBe("FC2HUB Title");
+    expect(result?.data.studio).toBe("ゆず故障");
+    expect(result?.data.publisher).toBe("ゆず故障");
+    expect(result?.data.release_date).toBe("2025-04-03");
+    expect(result?.data.durationSeconds).toBe(3_080);
+    expect(result?.data.thumb_url).toBe("https://ppvdatabank.example/thumb.webp");
+    expect(result?.data.poster_url).toBe("https://ppvdatabank.example/thumb.webp");
+    expect(result?.data.scene_images).toEqual(["https://ppvdatabank.example/pl1.webp"]);
+    expect(result?.sources.title).toBe(Website.FC2HUB);
+    expect(result?.sources.studio).toBe(Website.PPVDATABANK);
+    expect(result?.sources.publisher).toBe(Website.PPVDATABANK);
+    expect(result?.sources.release_date).toBe(Website.PPVDATABANK);
+    expect(result?.sources.durationSeconds).toBe(Website.PPVDATABANK);
+    expect(result?.sources.thumb_url).toBe(Website.PPVDATABANK);
+    expect(result?.sources.poster_url).toBe(Website.PPVDATABANK);
+    expect(result?.sources.scene_images).toBe(Website.PPVDATABANK);
+  });
+
   it("returns null when no result clears the aggregation threshold", async () => {
     const cases = [
       {
@@ -451,6 +526,48 @@ describe("AggregationService", () => {
     service.clearCache();
     await service.aggregate("ABF-075", config);
     expect(provider.calledSites.length).toBe(firstCallCount * 2);
+  });
+
+  it("caps the cache and keeps recently used entries", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.DMM,
+        makeCrawlerData({
+          number: undefined,
+          thumb_url: "https://example.com/thumb.jpg",
+          website: Website.DMM,
+        }),
+      ],
+    ]);
+
+    const provider = new RecordingCrawlerProvider(siteResults);
+    const service = new AggregationService(provider);
+    const config = makeConfig({
+      scrape: {
+        ...defaultConfiguration.scrape,
+        enabledSites: [Website.DMM],
+        siteOrder: [Website.DMM],
+      },
+    });
+
+    for (let index = 1; index <= 200; index++) {
+      await service.aggregate(`ABF-${index.toString().padStart(3, "0")}`, config);
+    }
+
+    await service.aggregate("ABF-001", config);
+    await service.aggregate("ABF-201", config);
+    await service.aggregate("ABF-002", config);
+    await service.aggregate("ABF-001", config);
+
+    const callCountByNumber = provider.calledNumbers.reduce<Record<string, number>>((counts, number) => {
+      counts[number] = (counts[number] ?? 0) + 1;
+      return counts;
+    }, {});
+
+    expect(callCountByNumber["ABF-001"]).toBe(1);
+    expect(callCountByNumber["ABF-002"]).toBe(2);
+    expect(callCountByNumber["ABF-201"]).toBe(1);
+    expect((service as unknown as { cache: Map<string, unknown> }).cache.size).toBe(200);
   });
 
   it("stops launching lower-priority sites once minimum threshold is satisfied", async () => {
@@ -511,6 +628,14 @@ describe("AggregationService", () => {
         }),
       ],
       [
+        Website.PPVDATABANK,
+        makeCrawlerData({
+          title: "PPVDATABANK FC2 Title",
+          number: "FC2-4775286",
+          website: Website.PPVDATABANK,
+        }),
+      ],
+      [
         Website.JAVDB,
         makeCrawlerData({
           title: "JAVDB FC2 Title",
@@ -526,14 +651,32 @@ describe("AggregationService", () => {
       makeConfig({
         scrape: {
           ...defaultConfiguration.scrape,
-          enabledSites: [Website.DMM, Website.MGSTAGE, Website.FC2, Website.FC2HUB, Website.JAVDB, Website.JAVBUS],
-          siteOrder: [Website.DMM, Website.MGSTAGE, Website.FC2, Website.FC2HUB, Website.JAVDB, Website.JAVBUS],
+          enabledSites: [
+            Website.DMM,
+            Website.MGSTAGE,
+            Website.FC2,
+            Website.FC2HUB,
+            Website.PPVDATABANK,
+            Website.JAVDB,
+            Website.JAVBUS,
+          ],
+          siteOrder: [
+            Website.DMM,
+            Website.MGSTAGE,
+            Website.FC2,
+            Website.FC2HUB,
+            Website.PPVDATABANK,
+            Website.JAVDB,
+            Website.JAVBUS,
+          ],
         },
       }),
     );
 
     expect(result).not.toBeNull();
-    expect(provider.calledSites.sort()).toEqual([Website.FC2, Website.FC2HUB, Website.JAVDB].sort());
+    expect(provider.calledSites.sort()).toEqual(
+      [Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB].sort(),
+    );
   });
 
   it("skips FC2-only sites when aggregating a non-FC2 number", async () => {
@@ -570,6 +713,14 @@ describe("AggregationService", () => {
           website: Website.FC2HUB,
         }),
       ],
+      [
+        Website.PPVDATABANK,
+        makeCrawlerData({
+          title: "PPVDATABANK Title",
+          thumb_url: "https://ppvdatabank.example/thumb.webp",
+          website: Website.PPVDATABANK,
+        }),
+      ],
     ]);
 
     const provider = new MultiResultCrawlerProvider(siteResults);
@@ -578,8 +729,8 @@ describe("AggregationService", () => {
       makeConfig({
         scrape: {
           ...defaultConfiguration.scrape,
-          enabledSites: [Website.DMM, Website.FC2, Website.FC2HUB, Website.JAVDB],
-          siteOrder: [Website.DMM, Website.FC2, Website.FC2HUB, Website.JAVDB],
+          enabledSites: [Website.DMM, Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB],
+          siteOrder: [Website.DMM, Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB],
         },
       }),
     );

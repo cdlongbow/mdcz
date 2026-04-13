@@ -1,5 +1,5 @@
 import type { ServiceContainer } from "@main/container";
-import { type Configuration, configManager, configurationSchema } from "@main/services/config";
+import { type Configuration, configManager } from "@main/services/config";
 import { ActorPhotoFolderConfigurationError } from "@main/services/config/actorPhotoPath";
 import { loggerService } from "@main/services/LoggerService";
 import {
@@ -16,7 +16,12 @@ import { SymlinkServiceError } from "@main/services/tools";
 import { toErrorMessage } from "@main/utils/common";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
-import type { EmbyConnectionCheckResult, JellyfinConnectionCheckResult, PersonSyncResult } from "@shared/ipcTypes";
+import type {
+  BatchTranslateScanItem,
+  EmbyConnectionCheckResult,
+  JellyfinConnectionCheckResult,
+  PersonSyncResult,
+} from "@shared/ipcTypes";
 import { createIpcError, IpcErrorCode } from "../errors";
 import { asSerializableIpcError, t } from "../shared";
 
@@ -59,6 +64,8 @@ export const createToolHandlers = (
   | typeof IpcChannel.Tool_AmazonPosterScan
   | typeof IpcChannel.Tool_AmazonPosterLookup
   | typeof IpcChannel.Tool_AmazonPosterApply
+  | typeof IpcChannel.Tool_BatchTranslateScan
+  | typeof IpcChannel.Tool_BatchTranslateApply
   | typeof IpcChannel.Tool_ToggleDevTools
 > => {
   const {
@@ -71,6 +78,7 @@ export const createToolHandlers = (
     symlinkService,
     windowService,
     amazonPosterToolService,
+    batchTranslateToolService,
   } = context;
   let symlinkTask: Promise<void> | null = null;
   let symlinkTaskStarting = false;
@@ -92,8 +100,7 @@ export const createToolHandlers = (
     type: "jellyfin" | "emby",
     serviceName: "Jellyfin" | "Emby",
   ): Promise<Configuration> => {
-    await configManager.ensureLoaded();
-    const configuration = configurationSchema.parse(await configManager.get());
+    const configuration = await configManager.getValidated();
     const serverConfig = configuration[type];
 
     if (!serverConfig.url.trim() || !serverConfig.apiKey.trim()) {
@@ -278,7 +285,7 @@ export const createToolHandlers = (
         }
       }),
     [IpcChannel.Tool_AmazonPosterApply]: t.procedure
-      .input<{ items?: Array<{ directory: string; amazonPosterUrl: string }> }>()
+      .input<{ items?: Array<{ nfoPath: string; amazonPosterUrl: string }> }>()
       .action(async ({ input }) => {
         try {
           return {
@@ -286,6 +293,38 @@ export const createToolHandlers = (
           };
         } catch (error) {
           return raiseHandlerError("Tool_AmazonPosterApply", error);
+        }
+      }),
+    [IpcChannel.Tool_BatchTranslateScan]: t.procedure.input<{ directory?: string }>().action(async ({ input }) => {
+      try {
+        const directory = input?.directory?.trim();
+        if (!directory) {
+          throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Directory is required");
+        }
+
+        const configuration = await configManager.getValidated();
+        return {
+          items: await batchTranslateToolService.scan(directory, configuration),
+        };
+      } catch (error) {
+        return raiseHandlerError("Tool_BatchTranslateScan", error);
+      }
+    }),
+    [IpcChannel.Tool_BatchTranslateApply]: t.procedure
+      .input<{ items?: BatchTranslateScanItem[] }>()
+      .action(async ({ input }) => {
+        try {
+          const items = input?.items ?? [];
+          if (items.length === 0) {
+            throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "At least one item is required");
+          }
+
+          const configuration = await configManager.getValidated();
+          return {
+            results: await batchTranslateToolService.apply(items, configuration),
+          };
+        } catch (error) {
+          return raiseHandlerError("Tool_BatchTranslateApply", error);
         }
       }),
     [IpcChannel.Tool_ToggleDevTools]: t.procedure.action(async () => {

@@ -1,5 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { toErrorMessage } from "@main/utils/common";
 import { app } from "electron";
 import PQueue from "p-queue";
 import { parsePersistedSessionState } from "./SessionRecovery";
@@ -123,7 +124,7 @@ export class SessionStateStore {
         await mkdir(dirname(this.statePath), { recursive: true });
         await writeFile(this.statePath, content, "utf8");
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = toErrorMessage(error);
         this.logger.warn(`Failed to persist scrape session state: ${message}`);
       }
     });

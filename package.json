@@ -38,11 +38,19 @@
     "opencc-js": "^1.0.5",
     "p-queue": "^9.0.0",
     "radix-ui": "^1.4.3",
+    "sharp": "^0.34.5",
     "winston": "^3.17.0",
     "winston-daily-rotate-file": "^5.0.0",
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
+    "@img/sharp-darwin-arm64": "0.34.5",
+    "@img/sharp-darwin-x64": "0.34.5",
+    "@img/sharp-libvips-darwin-arm64": "1.2.4",
+    "@img/sharp-libvips-darwin-x64": "1.2.4",
+    "@img/sharp-libvips-linux-x64": "1.2.4",
+    "@img/sharp-linux-x64": "0.34.5",
+    "@img/sharp-win32-x64": "0.34.5",
     "impit-darwin-arm64": "0.10.1",
     "impit-darwin-x64": "0.10.1",
     "impit-linux-arm64-gnu": "0.10.1",
@@ -97,6 +105,7 @@
       "electron",
       "electron-winstaller",
       "esbuild",
+      "sharp",
       "simple-git-hooks"
     ]
   }

@@ -33,6 +33,19 @@ export const formatBitrate = (bitrateBps: number | undefined): string | undefine
   return `${(bitrateBps / 1_000_000).toFixed(1)} Mbps`;
 };
 
+export const normalizeDetailOutlineText = (value: string | undefined): string | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return value
+    .replace(/<br\s*\/?>/giu, "\n")
+    .replace(/<\/(?:div|p)>/giu, "\n")
+    .replace(/<[^>]+>/gu, "")
+    .replace(/\n{3,}/gu, "\n\n")
+    .trim();
+};
+
 const toDetailStatus = (
   status: ScrapeResult["status"] | MaintenanceItemResult["status"] | MaintenancePreviewItem["status"] | undefined,
 ): DetailViewItem["status"] => {
@@ -85,7 +98,7 @@ const buildDetailViewMetadata = (input: {
   return {
     title: crawlerData?.title_zh ?? crawlerData?.title,
     actors: crawlerData?.actors,
-    outline: crawlerData?.plot_zh ?? crawlerData?.plot,
+    outline: normalizeDetailOutlineText(crawlerData?.plot_zh ?? crawlerData?.plot),
     tags: crawlerData?.genres,
     release: crawlerData?.release_date,
     duration: formatDuration(videoMeta?.durationSeconds ?? crawlerData?.durationSeconds),

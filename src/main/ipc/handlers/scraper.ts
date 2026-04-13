@@ -1,18 +1,17 @@
 import type { ServiceContainer } from "@main/container";
-import { configManager, configurationSchema } from "@main/services/config";
+import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { ScraperServiceError } from "@main/services/scraper";
 import { confirmUncensoredItems } from "@main/services/scraper/confirmUncensored";
 import type { StartScrapeResult } from "@main/services/scraper/ScraperService";
-import { toErrorMessage } from "@main/utils/common";
 import { IpcChannel } from "@shared/IpcChannel";
 import type { IpcRouterContract } from "@shared/ipcContract";
 import type { ScraperStatus, UncensoredConfirmItem } from "@shared/types";
+import { withIpcErrorHandling } from "../errorHandling";
 import { createIpcError, IpcErrorCode } from "../errors";
-import { asSerializableIpcError, t } from "../shared";
+import { t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter");
-
 const defaultScraperStatus = (): ScraperStatus => ({
   state: "idle",
   running: false,
@@ -25,6 +24,13 @@ const defaultScraperStatus = (): ScraperStatus => ({
 
 const withLaunchMessage = (result: StartScrapeResult, message: string) => ({ ...result, message });
 const withSuccessMessage = (message: string) => ({ success: true as const, message });
+const toScraperServiceIpcError = (error: unknown) => {
+  if (error instanceof ScraperServiceError) {
+    return createIpcError(error.code, error.message);
+  }
+
+  return undefined;
+};
 
 export const createScraperHandlers = (
   context: ServiceContainer,
@@ -48,124 +54,109 @@ export const createScraperHandlers = (
     [IpcChannel.Scraper_GetStatus]: t.procedure.action(async () => {
       return scraperService.getStatus() ?? defaultScraperStatus();
     }),
-    [IpcChannel.Scraper_GetFailedFiles]: t.procedure.action(async () => {
-      try {
+    [IpcChannel.Scraper_GetFailedFiles]: t.procedure.action(() =>
+      withIpcErrorHandling("get failed files", async () => {
         return { filePaths: scraperService.getFailedFiles() };
-      } catch (error) {
-        throw asSerializableIpcError(error);
-      }
-    }),
-    [IpcChannel.Scraper_GetRecoverableSession]: t.procedure.action(async () => {
-      try {
+      }),
+    ),
+    [IpcChannel.Scraper_GetRecoverableSession]: t.procedure.action(() =>
+      withIpcErrorHandling("get recoverable scrape session", async () => {
         return await scraperService.getRecoverableSession();
-      } catch (error) {
-        throw asSerializableIpcError(error);
-      }
-    }),
+      }),
+    ),
     [IpcChannel.Scraper_ResolveRecoverableSession]: t.procedure
       .input<{ action?: "recover" | "discard" }>()
-      .action(async ({ input }) => {
-        const action = input?.action ?? "recover";
+      .action(({ input }) =>
+        withIpcErrorHandling(
+          "resolve recoverable scrape session",
+          async () => {
+            const action = input?.action ?? "recover";
 
-        try {
-          if (action === "discard") {
-            await scraperService.discardRecoverableSession();
-            return withSuccessMessage("已放弃上次未完成的刮削任务");
-          }
+            if (action === "discard") {
+              await scraperService.discardRecoverableSession();
+              return withSuccessMessage("已放弃上次未完成的刮削任务");
+            }
 
-          return {
-            success: true as const,
-            ...withLaunchMessage(await scraperService.recoverSession(), "恢复任务已启动"),
-          };
-        } catch (error) {
-          if (error instanceof ScraperServiceError) {
-            throw createIpcError(error.code, error.message);
-          }
-          logger.error(`Failed to resolve recoverable scrape session: ${toErrorMessage(error)}`);
-          throw asSerializableIpcError(error);
-        }
-      }),
+            return {
+              success: true as const,
+              ...withLaunchMessage(await scraperService.recoverSession(), "恢复任务已启动"),
+            };
+          },
+          { mapError: toScraperServiceIpcError },
+        ),
+      ),
     [IpcChannel.Scraper_Start]: t.procedure
       .input<{ mode?: "single" | "batch"; paths?: string[] }>()
-      .action(async ({ input }) => {
-        try {
-          const mode = input?.mode ?? "single";
-          const paths = input?.paths ?? [];
-          return withLaunchMessage(
-            await scraperService.start(mode, paths),
-            mode === "single" ? "单文件刮削任务已启动" : "刮削任务已启动",
-          );
-        } catch (error) {
-          if (error instanceof ScraperServiceError) {
-            throw createIpcError(error.code, error.message);
-          }
-          logger.error(`Failed to start scraper: ${toErrorMessage(error)}`);
-          throw asSerializableIpcError(error);
-        }
-      }),
-    [IpcChannel.Scraper_Stop]: t.procedure.action(async () => {
-      try {
+      .action(({ input }) =>
+        withIpcErrorHandling(
+          "start scraper",
+          async () => {
+            const mode = input?.mode ?? "single";
+            const paths = input?.paths ?? [];
+            return withLaunchMessage(
+              await scraperService.start(mode, paths),
+              mode === "single" ? "单文件刮削任务已启动" : "刮削任务已启动",
+            );
+          },
+          { mapError: toScraperServiceIpcError },
+        ),
+      ),
+    [IpcChannel.Scraper_Stop]: t.procedure.action(() =>
+      withIpcErrorHandling("stop scraper", async () => {
         return {
           success: true as const,
           pendingCount: scraperService.stop().pendingCount,
         };
-      } catch (error) {
-        throw asSerializableIpcError(error);
-      }
-    }),
-    [IpcChannel.Scraper_Pause]: t.procedure.action(async () => {
-      try {
+      }),
+    ),
+    [IpcChannel.Scraper_Pause]: t.procedure.action(() =>
+      withIpcErrorHandling("pause scraper", async () => {
         scraperService.pause();
         return { success: true as const };
-      } catch (error) {
-        throw asSerializableIpcError(error);
-      }
-    }),
-    [IpcChannel.Scraper_Resume]: t.procedure.action(async () => {
-      try {
+      }),
+    ),
+    [IpcChannel.Scraper_Resume]: t.procedure.action(() =>
+      withIpcErrorHandling("resume scraper", async () => {
         scraperService.resume();
         return { success: true as const };
-      } catch (error) {
-        throw asSerializableIpcError(error);
-      }
-    }),
-    [IpcChannel.Scraper_Requeue]: t.procedure.input<{ filePaths?: string[] }>().action(async ({ input }) => {
-      try {
-        return await scraperService.requeue(input?.filePaths ?? []);
-      } catch (error) {
-        if (error instanceof ScraperServiceError) {
-          throw createIpcError(error.code, error.message);
-        }
-        logger.error(`Failed to requeue files: ${toErrorMessage(error)}`);
-        throw asSerializableIpcError(error);
-      }
-    }),
-    [IpcChannel.Scraper_RetryFailed]: t.procedure.input<{ filePaths?: string[] }>().action(async ({ input }) => {
-      try {
-        const result = await scraperService.retryFiles(input?.filePaths ?? []);
-        return withLaunchMessage(result, `重试任务已启动，共 ${result.totalFiles} 个文件`);
-      } catch (error) {
-        if (error instanceof ScraperServiceError) {
-          throw createIpcError(error.code, error.message);
-        }
-        logger.error(`Failed to retry files: ${toErrorMessage(error)}`);
-        throw asSerializableIpcError(error);
-      }
-    }),
+      }),
+    ),
+    [IpcChannel.Scraper_Requeue]: t.procedure.input<{ filePaths?: string[] }>().action(({ input }) =>
+      withIpcErrorHandling(
+        "requeue files",
+        async () => {
+          return await scraperService.requeue(input?.filePaths ?? []);
+        },
+        { mapError: toScraperServiceIpcError },
+      ),
+    ),
+    [IpcChannel.Scraper_RetryFailed]: t.procedure.input<{ filePaths?: string[] }>().action(({ input }) =>
+      withIpcErrorHandling(
+        "retry files",
+        async () => {
+          const result = await scraperService.retryFiles(input?.filePaths ?? []);
+          return withLaunchMessage(result, `重试任务已启动，共 ${result.totalFiles} 个文件`);
+        },
+        { mapError: toScraperServiceIpcError },
+      ),
+    ),
     [IpcChannel.Scraper_ConfirmUncensored]: t.procedure
       .input<{ items?: UncensoredConfirmItem[] }>()
-      .action(async ({ input }) => {
-        const items = input?.items ?? [];
-        if (items.length === 0) {
-          return { updatedCount: 0, items: [] };
-        }
+      .action(({ input }) =>
+        withIpcErrorHandling("confirm uncensored items", async () => {
+          const items = input?.items ?? [];
+          if (items.length === 0) {
+            return { updatedCount: 0, items: [] };
+          }
 
-        const config = configurationSchema.parse(await configManager.get());
-        if (!config.download.generateNfo) {
-          logger.warn("Rejecting uncensored confirm because NFO generation is disabled");
-          throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "已关闭 NFO 生成功能，无法确认无码类型");
-        }
-        return await confirmUncensoredItems(items, config);
-      }),
+          const config = await configManager.getValidated();
+          if (!config.download.generateNfo) {
+            logger.warn("Rejecting uncensored confirm because NFO generation is disabled");
+            throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "已关闭 NFO 生成功能，无法确认无码类型");
+          }
+
+          return await confirmUncensoredItems(items, config);
+        }),
+      ),
   };
 };

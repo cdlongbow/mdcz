@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@main/utils/common";
 import type { ConnectionCheckStatus, ConnectionServerInfo } from "@shared/ipcTypes";
 import { getHttpStatus } from "./MediaServerError";
 
@@ -85,7 +86,7 @@ export const runMediaServerConnectionCheck = async <TExtraKey extends string, TS
     serverInfo = await options.fetchPublicServerInfo();
     steps.push(options.createStep("server", "ok", formatConnectedMessage(options.serviceName, serverInfo)));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     steps.push(
       options.createStep(
         "server",
@@ -106,7 +107,7 @@ export const runMediaServerConnectionCheck = async <TExtraKey extends string, TS
     steps.push(options.createStep("auth", "ok", `${options.serviceName} API Key 校验通过`));
   } catch (error) {
     const status = getHttpStatus(error);
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     const isAuthFailure = status === 401 || status === 403;
     const skippedReason = isAuthFailure ? "未执行：凭据无效" : "未执行：凭据校验未完成";
     const errorMessage = isAuthFailure
@@ -149,7 +150,7 @@ export const runMediaServerConnectionCheck = async <TExtraKey extends string, TS
     steps.push(...(options.extraSteps?.afterWriteSuccess ?? []));
   } catch (error) {
     const key: CoreConnectionCheckKey = peopleReadConfirmed ? "peopleWrite" : "peopleRead";
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     steps.push(options.createStep(key, "error", message, getErrorCode(error)));
     if (key === "peopleRead") {
       steps.push(options.createStep("peopleWrite", "skipped", "未执行：人物读取失败"));

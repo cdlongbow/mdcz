@@ -1,6 +1,7 @@
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
+import { toErrorMessage } from "@main/utils/common";
 import { app } from "electron";
 
 const GITHUB_REPO = "ShotHeadman/mdcz";
@@ -52,7 +53,7 @@ export class UpdateService {
         releaseUrl: data.html_url,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       this.logger.warn(`Update check failed: ${message}`);
       return { hasUpdate: false, currentVersion };
     }

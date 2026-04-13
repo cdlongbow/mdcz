@@ -2,6 +2,7 @@ import { Website } from "@shared/enums";
 import type { CrawlerData, LocalScanEntry, MaintenancePreviewItem, ScrapeResult } from "@shared/types";
 import { describe, expect, it } from "vitest";
 import {
+  normalizeDetailOutlineText,
   toDetailViewItemFromMaintenanceEntry,
   toDetailViewItemFromScrapeResult,
 } from "@/components/detail/detailViewAdapters";
@@ -39,6 +40,14 @@ const createEntry = (crawlerData: CrawlerData): LocalScanEntry => ({
     actorPhotos: [],
   },
   currentDir: "/media",
+});
+
+describe("normalizeDetailOutlineText", () => {
+  it("turns br tags into line breaks and strips other html tags", () => {
+    expect(
+      normalizeDetailOutlineText('第一段<br/>第二段<br>第三段<a href="https://example.com">链接文字</a><a/>'),
+    ).toBe("第一段\n第二段\n第三段链接文字");
+  });
 });
 
 describe("toDetailViewItemFromScrapeResult", () => {

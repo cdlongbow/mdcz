@@ -1,5 +1,6 @@
 import { loggerService } from "@main/services/LoggerService";
 import { InMemoryCookieJar, type NetworkClient, type NetworkSession } from "@main/services/network";
+import { toErrorMessage } from "@main/utils/common";
 import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import { load } from "cheerio";
@@ -95,9 +96,7 @@ export class AmazonJpImageService {
         headers: AMAZON_HEADERS,
       });
     } catch (error) {
-      this.logger.warn(
-        `Amazon search failed for "${searchTitle}": ${error instanceof Error ? error.message : String(error)}`,
-      );
+      this.logger.warn(`Amazon search failed for "${searchTitle}": ${toErrorMessage(error)}`);
       return { upgraded: false, reason: "搜索请求失败" };
     }
 
@@ -235,9 +234,7 @@ export class AmazonJpImageService {
         headers: AMAZON_HEADERS,
       });
     } catch (error) {
-      this.logger.warn(
-        `Amazon detail request failed for "${detailPath}": ${error instanceof Error ? error.message : String(error)}`,
-      );
+      this.logger.warn(`Amazon detail request failed for "${detailPath}": ${toErrorMessage(error)}`);
       return null;
     }
 

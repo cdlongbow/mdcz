@@ -5,6 +5,8 @@ asar: true
 asarUnpack:
   - resources/**
   - "**/*.node"
+  - node_modules/sharp/**
+  - node_modules/@img/sharp-*/**
 
 directories:
   buildResources: build

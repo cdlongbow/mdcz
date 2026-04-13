@@ -1,12 +1,17 @@
 import { ActorImageService } from "@main/services/ActorImageService";
 import type { ActorSourceProvider } from "@main/services/actorSource";
-import { type Configuration, configManager, configurationSchema } from "@main/services/config";
+import { type Configuration, configManager } from "@main/services/config";
 import type { DeepPartial } from "@main/services/config/models";
+import {
+  createImageHostCooldownStore,
+  type PersistentCooldownStore,
+} from "@main/services/cooldown/PersistentCooldownStore";
 import type { CrawlerProvider } from "@main/services/crawler";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
-import { mergeDeep } from "@main/utils/common";
+import { didPromiseTimeout } from "@main/utils/async";
+import { mergeDeep, toErrorMessage } from "@main/utils/common";
 import type {
   LocalScanEntry,
   MaintenanceCommitItem,
@@ -15,6 +20,7 @@ import type {
   MaintenanceStatus,
 } from "@shared/types";
 import PQueue from "p-queue";
+import { createAbortError } from "../abort";
 import { AggregationService } from "../aggregation";
 import { DownloadManager } from "../DownloadManager";
 import { fileOrganizer } from "../FileOrganizer";
@@ -32,6 +38,7 @@ const createIdleMaintenanceStatus = (): MaintenanceStatus => ({
   successCount: 0,
   failedCount: 0,
 });
+const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
 
 interface MaintenanceRunContext {
   config: Configuration;
@@ -45,19 +52,32 @@ export class MaintenanceService {
 
   private readonly localScanService = new LocalScanService();
 
+  private readonly imageHostCooldownStore: PersistentCooldownStore;
+
+  private readonly actorImageService: ActorImageService;
+
+  private readonly actorSourceProvider: ActorSourceProvider | undefined;
+
   private status: MaintenanceStatus = createIdleMaintenanceStatus();
 
-  private controller: AbortController | null = null;
+  private operationController: AbortController | null = null;
 
   private queue: PQueue | null = null;
+
+  private currentOperationPromise: Promise<void> | null = null;
 
   constructor(
     private readonly signalService: SignalService,
     private readonly networkClient: NetworkClient,
     private readonly crawlerProvider: CrawlerProvider,
-    private readonly actorImageService = new ActorImageService(),
-    private readonly actorSourceProvider?: ActorSourceProvider,
-  ) {}
+    actorImageService?: ActorImageService,
+    actorSourceProvider?: ActorSourceProvider,
+    imageHostCooldownStore?: PersistentCooldownStore,
+  ) {
+    this.imageHostCooldownStore = imageHostCooldownStore ?? createImageHostCooldownStore();
+    this.actorImageService = actorImageService ?? new ActorImageService();
+    this.actorSourceProvider = actorSourceProvider;
+  }
 
   getStatus(): MaintenanceStatus {
     return { ...this.status };
@@ -68,19 +88,20 @@ export class MaintenanceService {
       throw new Error("Maintenance is already running");
     }
 
-    this.status = { ...this.status, state: "scanning" };
+    this.status = { ...createIdleMaintenanceStatus(), state: "scanning" };
     this.signalService.showLogText("Scanning maintenance directories");
-
-    try {
-      await configManager.ensureLoaded();
-      const config = configurationSchema.parse(await configManager.get());
-      const entries = await this.localScanService.scan(dirPath, config.paths.sceneImagesFolder);
-
-      this.signalService.showLogText(`Maintenance scan completed. Found ${entries.length} item(s).`);
-      return entries;
-    } finally {
-      this.status = createIdleMaintenanceStatus();
-    }
+    return await this.trackOperation(
+      async (signal) => {
+        const config = await configManager.getValidated();
+        const entries = await this.localScanService.scan(dirPath, config.paths.sceneImagesFolder, signal);
+        this.signalService.showLogText(`Maintenance scan completed. Found ${entries.length} item(s).`);
+        return entries;
+      },
+      new AbortController(),
+      () => {
+        this.status = createIdleMaintenanceStatus();
+      },
+    );
   }
 
   async preview(entries: LocalScanEntry[], presetId: MaintenancePresetId): Promise<MaintenancePreviewResult> {
@@ -92,19 +113,31 @@ export class MaintenanceService {
       throw new Error("No entries to process");
     }
 
-    const runContext = await this.createRunContext(presetId);
-    const queue = new PQueue({ concurrency: runContext.concurrency });
-    const items = await Promise.all(
-      entries.map((entry) =>
-        queue.add(async () => {
-          return runContext.fileScraper.previewFile(entry, runContext.config);
-        }),
-      ),
-    );
+    this.status = { ...createIdleMaintenanceStatus(), state: "previewing" };
+    return await this.trackOperation(
+      async (signal) => {
+        const runContext = await this.createRunContext(presetId);
+        const queue = new PQueue({ concurrency: runContext.concurrency });
+        const items = await Promise.all(
+          entries.map((entry) =>
+            queue.add(
+              async () => {
+                return runContext.fileScraper.previewFile(entry, runContext.config, signal);
+              },
+              signal ? { signal } : undefined,
+            ),
+          ),
+        );
 
-    return {
-      items,
-    };
+        return {
+          items,
+        };
+      },
+      new AbortController(),
+      () => {
+        this.status = createIdleMaintenanceStatus();
+      },
+    );
   }
 
   async execute(items: MaintenanceCommitItem[], presetId: MaintenancePresetId): Promise<void> {
@@ -118,9 +151,10 @@ export class MaintenanceService {
 
     const runContext = await this.createRunContext(presetId);
     const execution = { items, ...runContext };
-    this.controller = new AbortController();
+    const controller = new AbortController();
     const totalItems = execution.items.length;
     this.queue = new PQueue({ concurrency: execution.concurrency });
+    this.operationController = controller;
 
     this.status = {
       state: "executing",
@@ -133,7 +167,16 @@ export class MaintenanceService {
     this.signalService.showLogText(`Starting maintenance run for preset ${execution.preset.id}. Items: ${totalItems}`);
     this.signalService.resetProgress();
 
-    void this.runExecution(execution);
+    void this.trackOperation(
+      async () => {
+        await this.runExecution(execution);
+      },
+      controller,
+      () => {
+        this.status = createIdleMaintenanceStatus();
+        this.queue = null;
+      },
+    );
   }
 
   private async runExecution(execution: MaintenanceRunContext & { items: MaintenanceCommitItem[] }): Promise<void> {
@@ -144,91 +187,80 @@ export class MaintenanceService {
       throw new Error("Maintenance queue is not initialized");
     }
 
-    try {
-      for (const [index, item] of items.entries()) {
-        const entry = item.entry;
-        const fileIndex = index + 1;
+    for (const [index, item] of items.entries()) {
+      const entry = item.entry;
+      const fileIndex = index + 1;
 
-        queue.add(async () => {
-          if (this.controller?.signal.aborted) return;
+      queue.add(async () => {
+        if (this.operationController?.signal.aborted) return;
 
-          this.signalService.showMaintenanceItemResult({
-            fileId: entry.fileId,
-            status: "processing",
-          });
-
-          try {
-            const { entry, ...committed } = item;
-            const result = await execution.fileScraper.processFile(
-              entry,
-              config,
-              { fileIndex, totalFiles: items.length },
-              this.controller?.signal,
-              committed,
-            );
-
-            this.status.completedEntries += 1;
-            if (result.status === "success") {
-              this.status.successCount += 1;
-            } else {
-              this.status.failedCount += 1;
-            }
-            completedFileIds.add(entry.fileId);
-            this.signalService.showMaintenanceItemResult(result);
-          } catch (error) {
-            this.status.completedEntries += 1;
-            this.status.failedCount += 1;
-            completedFileIds.add(entry.fileId);
-            this.logger.error(`Unexpected maintenance error while processing ${entry.fileInfo.number}`);
-            this.signalService.showMaintenanceItemResult({
-              fileId: entry.fileId,
-              status: "failed",
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
+        this.signalService.showMaintenanceItemResult({
+          fileId: entry.fileId,
+          status: "processing",
         });
-      }
 
-      await queue.onIdle();
-      const wasStopped = this.status.state === "stopping";
+        try {
+          const { entry, ...committed } = item;
+          const result = await execution.fileScraper.processFile(
+            entry,
+            config,
+            { fileIndex, totalFiles: items.length },
+            this.operationController?.signal,
+            committed,
+          );
 
-      if (wasStopped) {
-        for (const item of items) {
-          if (completedFileIds.has(item.entry.fileId)) {
-            continue;
+          this.status.completedEntries += 1;
+          if (result.status === "success") {
+            this.status.successCount += 1;
+          } else {
+            this.status.failedCount += 1;
           }
-
-          completedFileIds.add(item.entry.fileId);
+          completedFileIds.add(entry.fileId);
+          this.signalService.showMaintenanceItemResult(result);
+        } catch (error) {
           this.status.completedEntries += 1;
           this.status.failedCount += 1;
+          completedFileIds.add(entry.fileId);
+          this.logger.error(`Unexpected maintenance error while processing ${entry.fileInfo.number}`);
           this.signalService.showMaintenanceItemResult({
-            fileId: item.entry.fileId,
+            fileId: entry.fileId,
             status: "failed",
-            error: "维护已停止，项目未执行",
+            error: toErrorMessage(error),
           });
         }
-      }
-
-      this.signalService.showLogText(
-        wasStopped
-          ? `Maintenance stopped. Succeeded: ${this.status.successCount}, Failed or canceled: ${this.status.failedCount}`
-          : `Maintenance completed. Succeeded: ${this.status.successCount}, Failed: ${this.status.failedCount}`,
-      );
-    } finally {
-      this.status = createIdleMaintenanceStatus();
-      this.controller = null;
-      this.queue = null;
+      });
     }
+
+    await queue.onIdle();
+    const wasStopped = this.status.state === "stopping";
+
+    if (wasStopped) {
+      for (const item of items) {
+        if (completedFileIds.has(item.entry.fileId)) {
+          continue;
+        }
+
+        completedFileIds.add(item.entry.fileId);
+        this.status.completedEntries += 1;
+        this.status.failedCount += 1;
+        this.signalService.showMaintenanceItemResult({
+          fileId: item.entry.fileId,
+          status: "failed",
+          error: "维护已停止，项目未执行",
+        });
+      }
+    }
+
+    this.signalService.showLogText(
+      wasStopped
+        ? `Maintenance stopped. Succeeded: ${this.status.successCount}, Failed or canceled: ${this.status.failedCount}`
+        : `Maintenance completed. Succeeded: ${this.status.successCount}, Failed: ${this.status.failedCount}`,
+    );
   }
 
   private async createRunContext(presetId: MaintenancePresetId): Promise<MaintenanceRunContext> {
-    if (this.status.state !== "idle") {
-      throw new Error("Maintenance is already running");
-    }
-
     const preset = getPreset(presetId);
-    await configManager.ensureLoaded();
-    const baseConfig = configurationSchema.parse(await configManager.get());
+    const baseConfig = await configManager.getValidated();
     const config = mergeDeep(baseConfig, preset.configOverrides as DeepPartial<Configuration>);
     if (!supportsMaintenanceExecution(preset)) {
       throw new Error("当前预设仅用于扫描本地数据，无需执行");
@@ -247,21 +279,78 @@ export class MaintenanceService {
 
     this.logger.info("Stopping maintenance execution");
     this.status = { ...this.status, state: "stopping" };
-    this.controller?.abort();
+    this.operationController?.abort(createAbortError());
     this.queue?.clear();
+  }
+
+  async waitForIdle(): Promise<void> {
+    await (this.currentOperationPromise ?? Promise.resolve());
+  }
+
+  async shutdown(options: { timeoutMs?: number } = {}): Promise<void> {
+    const operationPromise = this.currentOperationPromise;
+    const timeoutMs = Math.max(0, Math.trunc(options.timeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS));
+    if (operationPromise) {
+      this.logger.info("Shutting down maintenance service");
+      if (this.status.state === "executing") {
+        this.stop();
+      } else {
+        this.operationController?.abort(createAbortError());
+        this.queue?.clear();
+      }
+
+      const timedOut = await didPromiseTimeout(operationPromise, timeoutMs);
+      if (timedOut) {
+        this.logger.warn(`Timed out waiting ${timeoutMs}ms for maintenance service shutdown`);
+      }
+    }
+
+    await this.imageHostCooldownStore.flush();
   }
 
   private createDependencies(): FileScraperDependencies {
     return {
-      configManager,
       aggregationService: new AggregationService(this.crawlerProvider),
       translateService: new TranslateService(this.networkClient),
       nfoGenerator: new NfoGenerator(),
-      downloadManager: new DownloadManager(this.networkClient),
+      downloadManager: new DownloadManager(this.networkClient, {
+        imageHostCooldownStore: this.imageHostCooldownStore,
+      }),
       fileOrganizer,
       signalService: this.signalService,
       actorImageService: this.actorImageService,
       actorSourceProvider: this.actorSourceProvider,
     };
+  }
+
+  private trackOperation<T>(
+    operation: (signal?: AbortSignal) => Promise<T>,
+    controller?: AbortController,
+    onFinally?: () => void,
+  ): Promise<T> {
+    const signal = controller?.signal;
+    const taskPromise = Promise.resolve().then(async () => {
+      return await operation(signal);
+    });
+
+    let trackedPromise!: Promise<void>;
+    const finalizedPromise = taskPromise.finally(() => {
+      if (this.currentOperationPromise === trackedPromise) {
+        this.currentOperationPromise = null;
+      }
+      if (this.operationController === controller) {
+        this.operationController = null;
+      }
+      onFinally?.();
+    });
+
+    trackedPromise = finalizedPromise.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.currentOperationPromise = trackedPromise;
+    this.operationController = controller ?? null;
+
+    return finalizedPromise;
   }
 }

@@ -2,11 +2,8 @@ import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { toArray } from "@main/utils/common";
 import { pathExists } from "@main/utils/file";
-import { classifyMovie } from "@main/utils/movieClassification";
-import { buildManagedMovieTags } from "@main/utils/movieMetadata";
-import { normalizeNfoLocalState, uncensoredChoiceToTag } from "@main/utils/nfoLocalState";
+import { buildMovieTags } from "@main/utils/movieTags";
 import { renderPathTemplate } from "@main/utils/path";
-import { resolveFileInfoSubtitleTag } from "@main/utils/subtitles";
 import type { ActorProfile, CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@shared/types";
 import { XMLBuilder } from "fast-xml-parser";
 import type { SourceMap } from "./aggregation/types";
@@ -80,47 +77,6 @@ const toRemoteImageSourceUrl = (value: string | undefined): string | undefined =
 };
 
 const truncateText = (value: string, maxChars: number): string => Array.from(value).slice(0, maxChars).join("");
-
-const buildMovieTags = (
-  data: CrawlerData,
-  fileInfo: FileInfo | undefined,
-  localState: NfoLocalState | undefined,
-): string[] => {
-  const classificationTags: string[] = [];
-  const normalizedLocalState = normalizeNfoLocalState(localState);
-  const localChoiceTag = uncensoredChoiceToTag(normalizedLocalState?.uncensoredChoice);
-  if (localChoiceTag) {
-    classificationTags.push(localChoiceTag);
-  }
-
-  if (fileInfo) {
-    if (!localChoiceTag) {
-      const classification = classifyMovie(fileInfo, data, normalizedLocalState);
-      if (classification.umr) {
-        classificationTags.push("破解");
-      } else if (classification.leak) {
-        classificationTags.push("流出");
-      } else if (classification.uncensored) {
-        classificationTags.push("无码");
-      }
-    }
-
-    const subtitleTag = resolveFileInfoSubtitleTag(fileInfo);
-    if (subtitleTag) {
-      classificationTags.push(subtitleTag);
-    }
-  }
-
-  return Array.from(
-    new Set([
-      ...classificationTags,
-      ...(normalizedLocalState?.tags ?? []),
-      ...buildManagedMovieTags({
-        contentType: data.content_type,
-      }),
-    ]),
-  );
-};
 
 const buildVideoNode = (videoMeta: VideoMeta | undefined): Record<string, unknown> | undefined => {
   if (!videoMeta) {

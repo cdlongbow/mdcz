@@ -1,9 +1,11 @@
+import { toErrorMessage } from "@main/utils/common";
 import { normalizeDmmNumberVariants } from "@main/utils/dmmImage";
 import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import { type CheerioAPI, load } from "cheerio";
 
 import type { Context, CrawlerInput } from "../../base/types";
+import type { CrawlerRegistration } from "../../registration";
 
 import { BaseDmmCrawler } from "./BaseDmmCrawler";
 import { classifyDmmDetailFailure } from "./failureClassifier";
@@ -114,7 +116,7 @@ export class DmmCrawler extends BaseDmmCrawler {
           return candidateResult;
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = toErrorMessage(error);
         this.logger.warn(`DMM search candidate failed for ${candidateSearchUrl}: ${message}`);
       }
     }
@@ -190,3 +192,8 @@ export class DmmCrawler extends BaseDmmCrawler {
     return detailUrls[0] ?? null;
   }
 }
+
+export const crawlerRegistration: CrawlerRegistration = {
+  site: Website.DMM,
+  crawler: DmmCrawler,
+};

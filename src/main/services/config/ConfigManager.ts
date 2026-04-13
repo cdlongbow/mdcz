@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { IpcErrorCode } from "@main/ipc/errors";
 import { loggerService } from "@main/services/LoggerService";
-import { getProperty, mergeDeep, setProperty } from "@main/utils/common";
+import { getProperty, mergeDeep, setProperty, toErrorMessage } from "@main/utils/common";
 import { app } from "electron";
 import { ComputedConfig, type ComputedConfiguration } from "./computed";
 import { ConfigMigrationError, runMigrations } from "./migrator";
@@ -25,6 +25,23 @@ export class ConfigValidationError extends Error {
     super(message);
   }
 }
+
+const CONFIG_FIELD_LABELS: Record<string, string> = {
+  "naming.folderTemplate": "文件夹模板",
+  "naming.fileTemplate": "文件名模板",
+  "naming.assetNamingMode": "附属文件命名",
+  "download.nfoNaming": "NFO 文件命名",
+  "download.downloadSceneImages": "下载剧照",
+  "jellyfin.userId": "Jellyfin 用户 ID",
+};
+
+const formatConfigValidationError = (fieldErrors: Record<string, string>): string => {
+  const details = Object.entries(fieldErrors)
+    .map(([field, message]) => `${CONFIG_FIELD_LABELS[field] ?? field}：${message}`)
+    .join("；");
+
+  return details ? `配置校验失败：${details}` : "配置校验失败";
+};
 
 const PROFILE_NAME_PATTERN = /^[\p{L}\p{N}_-]+$/u;
 
@@ -61,6 +78,8 @@ export class ConfigManager extends EventEmitter {
     await this.initializePromise;
   }
 
+  async get(): Promise<Configuration>;
+  async get(path: string): Promise<unknown>;
   async get(path?: string): Promise<Configuration | unknown> {
     await this.ensureLoaded();
 
@@ -69,6 +88,10 @@ export class ConfigManager extends EventEmitter {
     }
 
     return getProperty(this.configuration as unknown as Record<string, unknown>, path);
+  }
+
+  async getValidated(): Promise<Configuration> {
+    return await this.get();
   }
 
   getComputed(): ComputedConfiguration {
@@ -93,7 +116,7 @@ export class ConfigManager extends EventEmitter {
         }
       }
       const fields = Object.keys(fieldErrors);
-      throw new ConfigValidationError("Configuration validation failed", fields, fieldErrors);
+      throw new ConfigValidationError(formatConfigValidationError(fieldErrors), fields, fieldErrors);
     }
 
     this.configuration = parsed.data;
@@ -250,7 +273,7 @@ export class ConfigManager extends EventEmitter {
         return;
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       this.logger.warn(`Failed to read config directory metadata, fallback to default: ${message}`);
     }
 
@@ -281,7 +304,7 @@ export class ConfigManager extends EventEmitter {
         return;
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       this.logger.warn(`Failed to read active profile metadata, fallback to default: ${message}`);
     }
 
@@ -320,7 +343,7 @@ export class ConfigManager extends EventEmitter {
         this.computedConfig.invalidate();
         return;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = toErrorMessage(error);
         this.logger.warn(`Failed to load config file ${configPath}; using in-memory defaults: ${message}`);
         this.configuration = defaultConfiguration;
         this.syncConfigDirectoryFromConfiguration();
@@ -377,4 +400,8 @@ export class ConfigManager extends EventEmitter {
   }
 }
 
+/**
+ * Main-process configuration is intentionally exposed as a module singleton.
+ * Services should import this directly instead of threading it through ad-hoc deps.
+ */
 export const configManager = new ConfigManager();

@@ -1,3 +1,4 @@
+import { isSharedDirectoryMode } from "@shared/assetNaming";
 import type { Configuration } from "@shared/config";
 import { TRANSLATION_TARGET_OPTIONS } from "@shared/enums";
 import { DEFAULT_LLM_BASE_URL } from "@shared/llm";
@@ -25,7 +26,7 @@ import {
   Type,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useForm, useFormContext, useWatch } from "react-hook-form";
 import { toast } from "sonner";
@@ -89,15 +90,17 @@ const PART_STYLE_OPTIONS: EnumOption[] = [
   { value: "PART", label: "统一为 PART1 / PART2" },
   { value: "DISC", label: "统一为 DISC1 / DISC2" },
 ];
-
+const ASSET_NAMING_OPTIONS: EnumOption[] = [
+  { value: "fixed", label: "固定命名" },
+  { value: "followVideo", label: "跟随影片文件名" },
+];
 const NFO_NAMING_OPTIONS: EnumOption[] = [
   { value: "both", label: "同时生成两种" },
   { value: "movie", label: "仅 movie.nfo" },
   { value: "filename", label: "仅 文件名.nfo" },
 ];
 
-export const NAMING_TEMPLATE_DESCRIPTION =
-  "可用占位符：{actor} {number} {date} {title} {studio}；可用 [{series}] 这种 [] 包裹单个路径片段内的可选内容，[] 内不能包含 / 或 \\";
+export const NAMING_TEMPLATE_DESCRIPTION = "可用占位符：{actor} {number} {date} {title} {studio}";
 
 // ── Field registry for search/filter ──
 
@@ -134,6 +137,7 @@ const FIELD_REGISTRY: FieldEntry[] = [
   // download
   { key: "download.downloadThumb", label: "下载横版缩略图", section: "download" },
   { key: "download.downloadPoster", label: "下载海报", section: "download" },
+  { key: "download.tagBadges", label: "封面标签角标", section: "download" },
   { key: "download.downloadFanart", label: "下载背景图", section: "download" },
   { key: "download.downloadSceneImages", label: "下载剧照", section: "download" },
   { key: "download.downloadTrailer", label: "下载预告片", section: "download" },
@@ -148,9 +152,11 @@ const FIELD_REGISTRY: FieldEntry[] = [
   // naming
   { key: "naming.folderTemplate", label: "文件夹模板", section: "naming" },
   { key: "naming.fileTemplate", label: "文件名模板", section: "naming" },
+  { key: "naming.assetNamingMode", label: "附属文件命名", section: "naming" },
   { key: "naming.nfoTitleTemplate", label: "NFO 标题模板", section: "naming" },
   { key: "naming.actorNameMax", label: "演员名最大数量", section: "naming" },
   { key: "naming.actorNameMore", label: "演员名超出后缀", section: "naming" },
+  { key: "naming.actorFallbackToStudio", label: "演员为空时使用片商或卖家", section: "naming" },
   { key: "naming.releaseRule", label: "发行日期格式", section: "naming" },
   { key: "naming.folderNameMax", label: "文件夹名最大长度", section: "naming" },
   { key: "naming.fileNameMax", label: "文件名最大长度", section: "naming" },
@@ -185,8 +191,7 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "emby.refreshPersonAfterSync", label: "Emby 同步后刷新人物", section: "personSync" },
   // shortcuts
   { key: "shortcuts.startOrStopScrape", label: "开始/停止刮削", section: "shortcuts" },
-  { key: "shortcuts.searchByNumber", label: "按番号重刮", section: "shortcuts" },
-  { key: "shortcuts.searchByUrl", label: "按网址重刮", section: "shortcuts" },
+  { key: "shortcuts.retryScrape", label: "重新刮削", section: "shortcuts" },
   { key: "shortcuts.deleteFile", label: "删除文件", section: "shortcuts" },
   { key: "shortcuts.deleteFileAndFolder", label: "删除文件及文件夹", section: "shortcuts" },
   { key: "shortcuts.openFolder", label: "打开所在目录", section: "shortcuts" },
@@ -213,7 +218,7 @@ const SECTION_DESCRIPTIONS: Record<string, string> = {
   scrape: "配置刮削行为、站点及并发策略",
   network: "代理、超时、重试及 Cookie 设置",
   download: "控制缩略图、海报、背景图、剧照与 NFO 的生成与保留",
-  naming: "文件和文件夹的命名模板与规则",
+  naming: "文件、文件夹和附属资源的命名规则",
   translate: "LLM 翻译引擎配置",
   personSync: "共享人物来源顺序，以及 Jellyfin 与 Emby 的人物同步设置",
   shortcuts: "自定义快捷键，留空可禁用（工作台快捷键仅在工作台页生效）",
@@ -337,8 +342,8 @@ function PathsSection(_props: SectionRenderProps) {
 function ScrapeSection({ siteOptions }: SectionRenderProps) {
   return (
     <>
-      <ChipArrayFieldWrapper name="scrape.enabledSites" label="启用站点" options={siteOptions} />
-      <ChipArrayFieldWrapper name="scrape.siteOrder" label="站点优先级" options={siteOptions} />
+      <ChipArrayFieldWrapper name="scrape.enabledSites" label="启用站点" options={siteOptions} showBulkActions />
+      <ChipArrayFieldWrapper name="scrape.siteOrder" label="站点优先级" options={siteOptions} showBulkActions />
       <NumberField name="scrape.threadNumber" label="并发线程数" min={1} max={128} />
       <NumberField name="scrape.javdbDelaySeconds" label="JavDB 请求延迟(秒)" min={0} max={120} />
       <NumberField name="scrape.restAfterCount" label="连续刮削后休息(条数)" min={1} max={500} />
@@ -380,11 +385,26 @@ function DownloadSection(_props: SectionRenderProps) {
     boolean | undefined,
     boolean | undefined,
   ];
+  const folderTemplate = String(form.watch("naming.folderTemplate") ?? "");
+  const successFileMove = Boolean(form.watch("behavior.successFileMove"));
+  const sharedDirectoryMode = isSharedDirectoryMode({ successFileMove, folderTemplate });
 
   return (
     <>
+      {sharedDirectoryMode && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+          当前为共享目录模式：多个影片会写入同一目录。保存时会校验 NFO 命名与剧照下载设置。
+        </div>
+      )}
       <BoolField name="download.downloadThumb" label="下载横版缩略图" />
       <BoolField name="download.downloadPoster" label="下载海报" />
+      {downloadPoster && (
+        <BoolField
+          name="download.tagBadges"
+          label="为封面添加标签角标"
+          description="按现有影片标签自动添加角标，当前支持中字、无码、破解、流出；仅处理本次新下载的海报。"
+        />
+      )}
       <BoolField name="download.downloadFanart" label="下载背景图" />
       <BoolField name="download.downloadSceneImages" label="下载剧照" />
       <BoolField name="download.downloadTrailer" label="下载预告片" />
@@ -406,6 +426,10 @@ function NamingPreview() {
     control: form.control,
     name: "naming",
   }) as Record<string, unknown> | undefined;
+  const download = useWatch({
+    control: form.control,
+    name: "download",
+  }) as Record<string, unknown> | undefined;
   const behavior = useWatch({
     control: form.control,
     name: "behavior",
@@ -415,9 +439,10 @@ function NamingPreview() {
   const previewConfig = useMemo(
     () => ({
       naming: naming ?? {},
+      download: download ?? {},
       behavior: behavior ?? {},
     }),
-    [behavior, naming],
+    [behavior, download, naming],
   );
   const previewConfigRef = useRef(previewConfig);
 
@@ -475,10 +500,27 @@ function NamingPreview() {
 }
 
 export function NamingSection(_props: SectionRenderProps) {
+  const form = useFormContext<FieldValues>();
+  const folderTemplate = String(form.watch("naming.folderTemplate") ?? "");
+  const successFileMove = Boolean(form.watch("behavior.successFileMove"));
+  const sharedDirectoryMode = isSharedDirectoryMode({ successFileMove, folderTemplate });
+
   return (
     <>
       <TextField name="naming.folderTemplate" label="文件夹模板" description={NAMING_TEMPLATE_DESCRIPTION} />
       <TextField name="naming.fileTemplate" label="文件名模板" description={NAMING_TEMPLATE_DESCRIPTION} />
+      <EnumField
+        name="naming.assetNamingMode"
+        label="附属文件命名"
+        description="海报、横版缩略图、背景图与预告片的文件名规则。"
+        options={ASSET_NAMING_OPTIONS}
+      />
+      {sharedDirectoryMode && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+          当前文件夹模板不会为每部影片创建独立目录，属于共享目录模式。推荐默认使用 <code>{`{actor}/{number}`}</code>；
+          如需共享目录，保存时会校验相关命名规则。
+        </div>
+      )}
       <TextField
         name="naming.nfoTitleTemplate"
         label="NFO 标题模板"
@@ -487,6 +529,11 @@ export function NamingSection(_props: SectionRenderProps) {
       <NamingPreview />
       <NumberField name="naming.actorNameMax" label="演员名最大数量" min={1} max={20} />
       <TextField name="naming.actorNameMore" label="演员名超出后缀" />
+      <BoolField
+        name="naming.actorFallbackToStudio"
+        label="演员为空时使用片商或卖家"
+        description="开启后，{actor} 在没有演员名时会回退到片商或卖家名称；仍为空时才使用 Unknown。"
+      />
       <TextField name="naming.releaseRule" label="发行日期格式" />
       <EnumField
         name="naming.partStyle"
@@ -658,8 +705,7 @@ function ShortcutsSection(_props: SectionRenderProps) {
   return (
     <>
       <ShortcutField name="shortcuts.startOrStopScrape" label="开始/停止刮削" description="示例: S" />
-      <ShortcutField name="shortcuts.searchByNumber" label="按番号重刮" description="示例: N" />
-      <ShortcutField name="shortcuts.searchByUrl" label="按网址重刮" description="示例: U" />
+      <ShortcutField name="shortcuts.retryScrape" label="重新刮削" description="示例: R" />
       <ShortcutField name="shortcuts.deleteFile" label="删除文件" description="示例: D" />
       <ShortcutField name="shortcuts.deleteFileAndFolder" label="删除文件及文件夹" description="示例: ⇧ + D" />
       <ShortcutField name="shortcuts.openFolder" label="打开所在目录" description="示例: F" />
@@ -714,6 +760,8 @@ interface TabbedConfigFormProps {
   serverErrors?: string[];
   serverFieldErrors?: Record<string, string>;
   onDirtyChange?: (dirty: boolean) => void;
+  initialTab?: string;
+  onTabChange?: (tab: string) => void;
   // Profile management
   profiles?: string[];
   activeProfile?: string;
@@ -724,21 +772,33 @@ interface TabbedConfigFormProps {
   configPath?: string;
 }
 
-export function TabbedConfigForm({
-  data,
-  onSubmit,
-  serverErrors,
-  serverFieldErrors,
-  onDirtyChange,
-  profiles = [],
-  activeProfile = "",
-  onSwitchProfile,
-  onCreateProfile,
-  onDeleteProfile,
-  onResetConfig,
-  configPath,
-}: TabbedConfigFormProps) {
+export interface TabbedConfigFormHandle {
+  submit: () => Promise<boolean>;
+}
+
+export const TabbedConfigForm = forwardRef<TabbedConfigFormHandle, TabbedConfigFormProps>(function TabbedConfigForm(
+  {
+    data,
+    onSubmit,
+    serverErrors,
+    serverFieldErrors,
+    onDirtyChange,
+    initialTab,
+    onTabChange,
+    profiles = [],
+    activeProfile = "",
+    onSwitchProfile,
+    onCreateProfile,
+    onDeleteProfile,
+    onResetConfig,
+    configPath,
+  }: TabbedConfigFormProps,
+  ref,
+) {
+  const defaultTab = TABS[0]?.key || "";
+  const resolvedInitialTab = initialTab && TABS.some((tab) => tab.key === initialTab) ? initialTab : defaultTab;
   const flatDefaults = useMemo(() => flattenConfig(data), [data]);
+  const submitPromiseRef = useRef<Promise<boolean> | null>(null);
 
   const form = useForm<FieldValues>({
     defaultValues: flatDefaults,
@@ -769,12 +829,55 @@ export function TabbedConfigForm({
     return Array.from(new Set([...fromApi, ...fromConfig]));
   }, [sitesQ.data, flatDefaults]);
 
-  const handleSubmit = async (values: FieldValues) => {
-    await onSubmit(unflattenConfig(values));
-    // Mark current values as the new baseline after successful save.
-    form.reset(values);
-    onDirtyChange?.(false);
-  };
+  const handleFormSubmit = useCallback(
+    async (values: FieldValues) => {
+      await onSubmit(unflattenConfig(values));
+      // Mark current values as the new baseline after successful save.
+      form.reset(values);
+      onDirtyChange?.(false);
+    },
+    [form, onDirtyChange, onSubmit],
+  );
+
+  const submit = useCallback(async () => {
+    if (submitPromiseRef.current) {
+      return submitPromiseRef.current;
+    }
+
+    const submission = (async () => {
+      let wasSuccessful = false;
+
+      await form.handleSubmit(
+        async (values) => {
+          try {
+            await handleFormSubmit(values);
+            wasSuccessful = true;
+          } catch {
+            wasSuccessful = false;
+          }
+        },
+        () => {
+          wasSuccessful = false;
+        },
+      )();
+
+      return wasSuccessful;
+    })();
+
+    submitPromiseRef.current = submission.finally(() => {
+      submitPromiseRef.current = null;
+    });
+
+    return submitPromiseRef.current;
+  }, [form, handleFormSubmit]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      submit,
+    }),
+    [submit],
+  );
 
   // Notify parent of dirty state
   const isDirty = form.formState.isDirty;
@@ -799,7 +902,11 @@ export function TabbedConfigForm({
   }, [serverErrors, serverFieldErrors, form]);
 
   // Tab state
-  const [activeTab, setActiveTab] = useState(TABS[0]?.key || "");
+  const [activeTab, setActiveTab] = useState<string>(resolvedInitialTab);
+
+  useEffect(() => {
+    onTabChange?.(activeTab);
+  }, [activeTab, onTabChange]);
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -895,7 +1002,13 @@ export function TabbedConfigForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="h-full w-full overflow-y-auto relative scroll-smooth">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+        className="h-full w-full overflow-y-auto relative scroll-smooth"
+      >
         <div className="sticky top-0 z-10 bg-background/60 backdrop-blur-xl border-b">
           <PageHeader
             title="设置"
@@ -1126,4 +1239,4 @@ export function TabbedConfigForm({
       </form>
     </Form>
   );
-}
+});

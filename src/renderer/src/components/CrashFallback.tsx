@@ -1,15 +1,10 @@
+import { toErrorMessage } from "@shared/error";
 import { AlertTriangle, RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
-const toErrorMessage = (error: unknown): string => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return "未知错误";
-};
-
 export default function CrashFallback({ error, onRetry }: { error?: unknown; onRetry?: () => void }) {
+  const message = toErrorMessage(error, "未知错误");
+
   return (
     <div className="flex min-h-dvh items-center justify-center bg-[radial-gradient(circle_at_top,rgba(245,158,11,0.18),transparent_38%),linear-gradient(180deg,hsl(var(--background)),hsl(var(--muted))/0.3)] px-6 py-10">
       <div className="w-full max-w-xl rounded-3xl border bg-background/95 p-8 shadow-2xl backdrop-blur">
@@ -26,7 +21,7 @@ export default function CrashFallback({ error, onRetry }: { error?: unknown; onR
 
         <div className="mt-6 rounded-2xl border bg-muted/35 p-4">
           <div className="mb-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Error</div>
-          <div className="wrap-break-word font-mono text-sm leading-6 text-foreground/90">{toErrorMessage(error)}</div>
+          <div className="wrap-break-word font-mono text-sm leading-6 text-foreground/90">{message}</div>
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">

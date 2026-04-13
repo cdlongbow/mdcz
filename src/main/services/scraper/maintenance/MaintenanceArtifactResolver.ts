@@ -1,6 +1,7 @@
 import { unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { loggerService } from "@main/services/LoggerService";
+import { toErrorMessage } from "@main/utils/common";
 import { moveFileSafely, pathExists } from "@main/utils/file";
 import type { DiscoveredAssets, LocalScanEntry, MaintenanceAssetDecisions } from "@shared/types";
 import type { OrganizePlan } from "../FileOrganizer";
@@ -234,7 +235,7 @@ export class MaintenanceArtifactResolver {
       try {
         await unlink(stalePath);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = toErrorMessage(error);
         this.logger.warn(`Failed to remove stale NFO ${stalePath}: ${message}`);
       }
     }

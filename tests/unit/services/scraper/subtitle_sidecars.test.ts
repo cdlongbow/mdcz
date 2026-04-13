@@ -70,6 +70,25 @@ describe("subtitleSidecars", () => {
     );
   });
 
+  it("matches number-based sidecars when the video name has classification markers", async () => {
+    const root = await createTempDir();
+    const videoPath = join(root, "ABF-252-U.mp4");
+    const sidecarPath = join(root, "ABF-252.zh.srt");
+    await fsPromises.writeFile(videoPath, "video");
+    await fsPromises.writeFile(sidecarPath, "subtitle");
+
+    const sidecars = await findSubtitleSidecars(videoPath);
+
+    expect(sidecars).toEqual([{ path: sidecarPath, suffix: ".zh", subtitleTag: "中文字幕" }]);
+    const matchedSidecar = sidecars[0];
+    if (!matchedSidecar) {
+      throw new Error("Expected number-based subtitle sidecar to be discovered");
+    }
+    expect(buildSubtitleSidecarTargetPath(matchedSidecar, join(root, "ABF-252-C.mp4"))).toBe(
+      join(root, "ABF-252-C.zh.srt"),
+    );
+  });
+
   it("recognizes subtitle symlinks that point to real files", async () => {
     const root = await createTempDir();
     const videoPath = join(root, "ABC-123.mp4");

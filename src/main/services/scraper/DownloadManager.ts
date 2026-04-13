@@ -1,7 +1,11 @@
 import type { Configuration } from "@main/services/config";
-import { PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
+import {
+  createImageHostCooldownStore,
+  type PersistentCooldownStore,
+} from "@main/services/cooldown/PersistentCooldownStore";
 import { loggerService } from "@main/services/LoggerService";
 import type { NetworkClient } from "@main/services/network";
+import { buildMovieAssetFileNames } from "@shared/assetNaming";
 import type { CrawlerData, DownloadedAssets } from "@shared/types";
 import { throwIfAborted } from "./abort";
 import type { ImageAlternatives } from "./aggregation";
@@ -25,6 +29,10 @@ interface DownloadManagerOptions {
   imageHostCooldownStore?: PersistentCooldownStore;
 }
 
+interface DownloadExecutionOptions {
+  movieBaseName?: string;
+}
+
 export class DownloadManager {
   private readonly logger = loggerService.getLogger("DownloadManager");
 
@@ -35,12 +43,7 @@ export class DownloadManager {
   private readonly downloaders: AssetDownloader[];
 
   constructor(networkClient: NetworkClient, options: DownloadManagerOptions = {}) {
-    const imageHostCooldownStore =
-      options.imageHostCooldownStore ??
-      new PersistentCooldownStore({
-        fileName: "image-host-cooldowns.json",
-        loggerName: "ImageHostCooldownStore",
-      });
+    const imageHostCooldownStore = options.imageHostCooldownStore ?? createImageHostCooldownStore();
     const hostCooldownTracker = new ImageHostCooldownTracker(imageHostCooldownStore, this.logger);
 
     this.imageDownloader = new ImageDownloadService(networkClient, hostCooldownTracker, this.logger);
@@ -59,13 +62,14 @@ export class DownloadManager {
     config: Configuration,
     imageAlternatives: Partial<ImageAlternatives> = {},
     callbacks?: DownloadCallbacks,
+    options: DownloadExecutionOptions = {},
   ): Promise<DownloadedAssets> {
     const assets: DownloadedAssets = {
       sceneImages: [],
       downloaded: [],
     };
 
-    const plan = this.createExecutionPlan(outputDir, data, config, imageAlternatives, callbacks);
+    const plan = this.createExecutionPlan(outputDir, data, config, imageAlternatives, callbacks, options);
     const context: DownloadExecutionContext = {
       plan,
       assets,
@@ -94,9 +98,14 @@ export class DownloadManager {
     config: Configuration,
     imageAlternatives: Partial<ImageAlternatives>,
     callbacks?: DownloadCallbacks,
+    options: DownloadExecutionOptions = {},
   ): DownloadExecutionPlan {
+    const movieBaseName = options.movieBaseName?.trim() || data.number.trim();
+
     return {
       outputDir,
+      movieBaseName,
+      assetFileNames: buildMovieAssetFileNames(movieBaseName, config.naming.assetNamingMode),
       data,
       config,
       imageAlternatives,

@@ -2,20 +2,26 @@ import type { ActorImageService } from "@main/services/ActorImageService";
 import type { ActorSourceProvider } from "@main/services/actorSource";
 import type { Configuration } from "@main/services/config";
 import type { SignalService } from "@main/services/SignalService";
+import { toErrorMessage } from "@main/utils/common";
+import { resolvePosterBadgeDefinitions } from "@main/utils/movieTags";
 import { probeVideoMetadata } from "@main/utils/video";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@shared/types";
 import type { Logger } from "winston";
+import { throwIfAborted } from "../abort";
 import type { ImageAlternatives, SourceMap } from "../aggregation";
 import type { DownloadCallbacks, DownloadManager } from "../DownloadManager";
 import type { FileOrganizer, OrganizePlan } from "../FileOrganizer";
 import type { NfoGenerator } from "../NfoGenerator";
 import { reconcileExistingNfoFiles } from "../NfoGenerator";
+import { PosterWatermarkService } from "../PosterWatermarkService";
 import { prepareCrawlerDataForMovieOutput } from "./prepareCrawlerDataForMovieOutput";
 import { prepareImageAlternativesForDownload } from "./prepareImageAlternativesForDownload";
 
 export { prepareCrawlerDataForMovieOutput } from "./prepareCrawlerDataForMovieOutput";
 export { prepareCrawlerDataForNfo } from "./prepareCrawlerDataForNfo";
 export { prepareImageAlternativesForDownload } from "./prepareImageAlternativesForDownload";
+
+const posterWatermarkService = new PosterWatermarkService();
 
 export interface ScrapeProgressState {
   fileIndex: number;
@@ -82,25 +88,66 @@ export async function prepareOutputCrawlerData(input: {
   });
 }
 
+export const applyPosterTagBadgesIfNeeded = async (input: {
+  assets: DownloadedAssets;
+  config: Pick<Configuration, "download">;
+  crawlerData: CrawlerData;
+  fileInfo: FileInfo;
+  localState?: NfoLocalState;
+  logger: Pick<Logger, "warn">;
+  signal?: AbortSignal;
+  signalService?: Pick<SignalService, "showLogText">;
+  watermarkService?: Pick<PosterWatermarkService, "applyTagBadges">;
+}): Promise<DownloadedAssets> => {
+  if (!input.config.download.tagBadges) {
+    return input.assets;
+  }
+
+  const posterPath = input.assets.poster;
+  if (!posterPath || !input.assets.downloaded.includes(posterPath)) {
+    return input.assets;
+  }
+
+  const badges = resolvePosterBadgeDefinitions(input.crawlerData, input.fileInfo, input.localState);
+  if (badges.length === 0) {
+    return input.assets;
+  }
+
+  throwIfAborted(input.signal);
+  input.signalService?.showLogText(`[${input.fileInfo.number}] Applying poster tag badges...`);
+
+  try {
+    await (input.watermarkService ?? posterWatermarkService).applyTagBadges(posterPath, badges);
+  } catch (error) {
+    input.logger.warn(`Failed to apply poster tag badges for ${posterPath}: ${toErrorMessage(error)}`);
+  }
+
+  throwIfAborted(input.signal);
+  return input.assets;
+};
+
 export const downloadCrawlerAssets = async (input: {
   callbacks?: DownloadCallbacks;
   config: Configuration;
   crawlerData: CrawlerData;
   downloadManager: DownloadManager;
-  fileNumber: string;
+  fileInfo: FileInfo;
   imageAlternatives?: Partial<ImageAlternatives>;
+  localState?: NfoLocalState;
+  logger: Pick<Logger, "warn">;
+  movieBaseName?: string;
   outputDir: string;
   signalService: Pick<SignalService, "showLogText">;
   sources?: Pick<SourceMap, "thumb_url" | "poster_url" | "scene_images">;
 }): Promise<DownloadedAssets> => {
-  input.signalService.showLogText(`[${input.fileNumber}] Downloading resources...`);
+  input.signalService.showLogText(`[${input.fileInfo.number}] Downloading resources...`);
   const preparedImageAlternatives = prepareImageAlternativesForDownload(
     input.crawlerData,
     input.imageAlternatives,
     input.sources,
   );
 
-  return await input.downloadManager.downloadAll(
+  const assets = await input.downloadManager.downloadAll(
     input.outputDir,
     input.crawlerData,
     input.config,
@@ -108,11 +155,25 @@ export const downloadCrawlerAssets = async (input: {
     {
       ...input.callbacks,
       onSceneProgress: (downloaded, total) => {
-        input.signalService.showLogText(`[${input.fileNumber}] Scene images: ${downloaded}/${total}`);
+        input.signalService.showLogText(`[${input.fileInfo.number}] Scene images: ${downloaded}/${total}`);
         input.callbacks?.onSceneProgress?.(downloaded, total);
       },
     },
+    {
+      movieBaseName: input.movieBaseName,
+    },
   );
+
+  return await applyPosterTagBadgesIfNeeded({
+    assets,
+    config: input.config,
+    crawlerData: input.crawlerData,
+    fileInfo: input.fileInfo,
+    localState: input.localState,
+    logger: input.logger,
+    signal: input.callbacks?.signal,
+    signalService: input.signalService,
+  });
 };
 
 export const applyResolvedSceneImageMetadata = (
@@ -137,7 +198,7 @@ export const probeVideoMetadataOrWarn = async (input: {
   try {
     return await probeVideoMetadata(input.sourceVideoPath);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     input.logger.warn(`${input.warningPrefix}: ${message}`);
     return undefined;
   }

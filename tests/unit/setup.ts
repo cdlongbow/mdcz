@@ -15,7 +15,14 @@ vi.mock("electron", () => {
     setAppUserModelId: () => {},
   };
 
+  const ipcMain = {
+    handle: () => {},
+    once: () => {},
+    removeHandler: () => {},
+  };
+
   return {
     app,
+    ipcMain,
   };
 });

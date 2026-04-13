@@ -1,6 +1,9 @@
 import type { Website } from "@shared/enums";
+import { toErrorMessage } from "@shared/error";
 import type {
   AmazonPosterScanItem,
+  BatchTranslateApplyResultItem,
+  BatchTranslateScanItem,
   EmbyConnectionCheckResult,
   JellyfinConnectionCheckResult,
   PersonSyncResult,
@@ -27,6 +30,7 @@ import { type MutableRefObject, useCallback, useEffect, useMemo, useRef, useStat
 import { deleteFile } from "@/api/manual";
 import { createSymlink, listEntries, scrapeSingleFile } from "@/client/api";
 import { ipc } from "@/client/ipc";
+import { chooseScrapeFilePath } from "@/client/scrapeFilePath";
 import type { CreateSoftlinksBody, FileItem, ScrapeFileBody } from "@/client/types";
 import { AmazonPosterDialog } from "@/components/AmazonPosterDialog";
 import { PageHeader } from "@/components/PageHeader";
@@ -50,6 +54,7 @@ import { TabButton } from "@/components/ui/TabButton";
 import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/contexts/ToastProvider";
 import { cn } from "@/lib/utils";
+import { useUIStore } from "@/store/uiStore";
 
 export const Route = createFileRoute("/tool")({
   component: ToolComponent,
@@ -123,11 +128,6 @@ function extensionFromName(fileName: string) {
   const dot = fileName.lastIndexOf(".");
   if (dot < 0) return "";
   return normalizeExtension(fileName.slice(dot));
-}
-
-function formatError(error: unknown) {
-  if (error instanceof Error && error.message) return error.message;
-  return String(error);
 }
 
 function getFirstDiagnosticError(result: ConnectionCheckResult) {
@@ -367,7 +367,11 @@ function PersonToolCard({
 function ToolComponent() {
   const navigate = useNavigate();
   const { showSuccess, showError, showInfo } = useToast();
-  const [activeTab, setActiveTab] = useState<(typeof TOOLS_TABS)[number]["id"]>("scraping");
+  const toolActiveTab = useUIStore((state) => state.toolActiveTab);
+  const setToolActiveTab = useUIStore((state) => state.setToolActiveTab);
+  const activeTab: (typeof TOOLS_TABS)[number]["id"] = TOOLS_TABS.some((tab) => tab.id === toolActiveTab)
+    ? (toolActiveTab as (typeof TOOLS_TABS)[number]["id"])
+    : "scraping";
 
   // 单文件刮削
   const [singleFilePath, setSingleFilePath] = useState("");
@@ -455,6 +459,11 @@ function ToolComponent() {
   const [amazonPosterDialogOpen, setAmazonPosterDialogOpen] = useState(false);
   const [amazonPosterScanItems, setAmazonPosterScanItems] = useState<AmazonPosterScanItem[]>([]);
   const [amazonScanning, setAmazonScanning] = useState(false);
+  const [batchTranslateDir, setBatchTranslateDir] = useState("");
+  const [batchTranslateItems, setBatchTranslateItems] = useState<BatchTranslateScanItem[]>([]);
+  const [batchTranslateResults, setBatchTranslateResults] = useState<BatchTranslateApplyResultItem[]>([]);
+  const [batchTranslateScanning, setBatchTranslateScanning] = useState(false);
+  const [batchTranslateApplying, setBatchTranslateApplying] = useState(false);
 
   // Navigation arrows logic
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -542,6 +551,17 @@ function ToolComponent() {
     }
   };
 
+  const handleBrowseSingleFile = async () => {
+    try {
+      const selectedPath = await chooseScrapeFilePath();
+      if (selectedPath) {
+        setSingleFilePath(selectedPath);
+      }
+    } catch (error) {
+      showError(`文件选择失败: ${toErrorMessage(error)}`);
+    }
+  };
+
   const handleCreateSymlink = async () => {
     if (!sourceDir || !destDir) {
       showError("请输入源目录和目标目录");
@@ -558,7 +578,7 @@ function ToolComponent() {
       showSuccess(result.data.message);
       setTimeout(() => navigate({ to: "/logs" }), 1000);
     } catch (error) {
-      showError(`软链接创建任务启动失败: ${formatError(error)}`);
+      showError(`软链接创建任务启动失败: ${toErrorMessage(error)}`);
     }
   };
 
@@ -577,7 +597,7 @@ function ToolComponent() {
       }
       return result;
     } catch (error) {
-      showError(`Jellyfin 连通性测试失败: ${formatError(error)}`);
+      showError(`Jellyfin 连通性测试失败: ${toErrorMessage(error)}`);
       setJellyfinCheckResult(null);
       return null;
     }
@@ -598,7 +618,7 @@ function ToolComponent() {
       }
       return result;
     } catch (error) {
-      showError(`Emby 连通性测试失败: ${formatError(error)}`);
+      showError(`Emby 连通性测试失败: ${toErrorMessage(error)}`);
       setEmbyCheckResult(null);
       return null;
     }
@@ -638,7 +658,7 @@ function ToolComponent() {
       setJellyfinSyncProgress(100);
       showSuccess(formatSyncResult("Jellyfin 演员信息同步完成", result));
     } catch (error) {
-      showError(`Jellyfin 演员信息同步失败: ${formatError(error)}`);
+      showError(`Jellyfin 演员信息同步失败: ${toErrorMessage(error)}`);
     } finally {
       setJellyfinInfoSyncRunning(false);
       clearProgressResetTimer(jellyfinProgressResetTimerRef);
@@ -673,7 +693,7 @@ function ToolComponent() {
       setJellyfinSyncProgress(100);
       showSuccess(formatSyncResult("Jellyfin 头像同步完成", result));
     } catch (error) {
-      showError(`Jellyfin 头像同步失败: ${formatError(error)}`);
+      showError(`Jellyfin 头像同步失败: ${toErrorMessage(error)}`);
     } finally {
       setJellyfinPhotoSyncRunning(false);
       clearProgressResetTimer(jellyfinProgressResetTimerRef);
@@ -708,7 +728,7 @@ function ToolComponent() {
       setEmbySyncProgress(100);
       showSuccess(formatSyncResult("Emby 演员信息同步完成", result));
     } catch (error) {
-      showError(`Emby 演员信息同步失败: ${formatError(error)}`);
+      showError(`Emby 演员信息同步失败: ${toErrorMessage(error)}`);
     } finally {
       setEmbyInfoSyncRunning(false);
       clearProgressResetTimer(embyProgressResetTimerRef);
@@ -748,7 +768,7 @@ function ToolComponent() {
       setEmbySyncProgress(100);
       showSuccess(formatSyncResult("Emby 头像同步完成", result));
     } catch (error) {
-      showError(`Emby 头像同步失败: ${formatError(error)}`);
+      showError(`Emby 头像同步失败: ${toErrorMessage(error)}`);
     } finally {
       setEmbyPhotoSyncRunning(false);
       clearProgressResetTimer(embyProgressResetTimerRef);
@@ -782,10 +802,11 @@ function ToolComponent() {
     setCleanCustomExt("");
   };
 
-  const handleBrowseCleanPath = async () => {
+  const browseDirectory = async (onSelect: (path: string) => void) => {
     const result = await ipc.file.browse("directory");
-    if (result.paths && result.paths.length > 0) {
-      setCleanPath(result.paths[0]);
+    const selectedPath = result.paths?.[0];
+    if (selectedPath) {
+      onSelect(selectedPath);
     }
   };
 
@@ -847,7 +868,7 @@ function ToolComponent() {
         showSuccess(`扫描完成，共找到 ${found.length} 个匹配文件。`);
       }
     } catch (error) {
-      showError(`扫描失败: ${formatError(error)}`);
+      showError(`扫描失败: ${toErrorMessage(error)}`);
     } finally {
       setCleanupScanning(false);
     }
@@ -960,16 +981,9 @@ function ToolComponent() {
         showError(result.error ?? "未获取到数据");
       }
     } catch (error) {
-      showError(`爬虫测试失败: ${formatError(error)}`);
+      showError(`爬虫测试失败: ${toErrorMessage(error)}`);
     } finally {
       setCrawlerTesting(false);
-    }
-  };
-
-  const handleBrowseAmazonDir = async () => {
-    const result = await ipc.file.browse("directory");
-    if (result.paths && result.paths.length > 0) {
-      setAmazonDir(result.paths[0]);
     }
   };
 
@@ -992,9 +1006,76 @@ function ToolComponent() {
         showSuccess(`扫描完成，共找到 ${result.items.length} 个条目。`);
       }
     } catch (error) {
-      showError(`Amazon 海报扫描失败: ${formatError(error)}`);
+      showError(`Amazon 海报扫描失败: ${toErrorMessage(error)}`);
     } finally {
       setAmazonScanning(false);
+    }
+  };
+
+  const scanBatchTranslateItems = async (options: { silent?: boolean } = {}) => {
+    const directory = batchTranslateDir.trim();
+    if (!directory) {
+      setBatchTranslateItems([]);
+      showError("请输入需要扫描的媒体目录");
+      return null;
+    }
+
+    setBatchTranslateScanning(true);
+    setBatchTranslateItems([]);
+    try {
+      const result = await ipc.tool.batchTranslateScan(directory);
+      setBatchTranslateItems(result.items);
+
+      if (!options.silent) {
+        if (result.items.length === 0) {
+          showInfo("扫描完成，未发现待翻译的 NFO 条目。");
+        } else {
+          const fieldCount = result.items.reduce((sum, item) => sum + item.pendingFields.length, 0);
+          showSuccess(`扫描完成，共找到 ${result.items.length} 个条目，待处理字段 ${fieldCount} 项。`);
+        }
+      }
+
+      return result.items;
+    } catch (error) {
+      setBatchTranslateItems([]);
+      showError(`批量翻译扫描失败: ${toErrorMessage(error)}`);
+      return null;
+    } finally {
+      setBatchTranslateScanning(false);
+    }
+  };
+
+  const handleBatchTranslateScan = async () => {
+    setBatchTranslateResults([]);
+    await scanBatchTranslateItems();
+  };
+
+  const handleBatchTranslateApply = async () => {
+    if (batchTranslateItems.length === 0) {
+      showInfo("当前没有待翻译条目。");
+      return;
+    }
+
+    setBatchTranslateApplying(true);
+    try {
+      const result = await ipc.tool.batchTranslateApply(batchTranslateItems);
+      setBatchTranslateResults(result.results);
+
+      const successCount = result.results.filter((item) => item.success).length;
+      const partialCount = result.results.filter((item) => !item.success && item.translatedFields.length > 0).length;
+      const failedCount = result.results.length - successCount - partialCount;
+
+      if (failedCount === 0) {
+        showSuccess(`批量翻译完成：成功 ${successCount}，部分成功 ${partialCount}。`);
+      } else {
+        showError(`批量翻译完成：成功 ${successCount}，部分成功 ${partialCount}，失败 ${failedCount}。`);
+      }
+
+      await scanBatchTranslateItems({ silent: true });
+    } catch (error) {
+      showError(`批量翻译执行失败: ${toErrorMessage(error)}`);
+    } finally {
+      setBatchTranslateApplying(false);
     }
   };
 
@@ -1004,6 +1085,12 @@ function ToolComponent() {
   );
   const cleanupPreviewRows = cleanupCandidates.slice(0, 400);
   const missingPreviewRows = missingRows.slice(0, 300);
+  const batchTranslatePreviewRows = batchTranslateItems.slice(0, 300);
+  const batchTranslateResultRows = batchTranslateResults.slice(0, 300);
+  const batchTranslatePendingFieldCount = useMemo(
+    () => batchTranslateItems.reduce((sum, item) => sum + item.pendingFields.length, 0),
+    [batchTranslateItems],
+  );
 
   const personToolProps =
     selectedPersonServer === "jellyfin"
@@ -1091,7 +1178,7 @@ function ToolComponent() {
               {TOOLS_TABS.map((tab) => {
                 const Icon = tab.icon;
                 return (
-                  <TabButton key={tab.id} isActive={activeTab === tab.id} onClick={() => setActiveTab(tab.id)}>
+                  <TabButton key={tab.id} isActive={activeTab === tab.id} onClick={() => setToolActiveTab(tab.id)}>
                     <Icon className="h-3.5 w-3.5 mr-1.5" />
                     {tab.label}
                   </TabButton>
@@ -1143,13 +1230,23 @@ function ToolComponent() {
                     <Label htmlFor="filePath" className="text-xs font-medium text-muted-foreground">
                       文件路径
                     </Label>
-                    <Input
-                      id="filePath"
-                      value={singleFilePath}
-                      onChange={(e) => setSingleFilePath(e.target.value)}
-                      placeholder="/path/to/video.mp4"
-                      className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2"
-                    />
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="filePath"
+                        value={singleFilePath}
+                        onChange={(e) => setSingleFilePath(e.target.value)}
+                        placeholder="/path/to/video.mp4"
+                        className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleBrowseSingleFile}
+                        className="h-9 shrink-0 rounded-lg px-3"
+                      >
+                        <FolderOpen className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                   <Button
                     variant="secondary"
@@ -1314,7 +1411,7 @@ function ToolComponent() {
                       variant="secondary"
                       size="icon"
                       className="h-9 w-9 shrink-0"
-                      onClick={handleBrowseAmazonDir}
+                      onClick={() => browseDirectory(setAmazonDir)}
                     >
                       <FolderOpen className="h-4 w-4" />
                     </Button>
@@ -1395,12 +1492,7 @@ function ToolComponent() {
                           variant="secondary"
                           size="icon"
                           className="h-9 w-9 shrink-0"
-                          onClick={async () => {
-                            const result = await ipc.file.browse("directory");
-                            if (result.paths && result.paths.length > 0) {
-                              setSourceDir(result.paths[0]);
-                            }
-                          }}
+                          onClick={() => browseDirectory(setSourceDir)}
                         >
                           <FolderOpen className="h-4 w-4" />
                         </Button>
@@ -1423,12 +1515,7 @@ function ToolComponent() {
                           variant="secondary"
                           size="icon"
                           className="h-9 w-9 shrink-0"
-                          onClick={async () => {
-                            const result = await ipc.file.browse("directory");
-                            if (result.paths && result.paths.length > 0) {
-                              setDestDir(result.paths[0]);
-                            }
-                          }}
+                          onClick={() => browseDirectory(setDestDir)}
                         >
                           <FolderOpen className="h-4 w-4" />
                         </Button>
@@ -1491,7 +1578,7 @@ function ToolComponent() {
                         variant="secondary"
                         size="icon"
                         className="h-9 w-9 shrink-0"
-                        onClick={handleBrowseCleanPath}
+                        onClick={() => browseDirectory(setCleanPath)}
                       >
                         <FolderOpen className="h-4 w-4" />
                       </Button>
@@ -1628,10 +1715,200 @@ function ToolComponent() {
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="px-1">
               <h2 className="text-base font-semibold mb-1">实用工具</h2>
-              <p className="text-muted-foreground text-xs">提供缺番查找等轻量辅助功能</p>
+              <p className="text-muted-foreground text-xs">提供批量翻译、缺番查找等轻量辅助功能</p>
             </div>
 
             <div className="grid gap-8 md:grid-cols-1 items-start">
+              <Card className="rounded-xl border shadow-sm">
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-primary/8 rounded-lg">
+                      <FileSearch className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-sm font-medium">批量翻译 NFO</CardTitle>
+                      <CardDescription className="text-xs">
+                        扫描现有媒体库中的 NFO，使用当前 LLM 配置批量翻译标题和简介后回写
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid gap-2">
+                    <Label htmlFor="batch-translate-dir" className="text-xs font-medium text-muted-foreground">
+                      目标目录
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="batch-translate-dir"
+                        value={batchTranslateDir}
+                        onChange={(e) => setBatchTranslateDir(e.target.value)}
+                        placeholder="输入已刮削完成的媒体目录"
+                        className="h-9 bg-muted/30 rounded-lg border-none focus:ring-2 flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="icon"
+                        className="h-9 w-9 shrink-0"
+                        onClick={() => browseDirectory(setBatchTranslateDir)}
+                      >
+                        <FolderOpen className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      该工具使用当前配置中的 LLM 模型、Base URL 与 API Key，独立于主刮削翻译流程。
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <Button
+                      variant="secondary"
+                      onClick={handleBatchTranslateScan}
+                      disabled={batchTranslateScanning || batchTranslateApplying}
+                      className="flex-1 rounded-lg h-9 text-sm font-medium"
+                    >
+                      {batchTranslateScanning ? "正在扫描..." : "扫描待翻译条目"}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={handleBatchTranslateApply}
+                      disabled={batchTranslateApplying || batchTranslateScanning || batchTranslateItems.length === 0}
+                      className="flex-1 rounded-lg h-9 text-sm font-medium"
+                    >
+                      {batchTranslateApplying ? "正在批量翻译..." : "开始批量翻译并回写"}
+                    </Button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3 text-xs">
+                    <span className="text-muted-foreground">待处理条目</span>
+                    <Badge variant="secondary">{batchTranslateItems.length}</Badge>
+                    <span className="text-muted-foreground">待处理字段</span>
+                    <Badge variant="secondary">{batchTranslatePendingFieldCount}</Badge>
+                    {batchTranslateResults.length > 0 && (
+                      <>
+                        <span className="text-muted-foreground">本次执行结果</span>
+                        <Badge variant="secondary">{batchTranslateResults.length}</Badge>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border bg-card overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-muted/30 text-muted-foreground">
+                            <th className="px-4 py-3 text-left font-semibold uppercase tracking-wider w-28">番号</th>
+                            <th className="px-4 py-3 text-left font-semibold uppercase tracking-wider">标题</th>
+                            <th className="px-4 py-3 text-left font-semibold uppercase tracking-wider w-40">
+                              待处理字段
+                            </th>
+                            <th className="px-4 py-3 text-left font-semibold uppercase tracking-wider w-72">NFO</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-muted/20">
+                          {batchTranslatePreviewRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="px-4 py-12 text-center text-muted-foreground italic">
+                                暂无待翻译条目
+                              </td>
+                            </tr>
+                          ) : (
+                            batchTranslatePreviewRows.map((item) => (
+                              <tr key={item.filePath} className="hover:bg-muted/5 transition-colors">
+                                <td className="px-4 py-3 font-mono font-medium">{item.number}</td>
+                                <td className="px-4 py-3">{item.title}</td>
+                                <td className="px-4 py-3">
+                                  <div className="flex flex-wrap gap-2">
+                                    {item.pendingFields.map((field) => (
+                                      <Badge key={`${item.filePath}-${field}`} variant="secondary">
+                                        {field === "title" ? "标题" : "简介"}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 font-mono text-[11px] text-muted-foreground break-all">
+                                  {item.nfoPath}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {batchTranslateResults.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="px-1">
+                        <Label className="text-xs font-medium text-muted-foreground">最近一次执行结果</Label>
+                      </div>
+                      <div className="rounded-xl border bg-card overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-muted/30 text-muted-foreground">
+                                <th className="px-4 py-3 text-left font-semibold uppercase tracking-wider w-24">
+                                  状态
+                                </th>
+                                <th className="px-4 py-3 text-left font-semibold uppercase tracking-wider w-28">
+                                  番号
+                                </th>
+                                <th className="px-4 py-3 text-left font-semibold uppercase tracking-wider w-36">
+                                  已写回字段
+                                </th>
+                                <th className="px-4 py-3 text-left font-semibold uppercase tracking-wider">结果</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-muted/20">
+                              {batchTranslateResultRows.map((item) => {
+                                const partial = !item.success && item.translatedFields.length > 0;
+                                return (
+                                  <tr
+                                    key={`${item.filePath}-${item.nfoPath}`}
+                                    className="hover:bg-muted/5 transition-colors"
+                                  >
+                                    <td className="px-4 py-3">
+                                      <Badge variant="secondary">
+                                        {item.success ? "成功" : partial ? "部分成功" : "失败"}
+                                      </Badge>
+                                    </td>
+                                    <td className="px-4 py-3 font-mono font-medium">{item.number}</td>
+                                    <td className="px-4 py-3">
+                                      <div className="flex flex-wrap gap-2">
+                                        {item.translatedFields.length === 0 ? (
+                                          <span className="text-muted-foreground">-</span>
+                                        ) : (
+                                          item.translatedFields.map((field) => (
+                                            <Badge key={`${item.nfoPath}-${field}`} variant="secondary">
+                                              {field === "title" ? "标题" : "简介"}
+                                            </Badge>
+                                          ))
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <div className="space-y-1">
+                                        {item.savedNfoPath && (
+                                          <div className="font-mono text-[11px] text-muted-foreground break-all">
+                                            {item.savedNfoPath}
+                                          </div>
+                                        )}
+                                        {item.error && <div className="text-destructive">{item.error}</div>}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               {/* 缺番查找工具 */}
               <Card className="rounded-xl border shadow-sm">
                 <CardHeader>

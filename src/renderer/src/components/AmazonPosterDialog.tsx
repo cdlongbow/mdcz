@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@shared/error";
 import type { AmazonPosterLookupResult, AmazonPosterScanItem } from "@shared/ipcTypes";
 import { ArrowRight, Check, ImageIcon, LoaderCircle, Minus } from "lucide-react";
 import type { ComponentType } from "react";
@@ -35,18 +36,21 @@ interface AmazonPosterDialogProps {
   items: AmazonPosterScanItem[];
 }
 
-function formatError(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return String(error);
-}
-
 function formatElapsed(elapsedMs: number | null | undefined): string {
   if (!Number.isFinite(elapsedMs) || elapsedMs === null || elapsedMs === undefined || elapsedMs < 0) {
     return "--";
   }
   return `${(elapsedMs / 1000).toFixed(1)}s`;
+}
+
+function getFileNameFromPath(path: string | null | undefined): string | undefined {
+  const value = path?.trim();
+  if (!value) {
+    return undefined;
+  }
+
+  const segments = value.split(/[\\/]+/u).filter((segment) => segment.length > 0);
+  return segments.at(-1);
 }
 
 function SummaryThumb({
@@ -166,7 +170,7 @@ export function AmazonPosterDialog({ open, onOpenChange, items }: AmazonPosterDi
           result = {
             nfoPath: items[currentIndex].nfoPath,
             amazonPosterUrl: null,
-            reason: `查询失败: ${formatError(error)}`,
+            reason: `查询失败: ${toErrorMessage(error)}`,
             elapsedMs: 0,
           };
         }
@@ -204,7 +208,7 @@ export function AmazonPosterDialog({ open, onOpenChange, items }: AmazonPosterDi
       itemStates
         .filter((state) => state.selection === "amazon" && state.lookup?.amazonPosterUrl)
         .map((state) => ({
-          directory: state.scan.directory,
+          nfoPath: state.scan.nfoPath,
           amazonPosterUrl: state.lookup?.amazonPosterUrl ?? "",
         })),
     [itemStates],
@@ -229,7 +233,7 @@ export function AmazonPosterDialog({ open, onOpenChange, items }: AmazonPosterDi
       const failedCount = result.results.length - successCount;
 
       if (failedCount === 0) {
-        showSuccess(`已替换 ${successCount} 个 poster.jpg 文件。`);
+        showSuccess(`已替换 ${successCount} 个海报文件。`);
       } else {
         showError(`替换完成：成功 ${successCount}，失败 ${failedCount}。`);
       }
@@ -237,7 +241,7 @@ export function AmazonPosterDialog({ open, onOpenChange, items }: AmazonPosterDi
       setConfirmOpen(false);
       onOpenChange(false);
     } catch (error) {
-      showError(`海报替换失败: ${formatError(error)}`);
+      showError(`海报替换失败: ${toErrorMessage(error)}`);
     } finally {
       setApplying(false);
     }
@@ -341,7 +345,7 @@ export function AmazonPosterDialog({ open, onOpenChange, items }: AmazonPosterDi
                                 label="当前海报"
                                 width={state.scan.currentPosterWidth || null}
                                 height={state.scan.currentPosterHeight || null}
-                                subtitle={state.scan.currentPosterPath ? "本地 poster.jpg" : undefined}
+                                subtitle={getFileNameFromPath(state.scan.currentPosterPath)}
                                 selected={state.selection === "current"}
                                 onClick={
                                   state.scan.currentPosterPath
@@ -404,7 +408,7 @@ export function AmazonPosterDialog({ open, onOpenChange, items }: AmazonPosterDi
           <DialogHeader>
             <DialogTitle>确认替换海报</DialogTitle>
             <DialogDescription>
-              即将替换 {selectedAmazonItems.length} 个条目的 poster.jpg 文件。此操作会覆盖现有海报，无法撤销。
+              即将替换 {selectedAmazonItems.length} 个条目的海报文件。此操作会覆盖现有海报，无法撤销。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

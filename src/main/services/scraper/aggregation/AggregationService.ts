@@ -14,10 +14,30 @@ interface CacheEntry {
 }
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const FC2_SITE_WHITELIST = new Set<Website>([Website.FC2, Website.FC2HUB, Website.JAVDB]);
-const FC2_ONLY_SITES = new Set<Website>([Website.FC2, Website.FC2HUB]);
+const MAX_CACHE_ENTRIES = 200;
+const FC2_SITE_WHITELIST = new Set<Website>([Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB]);
+const FC2_ONLY_SITES = new Set<Website>([Website.FC2, Website.FC2HUB, Website.PPVDATABANK]);
 const FC2_NUMBER_PATTERN = /^FC2-?\d+$/iu;
 const EARLY_STOP_IMAGE_FIELDS = ["thumb_url", "poster_url"] as const;
+
+interface CrawlerExecutionState {
+  nextIndex: number;
+  stopEarly: boolean;
+}
+
+interface CrawlerExecutionContext {
+  sites: Website[];
+  number: string;
+  config: Configuration;
+  perCrawlerTimeoutMs: number;
+  signal: AbortSignal;
+  abort: () => void;
+  fieldAggregator: FieldAggregator;
+  results: SiteCrawlResult[];
+  successes: Map<Website, CrawlerData>;
+  inFlightSites: Set<Website>;
+  state: CrawlerExecutionState;
+}
 
 export class AggregationService {
   private readonly logger = loggerService.getLogger("AggregationService");
@@ -190,57 +210,47 @@ export class AggregationService {
       return results;
     }
 
-    const state: { nextIndex: number; stopEarly: boolean } = {
-      nextIndex: 0,
-      stopEarly: false,
+    const executionContext: CrawlerExecutionContext = {
+      sites,
+      number,
+      config,
+      perCrawlerTimeoutMs,
+      signal,
+      abort: abortAggregation,
+      fieldAggregator,
+      results,
+      successes,
+      inFlightSites,
+      state: {
+        nextIndex: 0,
+        stopEarly: false,
+      },
     };
     const workerCount = Math.min(sites.length, Math.max(1, maxConcurrent));
 
-    await Promise.all(
-      Array.from({ length: workerCount }, () =>
-        this.runCrawlerWorker(
-          sites,
-          number,
-          config,
-          perCrawlerTimeoutMs,
-          signal,
-          abortAggregation,
-          fieldAggregator,
-          results,
-          successes,
-          inFlightSites,
-          state,
-        ),
-      ),
-    );
+    await Promise.all(Array.from({ length: workerCount }, () => this.runCrawlerWorker(executionContext)));
 
     return results;
   }
 
-  private async runCrawlerWorker(
-    sites: Website[],
-    number: string,
-    config: Configuration,
-    perCrawlerTimeoutMs: number,
-    signal: AbortSignal,
-    abortAggregation: () => void,
-    fieldAggregator: FieldAggregator,
-    results: SiteCrawlResult[],
-    successes: Map<Website, CrawlerData>,
-    inFlightSites: Set<Website>,
-    state: { nextIndex: number; stopEarly: boolean },
-  ): Promise<void> {
-    while (!state.stopEarly && !signal.aborted) {
-      const site = sites[state.nextIndex];
+  private async runCrawlerWorker(context: CrawlerExecutionContext): Promise<void> {
+    while (!context.state.stopEarly && !context.signal.aborted) {
+      const site = context.sites[context.state.nextIndex];
       if (!site) {
         return;
       }
-      state.nextIndex += 1;
-      inFlightSites.add(site);
+      context.state.nextIndex += 1;
+      context.inFlightSites.add(site);
 
       let result: SiteCrawlResult;
       try {
-        result = await this.crawlSite(site, number, config, perCrawlerTimeoutMs, signal);
+        result = await this.crawlSite(
+          site,
+          context.number,
+          context.config,
+          context.perCrawlerTimeoutMs,
+          context.signal,
+        );
       } catch (error) {
         result = {
           site,
@@ -249,25 +259,27 @@ export class AggregationService {
           elapsedMs: 0,
         };
       } finally {
-        inFlightSites.delete(site);
+        context.inFlightSites.delete(site);
       }
 
-      if (state.stopEarly) {
+      if (context.state.stopEarly) {
         continue;
       }
 
-      results.push(result);
-      if (!result.success || !result.data || signal.aborted) {
+      context.results.push(result);
+      if (!result.success || !result.data || context.signal.aborted) {
         continue;
       }
 
-      successes.set(result.site, result.data);
+      context.successes.set(result.site, result.data);
 
-      const pendingSites = [...inFlightSites, ...sites.slice(state.nextIndex)];
-      if (this.shouldStopEarly(successes, pendingSites, fieldAggregator, config)) {
-        state.stopEarly = true;
-        this.logger.info(`Early stop triggered for ${number} after ${successes.size} successful site(s)`);
-        abortAggregation();
+      const pendingSites = [...context.inFlightSites, ...context.sites.slice(context.state.nextIndex)];
+      if (this.shouldStopEarly(context.successes, pendingSites, context.fieldAggregator, context.config)) {
+        context.state.stopEarly = true;
+        this.logger.info(
+          `Early stop triggered for ${context.number} after ${context.successes.size} successful site(s)`,
+        );
+        context.abort();
       }
     }
   }
@@ -401,30 +413,45 @@ export class AggregationService {
     const entry = this.cache.get(key);
     if (!entry) return null;
 
-    if (Date.now() > entry.expiresAt) {
+    if (Date.now() >= entry.expiresAt) {
       this.cache.delete(key);
       return null;
     }
 
+    this.cache.delete(key);
+    this.cache.set(key, entry);
     return entry.result;
   }
 
   private putInCache(key: string, result: AggregationResult): void {
-    // Evict expired entries periodically
-    if (this.cache.size > 100) {
-      this.evictExpired();
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
     }
 
     this.cache.set(key, {
       result,
       expiresAt: Date.now() + CACHE_TTL_MS,
     });
+    this.pruneCache();
+  }
+
+  private pruneCache(): void {
+    this.evictExpired();
+
+    while (this.cache.size > MAX_CACHE_ENTRIES) {
+      const oldestKey = this.cache.keys().next().value;
+      if (!oldestKey) {
+        return;
+      }
+
+      this.cache.delete(oldestKey);
+    }
   }
 
   private evictExpired(): void {
     const now = Date.now();
     for (const [key, entry] of this.cache) {
-      if (now > entry.expiresAt) {
+      if (now >= entry.expiresAt) {
         this.cache.delete(key);
       }
     }

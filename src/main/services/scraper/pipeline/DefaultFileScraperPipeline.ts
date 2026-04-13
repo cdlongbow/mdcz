@@ -1,10 +1,11 @@
 import { ActorImageService } from "@main/services/ActorImageService";
-import { configurationSchema } from "@main/services/config";
+import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { LocalScanService } from "@main/services/scraper/maintenance/LocalScanService";
+import { toErrorMessage } from "@main/utils/common";
 import type { CrawlerData, NfoLocalState, ScrapeResult } from "@shared/types";
 import { isAbortError, throwIfAborted } from "../abort";
-import type { FileScrapeProgress, FileScraperDependencies } from "../FileScraper";
+import type { FileScrapeProgress, FileScraperDependencies, ScrapeExecutionMode } from "../FileScraper";
 import { AggregateStage } from "./AggregateStage";
 import { AggregationCoordinator } from "./AggregationCoordinator";
 import { DownloadStage } from "./DownloadStage";
@@ -49,21 +50,19 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
 
   readonly stages: readonly ScrapeStage[];
 
-  constructor(private readonly deps: FileScraperDependencies) {
+  constructor(
+    private readonly deps: FileScraperDependencies,
+    private readonly scrapeMode: ScrapeExecutionMode = "batch",
+  ) {
     this.actorImageService = deps.actorImageService ?? new ActorImageService();
     this.localScanService = deps.localScanService ?? new LocalScanService();
     this.aggregationCoordinator = new AggregationCoordinator(deps.aggregationService);
-    this.failureHandler = new ScrapeFailureHandler(
-      deps.configManager,
-      deps.fileOrganizer,
-      this.logger,
-      deps.signalService,
-    );
+    this.failureHandler = new ScrapeFailureHandler(deps.fileOrganizer, this.logger, deps.signalService);
     this.stages = this.createStages();
   }
 
   createContext(filePath: string, progress: FileScrapeProgress = { fileIndex: 1, totalFiles: 1 }): ScrapeContext {
-    return new ScrapeContext(filePath, progress);
+    return new ScrapeContext(filePath, progress, this.scrapeMode);
   }
 
   setProgress(progress: FileScrapeProgress, stepPercent: number): void {
@@ -91,11 +90,11 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
       logger: this.logger,
       nfoGenerator: this.deps.nfoGenerator,
       signalService: this.deps.signalService,
-      getConfiguration: async () => configurationSchema.parse(await this.deps.configManager.get()),
+      getConfiguration: async () => await configManager.getValidated(),
       aggregateMetadata: async (fileInfo, configuration, signal) =>
         await this.aggregationCoordinator.aggregate(fileInfo, configuration, signal),
       handleFailedFileMove: async (fileInfo, configuration) =>
-        await this.failureHandler.moveToFailedFolder(fileInfo, configuration),
+        await this.failureHandler.moveToFailedFolder(fileInfo, configuration, this.scrapeMode),
       loadExistingNfoLocalState: async (filePath, configuration) =>
         await this.loadExistingNfoLocalState(filePath, configuration),
       setProgress: (progress, stepPercent) => {
@@ -110,8 +109,8 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
     const runtime = this.createStageRuntime();
     return [
       new ParseStage(),
-      new AggregateStage(runtime),
       new ProbeStage(runtime),
+      new AggregateStage(runtime),
       new TranslateStage(runtime),
       new PlanStage(runtime),
       new PrepareOutputStage(runtime),
@@ -135,7 +134,7 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
         throw error;
       }
 
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       this.logger.warn(`Translation failed for ${crawlerData.number}: ${message}`);
       return crawlerData;
     }
@@ -153,7 +152,7 @@ export class DefaultFileScraperPipeline implements FileScraperPipeline {
       const entry = await this.localScanService.scanVideo(filePath, configuration.paths.sceneImagesFolder);
       return entry.nfoLocalState;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       this.logger.warn(`Failed to read existing NFO local state for ${filePath}: ${message}`);
       return undefined;
     }
