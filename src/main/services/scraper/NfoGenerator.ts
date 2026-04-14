@@ -166,8 +166,9 @@ export interface NfoOptions {
 export class NfoGenerator {
   buildXml(data: CrawlerData, options?: NfoOptions): string {
     const rawTitle = data.title_zh?.trim() || data.title;
+    const originaltitle = data.title.trim();
     const titleTemplate = options?.nfoTitleTemplate?.trim() || "{title}";
-    const title = renderPathTemplate(titleTemplate, { title: rawTitle, number: data.number });
+    const title = renderPathTemplate(titleTemplate, { title: rawTitle, originaltitle, number: data.number });
     const plot = data.plot_zh?.trim() || data.plot?.trim();
     const outline = plot ? truncateText(plot, OUTLINE_MAX_CHARS) : undefined;
     const assets = options?.assets;
@@ -188,7 +189,7 @@ export class NfoGenerator {
     }
 
     movie.title = title;
-    movie.originaltitle = data.title;
+    movie.originaltitle = originaltitle;
     movie.plot = plot && plot.length > 0 ? plot : undefined;
     movie.outline = outline;
     movie.premiered = data.release_date;

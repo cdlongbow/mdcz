@@ -287,6 +287,21 @@ describe("NfoGenerator", () => {
     expect(xml).toContain('<uniqueid type="dmm" default="true">ABC-123</uniqueid>');
   });
 
+  it("supports originaltitle in the NFO title template", () => {
+    const xml = new NfoGenerator().buildXml(
+      createCrawlerData({
+        title: "Original Title",
+        title_zh: "中文标题",
+      }),
+      {
+        nfoTitleTemplate: "{number} {originaltitle}",
+      },
+    );
+
+    expect(xml).toContain("<title>ABC-123 Original Title</title>");
+    expect(xml).toContain("<originaltitle>Original Title</originaltitle>");
+  });
+
   it("uses thumb artwork as fallback fanart and persists sample image urls under mdcz", () => {
     const xml = new NfoGenerator().buildXml(
       createCrawlerData({
