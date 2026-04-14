@@ -1,6 +1,7 @@
 import { toArray } from "@main/utils/common";
 import { isManagedMovieTag, parseManagedMovieTags } from "@main/utils/movieMetadata";
 import { normalizeNfoLocalState, tagToUncensoredChoice } from "@main/utils/nfoLocalState";
+import { normalizeText } from "@main/utils/normalization";
 import { Website } from "@shared/enums";
 import type { ActorProfile, CrawlerData, NfoLocalState } from "@shared/types";
 import { XMLParser } from "fast-xml-parser";
@@ -170,6 +171,7 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
     .filter((item): item is ActorProfile => item !== null);
 
   const genres = toStringArray(movieNode.genre);
+  const normalizedGenres = new Set(genres.map((genre) => normalizeText(genre)).filter((genre) => genre.length > 0));
   const tags = toStringArray(movieNode.tag);
   const managedMovieTags = parseManagedMovieTags(tags);
   let uncensoredChoice: NfoLocalState["uncensoredChoice"];
@@ -177,6 +179,10 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
 
   for (const tag of tags) {
     if (isManagedMovieTag(tag)) {
+      continue;
+    }
+
+    if (normalizedGenres.has(normalizeText(tag))) {
       continue;
     }
 

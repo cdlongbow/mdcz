@@ -178,7 +178,8 @@ export class NfoGenerator {
     const localState = options?.localState;
     const durationSeconds = videoMeta?.durationSeconds ?? data.durationSeconds;
     const runtimeMinutes = durationSeconds ? Math.round(durationSeconds / 60) : undefined;
-    const tags = buildMovieTags(data, fileInfo, localState);
+    const genres = Array.from(new Set(buildStringNodes(toArray(data.genres))));
+    const tags = Array.from(new Set([...genres, ...buildMovieTags(data, fileInfo, localState)]));
     const videoNode = buildVideoNode(videoMeta);
 
     const movie: Record<string, unknown> = {};
@@ -215,7 +216,7 @@ export class NfoGenerator {
       "@_default": "true",
       "#text": data.number,
     };
-    movie.genre = Array.from(new Set(buildStringNodes(toArray(data.genres))));
+    movie.genre = genres;
     movie.tag = tags.length > 0 ? tags : undefined;
     movie.actor = buildActorNodes(toArray(data.actors), data.actor_profiles);
 
