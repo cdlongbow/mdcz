@@ -222,6 +222,22 @@ const readTrailerUrl = (movie: JsonRecord, dmmData: JsonRecord | undefined): str
   );
 };
 
+const stripTrailingActorNames = (value: string, actors: string[]): string => {
+  const actorNames = uniqueStrings(actors.map((actor) => asString(actor))).sort((a, b) => b.length - a.length);
+  const title = value.trim();
+
+  for (const actor of actorNames) {
+    for (const separator of [" ", "　"]) {
+      const suffix = `${separator}${actor}`;
+      if (title.endsWith(suffix)) {
+        return title.slice(0, -suffix.length).trim();
+      }
+    }
+  }
+
+  return title;
+};
+
 const normalizeNumber = (value: string): string => value.trim().toUpperCase();
 
 const isNotFoundError = (message: string): boolean => /\bHTTP 404\b|Detail URL not found/iu.test(message);
@@ -369,12 +385,13 @@ export class AvwikidbCrawler implements SiteAdapter {
 
     const dmmData = readRecord(pageProps, "dmmData");
     const itemInfo = readRecord(dmmData, "iteminfo");
-    const title = first(asString(movie.title), asString(dmmData?.title));
+    const actors = uniqueStrings([...extractNames(movie.actor, ["actor"]), ...readItemInfoNames(itemInfo, "actress")]);
+    const rawTitle = first(asString(movie.title), asString(dmmData?.title));
+    const title = rawTitle ? stripTrailingActorNames(rawTitle, actors) : undefined;
     if (!title) {
       return null;
     }
 
-    const actors = uniqueStrings([...extractNames(movie.actor, ["actor"]), ...readItemInfoNames(itemInfo, "actress")]);
     const genres = uniqueStrings([...extractNames(movie.genre, ["genre"]), ...readItemInfoNames(itemInfo, "genre")]);
     const imageUrl = dmmData?.imageURL;
 

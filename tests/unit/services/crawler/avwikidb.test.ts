@@ -7,18 +7,18 @@ import { FixtureNetworkClient, withGateway } from "./fixtures";
 const createHomeHtml = (buildId: string): string =>
   `<html><body><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ buildId })}</script></body></html>`;
 
-const createWorkPayload = () => ({
+const createWorkPayload = (overrides: { actorName?: string; title?: string } = {}) => ({
   pageProps: {
     movie: {
       adultVideoId: "ZAKE-020",
-      title: "AVWikiDB Sample Title",
+      title: overrides.title ?? "AVWikiDB Sample Title",
       imageL: "https://pics.dmm.co.jp/digital/video/zake00020/zake00020pl.jpg",
       dateOfPublication: "2026-04-03",
       summary: "Generated fallback summary",
       actor: [
         {
           actor: {
-            name: "天美めあ",
+            name: overrides.actorName ?? "天美めあ",
           },
         },
       ],
@@ -113,6 +113,98 @@ describe("AvwikidbCrawler", () => {
       "https://pics.dmm.co.jp/digital/video/zake00020/zake00020jp-1.jpg",
       "https://pics.dmm.co.jp/digital/video/zake00020/zake00020jp-2.jpg",
     ]);
+  });
+
+  it("strips actor names appended to the end of AVWikiDB titles", async () => {
+    const buildId = "test-build";
+    const networkClient = new FixtureNetworkClient(
+      new Map<string, unknown>([
+        ["https://avwikidb.com/", createHomeHtml(buildId)],
+        [
+          `https://avwikidb.com/_next/data/${buildId}/work/ZAKE-020.json`,
+          createWorkPayload({ title: "AVWikiDB Sample Title 天美めあ" }),
+        ],
+      ]),
+    );
+    const crawler = new AvwikidbCrawler(withGateway(networkClient));
+
+    const response = await crawler.crawl({
+      number: "ZAKE-020",
+      site: Website.AVWIKIDB,
+      options: {},
+    });
+
+    expect(response.result.success).toBe(true);
+    if (!response.result.success) {
+      throw new Error(response.result.error);
+    }
+
+    expect(response.result.data.title).toBe("AVWikiDB Sample Title");
+  });
+
+  it("keeps actor names that are not separated trailing title suffixes", async () => {
+    const buildId = "test-build";
+    const networkClient = new FixtureNetworkClient(
+      new Map<string, unknown>([
+        ["https://avwikidb.com/", createHomeHtml(buildId)],
+        [
+          `https://avwikidb.com/_next/data/${buildId}/work/ZAKE-020.json`,
+          createWorkPayload({ title: "AVWikiDB Sample Title天美めあ" }),
+        ],
+      ]),
+    );
+    const crawler = new AvwikidbCrawler(withGateway(networkClient));
+
+    const response = await crawler.crawl({
+      number: "ZAKE-020",
+      site: Website.AVWIKIDB,
+      options: {},
+    });
+
+    expect(response.result.success).toBe(true);
+    if (!response.result.success) {
+      throw new Error(response.result.error);
+    }
+
+    expect(response.result.data.title).toBe("AVWikiDB Sample Title天美めあ");
+  });
+
+  it("keeps titles with actor names before trailing subtitle text", async () => {
+    const cases = [
+      {
+        actorName: "岬ひかり",
+        title:
+          "メインタイトル:密室撮影会 岬ひかりサブタイトル:透き通る肢体、震えるVライン。 ―2人きりのいけない接写記録―",
+      },
+      {
+        actorName: "泉美りな",
+        title: "美脚長身スレンダー美人オトコの娘 泉美りな エッチが好き過ぎてAVデビューしちゃいました！！",
+      },
+    ];
+
+    for (const [index, testCase] of cases.entries()) {
+      const buildId = `test-build-${index}`;
+      const networkClient = new FixtureNetworkClient(
+        new Map<string, unknown>([
+          ["https://avwikidb.com/", createHomeHtml(buildId)],
+          [`https://avwikidb.com/_next/data/${buildId}/work/ZAKE-020.json`, createWorkPayload(testCase)],
+        ]),
+      );
+      const crawler = new AvwikidbCrawler(withGateway(networkClient));
+
+      const response = await crawler.crawl({
+        number: "ZAKE-020",
+        site: Website.AVWIKIDB,
+        options: {},
+      });
+
+      expect(response.result.success).toBe(true);
+      if (!response.result.success) {
+        throw new Error(response.result.error);
+      }
+
+      expect(response.result.data.title).toBe(testCase.title);
+    }
   });
 
   it("classifies missing Next.js build metadata as a parse error", async () => {
