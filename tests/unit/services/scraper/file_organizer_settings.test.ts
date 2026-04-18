@@ -73,7 +73,7 @@ const createConfig = (overrides: ConfigOverrides = {}) => {
   });
 };
 
-const splitSegments = (value: string): string[] => value.split(/[\\/]+/u).filter((segment) => segment.length > 0);
+const expectedOutputPath = (...segments: string[]): string => join(resolve("/media"), "output", ...segments);
 
 const expectPathExists = async (path: string): Promise<void> => {
   await expect(access(path)).resolves.toBeUndefined();
@@ -208,14 +208,105 @@ describe("FileOrganizer naming settings", () => {
       }),
     );
 
-    expect(splitSegments(plan.outputDir)).toEqual([
-      "media",
-      "output",
-      "Unknown[FC2-4532163] 【初撮り／中出し】-sznjzpjo- しょ-う動物系ペットショップ店員。彼氏にプレゼントを買うため、おか-ねを稼ぐ。",
-    ]);
+    expect(plan.outputDir).toBe(
+      expectedOutputPath(
+        "Unknown[FC2-4532163] 【初撮り／中出し】-sznjzpjo- しょ-う動物系ペットショップ店員。彼氏にプレゼントを買うため、おか-ねを稼ぐ。",
+      ),
+    );
     expect(parse(plan.targetVideoPath).name).toBe(
       "FC2-4532163 【初撮り／中出し】-sznjzpjo- しょ-う動物系ペットショップ店員。彼氏にプレゼントを買うため、おか-ねを稼ぐ。",
     );
+  });
+
+  it("renders actor fallback prefixes only when the actor value falls back", () => {
+    const organizer = new FileOrganizer();
+    const config = createConfig({
+      naming: {
+        folderTemplate: "{actorFallbackPrefix}{actor}/{number}",
+        fileTemplate: "{number}",
+        actorFallbackToStudio: true,
+        censoredStyle: "",
+      },
+    });
+
+    const explicitActorPlan = organizer.plan(
+      createFileInfo(),
+      createCrawlerData({
+        actors: ["Actor A"],
+        studio: "Studio A",
+      }),
+      config,
+    );
+    expect(explicitActorPlan.outputDir).toBe(expectedOutputPath("Actor A", "ABC-123"));
+
+    const studioFallbackPlan = organizer.plan(
+      createFileInfo(),
+      createCrawlerData({
+        actors: [],
+        studio: "Studio A",
+      }),
+      config,
+    );
+    expect(studioFallbackPlan.outputDir).toBe(expectedOutputPath("片商：Studio A", "ABC-123"));
+
+    const sellerFallbackPlan = organizer.plan(
+      createFileInfo({
+        filePath: "/input/FC2-123456.mp4",
+        fileName: "FC2-123456",
+        number: "FC2-123456",
+      }),
+      createCrawlerData({
+        number: "FC2-123456",
+        actors: [],
+        studio: "Seller A",
+        publisher: "Seller A",
+        website: Website.FC2,
+      }),
+      config,
+    );
+    expect(sellerFallbackPlan.outputDir).toBe(expectedOutputPath("卖家：Seller A", "FC2-123456"));
+
+    const fc2PpvFallbackPlan = organizer.plan(
+      createFileInfo({
+        filePath: "/input/FC2-PPV-789012.mp4",
+        fileName: "FC2-PPV-789012",
+        number: "FC2-789012",
+      }),
+      createCrawlerData({
+        number: "FC2-PPV-789012",
+        actors: [],
+        studio: "PPV Seller",
+        website: Website.FC2,
+      }),
+      config,
+    );
+    expect(fc2PpvFallbackPlan.outputDir).toBe(expectedOutputPath("卖家：PPV Seller", "FC2-PPV-789012"));
+
+    const publisherOnlyPlan = organizer.plan(
+      createFileInfo(),
+      createCrawlerData({
+        actors: [],
+        publisher: "Publisher Only",
+      }),
+      config,
+    );
+    expect(publisherOnlyPlan.outputDir).toBe(expectedOutputPath("Unknown", "ABC-123"));
+
+    const disabledFallbackPlan = organizer.plan(
+      createFileInfo(),
+      createCrawlerData({
+        actors: [],
+        studio: "Studio A",
+      }),
+      createConfig({
+        naming: {
+          folderTemplate: "{actorFallbackPrefix}{actor}/{number}",
+          actorFallbackToStudio: false,
+          censoredStyle: "",
+        },
+      }),
+    );
+    expect(disabledFallbackPlan.outputDir).toBe(expectedOutputPath("Unknown", "ABC-123"));
   });
 
   it("sanitizes colon-heavy titles without turning them into nested folders", () => {
@@ -243,12 +334,7 @@ describe("FileOrganizer naming settings", () => {
       }),
     );
 
-    expect(splitSegments(plan.outputDir)).toEqual([
-      "media",
-      "output",
-      "Actor A",
-      "[2026-04-08][SUJI-137] 尾行-侵入-媚药-连れ込み-拉致輪",
-    ]);
+    expect(plan.outputDir).toBe(expectedOutputPath("Actor A", "[2026-04-08][SUJI-137] 尾行-侵入-媚药-连れ込み-拉致輪"));
     expect(parse(plan.targetVideoPath).name).toBe("SUJI-137 Actor A 尾行-侵入-媚药-连れ込み-拉致輪");
   });
 
@@ -316,6 +402,19 @@ describe("FileOrganizer naming settings", () => {
 
     expect(previews.find((item) => item.label === "中文字幕")?.file).toContain("-SUB");
     expect(previews.find((item) => item.label === "多演员")?.folder).toContain("等演员");
+
+    const fallbackPreviews = organizer.buildNamingPreview(
+      createConfig({
+        naming: {
+          folderTemplate: "{actorFallbackPrefix}{actor}/{number}",
+          fileTemplate: "{number}{originaltitle}",
+          actorFallbackToStudio: true,
+          censoredStyle: "",
+        },
+      }),
+    );
+    expect(fallbackPreviews.find((item) => item.label === "演员为空")?.folder).toContain("卖家：示例卖家");
+    expect(fallbackPreviews.find((item) => item.label === "普通")?.file).toBe("ABC-123示例标题.mp4");
   });
 
   it("preserves input extension and explicit multipart suffix casing when renaming", () => {
@@ -1207,5 +1306,31 @@ describe("FileOrganizer naming settings", () => {
       targetVideoPath: join(root, "output", "FC2-123456", "FC2-123456-cd2.mp4"),
       nfoPath: join(root, "output", "FC2-123456", "FC2-123456.nfo"),
     });
+  });
+
+  it("supports originaltitle in folder and file templates without replacing title", () => {
+    const organizer = new FileOrganizer();
+    const plan = organizer.plan(
+      createFileInfo({
+        filePath: "/input/source.mp4",
+        fileName: "source",
+      }),
+      createCrawlerData({
+        number: "ABC-123",
+        title: "Original Title",
+        title_zh: "中文标题",
+        actors: ["Actor A"],
+      }),
+      createConfig({
+        naming: {
+          folderTemplate: "{actor}/{originaltitle}",
+          fileTemplate: "{number} {originaltitle}",
+          censoredStyle: "",
+        },
+      }),
+    );
+
+    expect(plan.outputDir).toBe(expectedOutputPath("Actor A", "Original Title"));
+    expect(parse(plan.targetVideoPath).name).toBe("ABC-123 Original Title");
   });
 });

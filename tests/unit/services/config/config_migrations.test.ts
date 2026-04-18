@@ -315,7 +315,7 @@ describe("Configuration migrations", () => {
       expect(parsed.aggregation.fieldPriorities.thumb_url).toEqual(V050_FIELD_PRIORITY_DEFAULTS.thumb_url);
       expect(parsed.aggregation.fieldPriorities.poster_url).toEqual(V050_FIELD_PRIORITY_DEFAULTS.poster_url);
       expect(parsed.aggregation.fieldPriorities.scene_images).toEqual(V050_FIELD_PRIORITY_DEFAULTS.scene_images);
-      expect(parsed.aggregation.fieldPriorities.durationSeconds).toEqual(V050_FIELD_PRIORITY_DEFAULTS.durationSeconds);
+      expect(parsed.aggregation.fieldPriorities.durationSeconds).toEqual(["avbase", "dmm_tv", "avwikidb", "fc2hub"]);
       expect(parsed.aggregation.fieldPriorities.rating).toEqual(V050_FIELD_PRIORITY_DEFAULTS.rating);
       expect(parsed.aggregation.fieldPriorities.release_date).toEqual(V050_FIELD_PRIORITY_DEFAULTS.release_date);
     });
@@ -339,8 +339,6 @@ describe("Configuration migrations", () => {
 
       const parsed = migrate(raw).parsed;
 
-      expect(parsed.scrape.enabledSites).toEqual(["dmm"]);
-      expect(parsed.scrape.siteOrder).toEqual(["dmm"]);
       expect(parsed.paths.sceneImagesFolder).toBe("my_custom_folder");
       expect(parsed.paths.actorPhotoFolder).toBe("actor_photo");
       expect(parsed.download.generateNfo).toBe(false);
@@ -364,6 +362,24 @@ describe("Configuration migrations", () => {
         {
           raw: buildV030Config({
             naming: {
+              folderTemplate: "/{title}",
+              fileTemplate: "{number}",
+            },
+          }),
+          expected: "/{title}",
+        },
+        {
+          raw: buildV030Config({
+            naming: {
+              folderTemplate: "/{originaltitle}",
+              fileTemplate: "{number}",
+            },
+          }),
+          expected: "/{originaltitle}",
+        },
+        {
+          raw: buildV030Config({
+            naming: {
               folderTemplate: "   ",
               fileTemplate: "{number}",
             },
@@ -381,6 +397,18 @@ describe("Configuration migrations", () => {
           expect(parsed.download.nfoNaming).toBe("filename");
           expect(parsed.download.downloadSceneImages).toBe(false);
           expect(parsed.download.keepSceneImages).toBe(false);
+        }
+
+        if (expected === "/{title}") {
+          expect(parsed.naming.assetNamingMode).toBe("fixed");
+          expect(parsed.download.nfoNaming).toBe("both");
+          expect(parsed.download.downloadSceneImages).toBe(true);
+        }
+
+        if (expected === "/{originaltitle}") {
+          expect(parsed.naming.assetNamingMode).toBe("fixed");
+          expect(parsed.download.nfoNaming).toBe("both");
+          expect(parsed.download.downloadSceneImages).toBe(true);
         }
       }
     });
@@ -427,8 +455,6 @@ describe("Configuration migrations", () => {
 
       const parsed = migrate(raw).parsed;
 
-      expect(parsed.scrape.enabledSites).toEqual(["avbase", "javdb"]);
-      expect(parsed.scrape.siteOrder).toEqual(["javdb", "avbase"]);
       expect(parsed.download.generateNfo).toBe(false);
       expect(parsed.naming.partStyle).toBe("DISC");
       expect(parsed.aggregation.fieldPriorities.scene_images).toEqual(["javbus"]);

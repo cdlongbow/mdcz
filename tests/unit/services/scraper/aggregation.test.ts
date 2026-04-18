@@ -1,6 +1,6 @@
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
-import type { CrawlerInput, CrawlerResponse } from "@main/services/crawler/base/types";
+import type { CrawlerInput, CrawlerResponse, FailureReason } from "@main/services/crawler/base/types";
 import { NetworkClient } from "@main/services/network";
 import { AggregationService } from "@main/services/scraper/aggregation/AggregationService";
 import { FieldAggregator } from "@main/services/scraper/aggregation/FieldAggregator";
@@ -210,12 +210,18 @@ describe("FieldAggregator", () => {
 class MultiResultCrawlerProvider extends CrawlerProvider {
   private readonly siteResults: Map<Website, CrawlerData>;
   private readonly siteDelaysMs: Partial<Record<Website, number>>;
+  private readonly siteFailures: Map<Website, { error: string; failureReason?: FailureReason }>;
   readonly calledSites: Website[] = [];
 
-  constructor(siteResults: Map<Website, CrawlerData>, siteDelaysMs: Partial<Record<Website, number>> = {}) {
+  constructor(
+    siteResults: Map<Website, CrawlerData>,
+    siteDelaysMs: Partial<Record<Website, number>> = {},
+    siteFailures: Map<Website, { error: string; failureReason?: FailureReason }> = new Map(),
+  ) {
     super({ fetchGateway: new FetchGateway(new NetworkClient()) });
     this.siteResults = siteResults;
     this.siteDelaysMs = siteDelaysMs;
+    this.siteFailures = siteFailures;
   }
 
   override async crawl(input: CrawlerInput): Promise<CrawlerResponse> {
@@ -223,6 +229,15 @@ class MultiResultCrawlerProvider extends CrawlerProvider {
 
     const delayMs = this.siteDelaysMs[input.site] ?? 0;
     await waitForDelay(delayMs, input.options?.signal);
+
+    const failure = this.siteFailures.get(input.site);
+    if (failure) {
+      return {
+        input,
+        elapsedMs: 1,
+        result: { success: false, error: failure.error, failureReason: failure.failureReason },
+      };
+    }
 
     const data = this.siteResults.get(input.site);
     if (!data) {
@@ -256,7 +271,7 @@ describe("AggregationService", () => {
       ...defaultConfiguration,
       scrape: {
         ...defaultConfiguration.scrape,
-        enabledSites: [Website.DMM, Website.JAVDB, Website.JAVBUS],
+        sites: [Website.DMM, Website.JAVDB, Website.JAVBUS],
         siteOrder: [Website.DMM, Website.JAVDB, Website.JAVBUS],
       },
       ...overrides,
@@ -300,6 +315,110 @@ describe("AggregationService", () => {
     expect(result?.stats.skippedCount).toBe(0);
   });
 
+  it("records DMM blocked failures and uses avwikidb only when it is enabled", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.AVWIKIDB,
+        makeCrawlerData({
+          title: "AVWikiDB Title",
+          actors: ["Actor From AVWikiDB"],
+          thumb_url: "https://avwikidb.example/thumb.jpg",
+          website: Website.AVWIKIDB,
+        }),
+      ],
+    ]);
+    const siteFailures = new Map<Website, { error: string; failureReason?: FailureReason }>([
+      [Website.DMM, { error: "DMM region blocked", failureReason: "region_blocked" }],
+    ]);
+    const provider = new MultiResultCrawlerProvider(siteResults, {}, siteFailures);
+    const config = makeConfig({
+      scrape: {
+        ...defaultConfiguration.scrape,
+        sites: [Website.DMM, Website.AVWIKIDB],
+      },
+    });
+
+    const result = await new AggregationService(provider).aggregate("ABF-075", config);
+
+    expect(provider.calledSites).toEqual([Website.DMM, Website.AVWIKIDB]);
+    expect(result).not.toBeNull();
+    expect(result?.data.title).toBe("AVWikiDB Title");
+    expect(result?.sources.title).toBe(Website.AVWIKIDB);
+    expect(result?.stats.siteResults.find((siteResult) => siteResult.site === Website.DMM)?.failureReason).toBe(
+      "region_blocked",
+    );
+  });
+
+  it("marks crawler budget overruns as timeout failures", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.DMM,
+        makeCrawlerData({
+          title: "Slow DMM Title",
+          thumb_url: "https://dmm.example/thumb.jpg",
+          website: Website.DMM,
+        }),
+      ],
+      [
+        Website.JAVDB,
+        makeCrawlerData({
+          title: "Fast JAVDB Title",
+          thumb_url: "https://javdb.example/thumb.jpg",
+          website: Website.JAVDB,
+        }),
+      ],
+    ]);
+    const provider = new MultiResultCrawlerProvider(siteResults, { [Website.DMM]: 30 });
+    const config = makeConfig({
+      scrape: {
+        ...defaultConfiguration.scrape,
+        sites: [Website.DMM, Website.JAVDB],
+      },
+    });
+    config.aggregation.maxParallelCrawlers = 2;
+    config.aggregation.perCrawlerTimeoutMs = 5;
+    config.aggregation.globalTimeoutMs = 1_000;
+
+    const result = await new AggregationService(provider).aggregate("ABF-075", config);
+
+    const dmmResult = result?.stats.siteResults.find((siteResult) => siteResult.site === Website.DMM);
+    expect(dmmResult?.success).toBe(false);
+    expect(dmmResult?.error).toContain("exceeded crawler budget");
+    expect(dmmResult?.failureReason).toBe("timeout");
+  });
+
+  it("does not query avwikidb when it is not enabled", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.AVBASE,
+        makeCrawlerData({
+          title: "AVBase Title",
+          actors: ["Actor A"],
+          thumb_url: "https://avbase.example/thumb.jpg",
+          website: Website.AVBASE,
+        }),
+      ],
+    ]);
+    const provider = new MultiResultCrawlerProvider(siteResults);
+    const config = makeConfig({
+      scrape: {
+        ...defaultConfiguration.scrape,
+        sites: [Website.AVBASE],
+      },
+      download: {
+        ...defaultConfiguration.download,
+        downloadSceneImages: false,
+      },
+    });
+
+    const result = await new AggregationService(provider).aggregate("ABF-075", config);
+
+    expect(provider.calledSites).toEqual([Website.AVBASE]);
+    expect(result).not.toBeNull();
+    expect(result?.data.title).toBe("AVBase Title");
+    expect(result?.stats.skippedCount).toBe(0);
+  });
+
   it("uses configured durationSeconds priority instead of completion order", async () => {
     const siteResults = new Map<Website, CrawlerData>([
       [
@@ -329,7 +448,7 @@ describe("AggregationService", () => {
       ...defaultConfiguration,
       scrape: {
         ...defaultConfiguration.scrape,
-        enabledSites: [Website.AVBASE, Website.DMM_TV],
+        sites: [Website.AVBASE, Website.DMM_TV],
         siteOrder: [Website.AVBASE, Website.DMM_TV],
       },
       aggregation: {
@@ -382,7 +501,7 @@ describe("AggregationService", () => {
       ...defaultConfiguration,
       scrape: {
         ...defaultConfiguration.scrape,
-        enabledSites: [Website.FC2HUB, Website.JAVDB],
+        sites: [Website.FC2HUB, Website.JAVDB],
         siteOrder: [Website.FC2HUB, Website.JAVDB],
       },
     });
@@ -403,6 +522,126 @@ describe("AggregationService", () => {
     expect(result?.sources.publisher).toBe(Website.FC2HUB);
     expect(result?.sources.durationSeconds).toBe(Website.FC2HUB);
     expect(result?.sources.rating).toBe(Website.FC2HUB);
+  });
+
+  it("keeps official FC2 seller metadata ahead of FC2HUB seller fallback", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.FC2,
+        makeCrawlerData({
+          title: "Official FC2 Title",
+          number: "FC2-2896877",
+          actors: [],
+          thumb_url: "https://fc2.example/thumb.jpg",
+          studio: "趣味はめ",
+          publisher: "趣味はめ",
+          website: Website.FC2,
+        }),
+      ],
+      [
+        Website.FC2HUB,
+        makeCrawlerData({
+          title: "FC2HUB Title",
+          number: "FC2-2896877",
+          actors: [],
+          thumb_url: "https://fc2hub.example/thumb.jpg",
+          studio: "アビス",
+          publisher: "アビス",
+          website: Website.FC2HUB,
+        }),
+      ],
+    ]);
+
+    const config = configurationSchema.parse({
+      ...defaultConfiguration,
+      scrape: {
+        ...defaultConfiguration.scrape,
+        sites: [Website.FC2, Website.FC2HUB],
+        siteOrder: [Website.FC2, Website.FC2HUB],
+      },
+    });
+
+    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults)).aggregate(
+      "FC2-2896877",
+      config,
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.data.title).toBe("FC2HUB Title");
+    expect(result?.data.studio).toBe("趣味はめ");
+    expect(result?.data.publisher).toBe("趣味はめ");
+    expect(result?.sources.title).toBe(Website.FC2HUB);
+    expect(result?.sources.studio).toBe(Website.FC2);
+    expect(result?.sources.publisher).toBe(Website.FC2);
+  });
+
+  it("keeps DMM family identity fields aligned with the title-winning source", async () => {
+    const siteResults = new Map<Website, CrawlerData>([
+      [
+        Website.DMM,
+        makeCrawlerData({
+          title: "DMM Title",
+          genres: ["DMM Genre"],
+          studio: "DMM Studio",
+          durationSeconds: 7_200,
+          rating: 4.6,
+          trailer_url: "https://dmm.example.com/trailer.mp4",
+          thumb_url: "https://awsimgsrc.dmm.co.jp/dmm.jpg",
+          website: Website.DMM,
+        }),
+      ],
+      [
+        Website.DMM_TV,
+        makeCrawlerData({
+          title: "DMM TV Title",
+          genres: ["DMM TV Genre 1", "DMM TV Genre 2"],
+          studio: "DMM TV Studio",
+          durationSeconds: 5_400,
+          rating: 3.2,
+          trailer_url: "https://video.example.com/trailer.mp4",
+          thumb_url: "https://video.example.com/thumb.jpg",
+          website: Website.DMM_TV,
+        }),
+      ],
+    ]);
+
+    const config = makeConfig({
+      scrape: {
+        ...defaultConfiguration.scrape,
+        enabledSites: [Website.DMM, Website.DMM_TV],
+        siteOrder: [Website.DMM, Website.DMM_TV],
+      },
+      aggregation: {
+        ...defaultConfiguration.aggregation,
+        fieldPriorities: {
+          ...defaultConfiguration.aggregation.fieldPriorities,
+          title: [Website.DMM_TV, Website.DMM],
+          genres: [Website.DMM, Website.DMM_TV],
+          studio: [Website.DMM, Website.DMM_TV],
+          durationSeconds: [Website.DMM, Website.DMM_TV],
+          rating: [Website.DMM, Website.DMM_TV],
+          trailer_url: [Website.DMM, Website.DMM_TV],
+        },
+      },
+    });
+
+    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults)).aggregate(
+      "ABF-075",
+      config,
+    );
+
+    expect(result?.data.title).toBe("DMM TV Title");
+    expect(result?.data.genres).toEqual(["DMM TV Genre 1", "DMM TV Genre 2"]);
+    expect(result?.data.studio).toBe("DMM TV Studio");
+    expect(result?.data.durationSeconds).toBe(7_200);
+    expect(result?.data.rating).toBe(4.6);
+    expect(result?.data.trailer_url).toBe("https://dmm.example.com/trailer.mp4");
+    expect(result?.sources.title).toBe(Website.DMM_TV);
+    expect(result?.sources.genres).toBe(Website.DMM_TV);
+    expect(result?.sources.studio).toBe(Website.DMM_TV);
+    expect(result?.sources.durationSeconds).toBe(Website.DMM);
+    expect(result?.sources.rating).toBe(Website.DMM);
+    expect(result?.sources.trailer_url).toBe(Website.DMM);
   });
 
   it("uses PPVDATABANK as an FC2 fallback when higher-priority sources miss seller and image fields", async () => {
@@ -442,7 +681,7 @@ describe("AggregationService", () => {
       ...defaultConfiguration,
       scrape: {
         ...defaultConfiguration.scrape,
-        enabledSites: [Website.FC2HUB, Website.PPVDATABANK],
+        sites: [Website.FC2HUB, Website.PPVDATABANK],
         siteOrder: [Website.FC2HUB, Website.PPVDATABANK],
       },
     });
@@ -545,7 +784,7 @@ describe("AggregationService", () => {
     const config = makeConfig({
       scrape: {
         ...defaultConfiguration.scrape,
-        enabledSites: [Website.DMM],
+        sites: [Website.DMM],
         siteOrder: [Website.DMM],
       },
     });
@@ -651,7 +890,7 @@ describe("AggregationService", () => {
       makeConfig({
         scrape: {
           ...defaultConfiguration.scrape,
-          enabledSites: [
+          sites: [
             Website.DMM,
             Website.MGSTAGE,
             Website.FC2,
@@ -729,7 +968,7 @@ describe("AggregationService", () => {
       makeConfig({
         scrape: {
           ...defaultConfiguration.scrape,
-          enabledSites: [Website.DMM, Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB],
+          sites: [Website.DMM, Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB],
           siteOrder: [Website.DMM, Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB],
         },
       }),
@@ -757,7 +996,7 @@ describe("AggregationService", () => {
     const config = makeConfig({
       scrape: {
         ...defaultConfiguration.scrape,
-        enabledSites: [Website.DMM],
+        sites: [Website.DMM],
         siteOrder: [Website.DMM],
       },
     });

@@ -39,6 +39,7 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 1000): Promise<void
 };
 
 const waitForIdle = async (service: ScraperService): Promise<void> => {
+  await service.waitForIdle();
   await waitFor(() => !service.getStatus().running, 2000);
 };
 
@@ -117,7 +118,7 @@ describe("ScraperService requeue flow", () => {
             actors: [],
             genres: [],
             scene_images: [],
-            website: config.scrape.enabledSites[0],
+            website: config.scrape.sites[0],
           },
         });
       }
@@ -151,7 +152,7 @@ describe("ScraperService requeue flow", () => {
         actors: [],
         genres: [],
         scene_images: [],
-        website: config.scrape.enabledSites[0],
+        website: config.scrape.sites[0],
       },
     });
 
@@ -243,7 +244,7 @@ describe("ScraperService requeue flow", () => {
             actors: [],
             genres: [],
             scene_images: [],
-            website: config.scrape.enabledSites[0],
+            website: config.scrape.sites[0],
           },
         });
       }
@@ -280,7 +281,7 @@ describe("ScraperService requeue flow", () => {
             actors: [],
             genres: [],
             scene_images: [],
-            website: config.scrape.enabledSites[0],
+            website: config.scrape.sites[0],
           },
         });
       }
@@ -323,7 +324,7 @@ describe("ScraperService requeue flow", () => {
         actors: [],
         genres: [],
         scene_images: [],
-        website: config.scrape.enabledSites[0],
+        website: config.scrape.sites[0],
       },
     });
     fourthFileTask.resolve({
@@ -342,7 +343,7 @@ describe("ScraperService requeue flow", () => {
         actors: [],
         genres: [],
         scene_images: [],
-        website: config.scrape.enabledSites[0],
+        website: config.scrape.sites[0],
       },
     });
 
@@ -414,7 +415,7 @@ describe("ScraperService requeue flow", () => {
                 actors: [],
                 genres: [],
                 scene_images: [],
-                website: config.scrape.enabledSites[0],
+                website: config.scrape.sites[0],
               },
             });
           }
@@ -449,7 +450,7 @@ describe("ScraperService requeue flow", () => {
         actors: [],
         genres: [],
         scene_images: [],
-        website: config.scrape.enabledSites[0],
+        website: config.scrape.sites[0],
       },
     });
 

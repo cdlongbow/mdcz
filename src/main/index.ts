@@ -13,6 +13,8 @@ import { UpdateService } from "@main/services/UpdateService";
 import { WindowService } from "@main/services/WindowService";
 import { app, BrowserWindow } from "electron";
 
+const QUIT_FORCE_EXIT_TIMEOUT_MS = 3_000;
+
 const signalService = new SignalService();
 const sharedNetworkClient = new NetworkClient({
   getProxyUrl: () => configManager.getComputed().proxyUrl,
@@ -26,11 +28,17 @@ const trayService = new TrayService();
 const shortcutService = new ShortcutService();
 let ipcRegistered = false;
 let cleanupPromise: Promise<void> | null = null;
-let allowQuitAfterCleanup = false;
 let disposeShortcutConfigListener: (() => void) | null = null;
 let disposeLoggerListener: (() => void) | null = loggerService.onLog((payload) => {
   signalService.forwardLoggerLog(payload);
 });
+
+const scheduleForceExit = (): void => {
+  const timer = setTimeout(() => {
+    app.exit(0);
+  }, QUIT_FORCE_EXIT_TIMEOUT_MS);
+  timer.unref?.();
+};
 
 const ensureWindowService = (): WindowService => {
   if (!windowService) {
@@ -79,8 +87,8 @@ const cleanupResources = async (): Promise<void> => {
     disposeShortcutConfigListener?.();
     disposeShortcutConfigListener = null;
     shortcutService.dispose();
-    trayService.dispose();
     await loggerService.close();
+    trayService.dispose();
   })();
 
   return cleanupPromise;
@@ -163,18 +171,8 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
-  const handleQuitCleanup = (event: Electron.Event) => {
-    if (allowQuitAfterCleanup) {
-      return;
-    }
-
-    event.preventDefault();
-    void cleanupResources().finally(() => {
-      allowQuitAfterCleanup = true;
-      app.quit();
-    });
-  };
-
-  app.on("before-quit", handleQuitCleanup);
-  app.on("will-quit", handleQuitCleanup);
+  app.on("before-quit", () => {
+    void cleanupResources();
+    scheduleForceExit();
+  });
 }

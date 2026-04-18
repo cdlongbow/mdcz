@@ -35,10 +35,6 @@ const toFailureReason = (message: string): FailureReason => {
     return "login_wall";
   }
 
-  if (lowered.includes("cloudflare challenge")) {
-    return "region_blocked";
-  }
-
   if (
     lowered.includes("timeout") ||
     lowered.includes("timed out") ||

@@ -166,6 +166,42 @@ describe("buildComputedConfiguration", () => {
     expect(result.success).toBe(true);
   });
 
+  it("treats title-based folder templates as dedicated movie directories", () => {
+    const result = configurationSchema.safeParse({
+      naming: {
+        folderTemplate: "/{title}",
+        assetNamingMode: "fixed",
+      },
+      behavior: {
+        successFileMove: true,
+      },
+      download: {
+        nfoNaming: "both",
+        downloadSceneImages: true,
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("treats original-title-based folder templates as dedicated movie directories", () => {
+    const result = configurationSchema.safeParse({
+      naming: {
+        folderTemplate: "/{originaltitle}",
+        assetNamingMode: "fixed",
+      },
+      behavior: {
+        successFileMove: true,
+      },
+      download: {
+        nfoNaming: "both",
+        downloadSceneImages: true,
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("rejects optional groups that try to span multiple path segments", () => {
     const cases = [
       {
@@ -209,6 +245,7 @@ describe("buildComputedConfiguration", () => {
     expect(defaultConfiguration.aggregation.fieldPriorities.durationSeconds).toEqual([
       Website.AVBASE,
       Website.DMM_TV,
+      Website.AVWIKIDB,
       Website.FC2HUB,
     ]);
     expect(defaultConfiguration.aggregation.fieldPriorities.rating).toEqual([
@@ -220,6 +257,7 @@ describe("buildComputedConfiguration", () => {
     expect(defaultConfiguration.aggregation.fieldPriorities.studio).toEqual([
       Website.AVBASE,
       Website.DMM,
+      Website.AVWIKIDB,
       Website.FC2,
       Website.FC2HUB,
       Website.JAVDB,
@@ -228,6 +266,7 @@ describe("buildComputedConfiguration", () => {
     expect(defaultConfiguration.aggregation.fieldPriorities.publisher).toEqual([
       Website.AVBASE,
       Website.DMM,
+      Website.AVWIKIDB,
       Website.FC2,
       Website.FC2HUB,
       Website.JAVDB,

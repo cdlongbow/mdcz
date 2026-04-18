@@ -48,6 +48,7 @@ import {
   EnumField,
   type EnumOption,
   NumberField,
+  OrderedSiteFieldWrapper,
   PathFieldWrapper,
   PromptFieldWrapper,
   SecretField,
@@ -100,7 +101,8 @@ const NFO_NAMING_OPTIONS: EnumOption[] = [
   { value: "filename", label: "仅 文件名.nfo" },
 ];
 
-export const NAMING_TEMPLATE_DESCRIPTION = "可用占位符：{actor} {number} {date} {title} {studio}";
+export const NAMING_TEMPLATE_DESCRIPTION =
+  "可用占位符：{actor} {actorFallbackPrefix} {number} {date} {title} {originaltitle} {studio} {publisher}";
 
 // ── Field registry for search/filter ──
 
@@ -120,8 +122,7 @@ const FIELD_REGISTRY: FieldEntry[] = [
   { key: "paths.sceneImagesFolder", label: "剧照目录名", section: "paths" },
   { key: "paths.configDirectory", label: "配置文件目录", section: "paths" },
   // scrape
-  { key: "scrape.enabledSites", label: "启用站点", section: "scrape" },
-  { key: "scrape.siteOrder", label: "站点优先级", section: "scrape" },
+  { key: "scrape.sites", label: "启用站点与优先级", section: "scrape" },
   { key: "scrape.threadNumber", label: "并发线程数", section: "scrape" },
   { key: "scrape.javdbDelaySeconds", label: "JavDB 请求延迟(秒)", section: "scrape" },
   { key: "scrape.restAfterCount", label: "连续刮削后休息(条数)", section: "scrape" },
@@ -282,6 +283,40 @@ function unflattenConfig(flat: Record<string, unknown>): Record<string, unknown>
   return nested;
 }
 
+const NAMING_PREVIEW_FIELD_KEYS = [
+  "naming.folderTemplate",
+  "naming.fileTemplate",
+  "naming.assetNamingMode",
+  "naming.actorNameMax",
+  "naming.actorNameMore",
+  "naming.actorFallbackToStudio",
+  "naming.releaseRule",
+  "naming.folderNameMax",
+  "naming.fileNameMax",
+  "naming.cnwordStyle",
+  "naming.umrStyle",
+  "naming.leakStyle",
+  "naming.uncensoredStyle",
+  "naming.censoredStyle",
+  "naming.partStyle",
+  "download.nfoNaming",
+  "download.downloadSceneImages",
+  "behavior.successFileMove",
+  "behavior.successFileRename",
+] as const;
+
+export function buildNamingPreviewConfig(values: Record<string, unknown>): Partial<Configuration> {
+  const flat: Record<string, unknown> = {};
+  for (const key of NAMING_PREVIEW_FIELD_KEYS) {
+    const value = values[key] ?? getNestedValue(values, key);
+    if (value !== undefined) {
+      flat[key] = value;
+    }
+  }
+
+  return unflattenConfig(flat) as Partial<Configuration>;
+}
+
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -342,8 +377,12 @@ function PathsSection(_props: SectionRenderProps) {
 function ScrapeSection({ siteOptions }: SectionRenderProps) {
   return (
     <>
-      <ChipArrayFieldWrapper name="scrape.enabledSites" label="启用站点" options={siteOptions} showBulkActions />
-      <ChipArrayFieldWrapper name="scrape.siteOrder" label="站点优先级" options={siteOptions} showBulkActions />
+      <OrderedSiteFieldWrapper
+        name="scrape.sites"
+        label="启用站点与优先级"
+        description="勾选启用站点，上下移动调整优先级。未勾选的站点不会参与刮削。"
+        options={siteOptions}
+      />
       <NumberField name="scrape.threadNumber" label="并发线程数" min={1} max={128} />
       <NumberField name="scrape.javdbDelaySeconds" label="JavDB 请求延迟(秒)" min={0} max={120} />
       <NumberField name="scrape.restAfterCount" label="连续刮削后休息(条数)" min={1} max={500} />
@@ -422,28 +461,19 @@ function DownloadSection(_props: SectionRenderProps) {
 
 function NamingPreview() {
   const form = useFormContext<FieldValues>();
-  const naming = useWatch({
+  const previewValues = useWatch({
     control: form.control,
-    name: "naming",
-  }) as Record<string, unknown> | undefined;
-  const download = useWatch({
-    control: form.control,
-    name: "download",
-  }) as Record<string, unknown> | undefined;
-  const behavior = useWatch({
-    control: form.control,
-    name: "behavior",
-  }) as Record<string, unknown> | undefined;
+    name: NAMING_PREVIEW_FIELD_KEYS,
+  }) as unknown[];
   const [previews, setPreviews] = useState<NamingPreviewItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const previewConfig = useMemo(
-    () => ({
-      naming: naming ?? {},
-      download: download ?? {},
-      behavior: behavior ?? {},
-    }),
-    [behavior, download, naming],
-  );
+  const previewConfig = useMemo(() => {
+    const flatValues: Record<string, unknown> = {};
+    for (const [index, key] of NAMING_PREVIEW_FIELD_KEYS.entries()) {
+      flatValues[key] = previewValues[index];
+    }
+    return buildNamingPreviewConfig(flatValues);
+  }, [previewValues]);
   const previewConfigRef = useRef(previewConfig);
 
   const previewConfigKey = useMemo(() => JSON.stringify(previewConfig), [previewConfig]);
@@ -524,7 +554,7 @@ export function NamingSection(_props: SectionRenderProps) {
       <TextField
         name="naming.nfoTitleTemplate"
         label="NFO 标题模板"
-        description="NFO 中 title 字段的格式。可用占位符：{number} {title}"
+        description="NFO 中 title 字段的格式。可用占位符：{number} {title} {originaltitle}"
       />
       <NamingPreview />
       <NumberField name="naming.actorNameMax" label="演员名最大数量" min={1} max={20} />
@@ -532,7 +562,7 @@ export function NamingSection(_props: SectionRenderProps) {
       <BoolField
         name="naming.actorFallbackToStudio"
         label="演员为空时使用片商或卖家"
-        description="开启后，{actor} 在没有演员名时会回退到片商或卖家名称；仍为空时才使用 Unknown。"
+        description="开启后，{actor} 在没有演员名时会回退到片商或卖家名称；如需显示来源，可在模板中使用 {actorFallbackPrefix}{actor}。"
       />
       <TextField name="naming.releaseRule" label="发行日期格式" />
       <EnumField
@@ -822,10 +852,7 @@ export const TabbedConfigForm = forwardRef<TabbedConfigFormHandle, TabbedConfigF
 
   const siteOptions = useMemo(() => {
     const fromApi = toSiteOptions(sitesQ.data);
-    const fromConfig = [
-      ...toStringArray(flatDefaults["scrape.enabledSites"]),
-      ...toStringArray(flatDefaults["scrape.siteOrder"]),
-    ];
+    const fromConfig = toStringArray(flatDefaults["scrape.sites"]);
     return Array.from(new Set([...fromApi, ...fromConfig]));
   }, [sitesQ.data, flatDefaults]);
 

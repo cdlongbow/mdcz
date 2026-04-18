@@ -19,6 +19,7 @@ const FC2_SITE_WHITELIST = new Set<Website>([Website.FC2, Website.FC2HUB, Websit
 const FC2_ONLY_SITES = new Set<Website>([Website.FC2, Website.FC2HUB, Website.PPVDATABANK]);
 const FC2_NUMBER_PATTERN = /^FC2-?\d+$/iu;
 const EARLY_STOP_IMAGE_FIELDS = ["thumb_url", "poster_url"] as const;
+const DMM_FAMILY_SITES = new Set<Website>([Website.DMM, Website.DMM_TV]);
 
 interface CrawlerExecutionState {
   nextIndex: number;
@@ -76,23 +77,20 @@ export class AggregationService {
       signal,
     );
 
-    const totalElapsedMs = Date.now() - globalStart;
-
-    // Partition into successes and failures
-    const successes = new Map<Website, CrawlerData>();
+    const successes = this.collectSuccesses(siteResults);
     let successCount = 0;
     let failedCount = 0;
     const skippedCount = Math.max(0, enabledSites.length - siteResults.length);
 
     for (const result of siteResults) {
       if (result.success && result.data) {
-        successes.set(result.site, result.data);
         successCount++;
       } else {
         failedCount++;
       }
     }
 
+    const totalElapsedMs = Date.now() - globalStart;
     this.logger.info(
       `Crawl complete for ${number}: ${successCount} succeeded, ${failedCount} failed, ${skippedCount} skipped in ${totalElapsedMs}ms`,
     );
@@ -111,7 +109,12 @@ export class AggregationService {
       return null;
     }
 
-    const { data, sources, imageAlternatives } = fieldAggregator.aggregate(successes);
+    const {
+      data: aggregatedData,
+      sources: aggregatedSources,
+      imageAlternatives,
+    } = fieldAggregator.aggregate(successes);
+    const { data, sources } = this.cohereDmmFamilyIdentity(aggregatedData, aggregatedSources, successes, config);
 
     if (!this.meetsMinimumThreshold(data)) {
       this.logger.warn(
@@ -131,8 +134,7 @@ export class AggregationService {
   }
 
   private resolveActiveSites(number: string, config: Configuration): Website[] {
-    const enabledSet = new Set(config.scrape.enabledSites);
-    const ordered = config.scrape.siteOrder.filter((site) => enabledSet.has(site));
+    const ordered = [...new Set(config.scrape.sites)];
     const isFc2 = FC2_NUMBER_PATTERN.test(number.trim().toUpperCase());
     const candidates = ordered.filter((site) => (isFc2 ? FC2_SITE_WHITELIST.has(site) : !FC2_ONLY_SITES.has(site)));
 
@@ -152,6 +154,16 @@ export class AggregationService {
       }
       return true;
     });
+  }
+
+  private collectSuccesses(results: SiteCrawlResult[]): Map<Website, CrawlerData> {
+    const successes = new Map<Website, CrawlerData>();
+    for (const result of results) {
+      if (result.success && result.data) {
+        successes.set(result.site, result.data);
+      }
+    }
+    return successes;
   }
 
   private async executeWithGlobalTimeout(
@@ -256,6 +268,7 @@ export class AggregationService {
           site,
           success: false,
           error: toErrorMessage(error),
+          failureReason: "unknown",
           elapsedMs: 0,
         };
       } finally {
@@ -329,22 +342,26 @@ export class AggregationService {
         };
       }
 
-      const error = siteTimedOut && !signal.aborted ? timeoutMessage : response.result.error;
+      const timedOut = siteTimedOut && !signal.aborted;
+      const error = timedOut ? timeoutMessage : response.result.error;
       this.logger.warn(`${site} failed for ${number}: ${error} (${elapsedMs}ms)`);
       return {
         site,
         success: false,
         error,
+        failureReason: timedOut ? "timeout" : response.result.failureReason,
         elapsedMs,
       };
     } catch (error) {
       const elapsedMs = Date.now() - start;
-      const message = siteTimedOut && !signal.aborted ? timeoutMessage : toErrorMessage(error);
+      const timedOut = siteTimedOut && !signal.aborted;
+      const message = timedOut ? timeoutMessage : toErrorMessage(error);
       this.logger.warn(`${site} threw for ${number}: ${message} (${elapsedMs}ms)`);
       return {
         site,
         success: false,
         error: message,
+        failureReason: timedOut ? "timeout" : "unknown",
         elapsedMs,
       };
     } finally {
@@ -392,7 +409,7 @@ export class AggregationService {
     config: Configuration,
   ): boolean {
     const fieldPriorities = config.aggregation.fieldPriorities as Partial<Record<string, Website[]>>;
-    const priorityOrder = fieldPriorities[field] ?? config.scrape.siteOrder;
+    const priorityOrder = fieldPriorities[field] ?? config.scrape.sites;
     const winnerRank = priorityOrder.indexOf(winner);
 
     if (winnerRank === -1) {
@@ -407,6 +424,49 @@ export class AggregationService {
 
   private createFieldAggregator(config: Configuration): FieldAggregator {
     return new FieldAggregator(config.aggregation.fieldPriorities, config.aggregation.behavior);
+  }
+
+  private cohereDmmFamilyIdentity(
+    data: CrawlerData,
+    sources: Partial<Record<keyof CrawlerData, Website>>,
+    successes: Map<Website, CrawlerData>,
+    config: Configuration,
+  ): { data: CrawlerData; sources: Partial<Record<keyof CrawlerData, Website>> } {
+    const titleSource = sources.title;
+    if (!titleSource || !DMM_FAMILY_SITES.has(titleSource)) {
+      return { data, sources };
+    }
+
+    const counterpart = titleSource === Website.DMM ? Website.DMM_TV : Website.DMM;
+    if (!successes.has(counterpart)) {
+      return { data, sources };
+    }
+
+    const preferred = successes.get(titleSource);
+    if (!preferred) {
+      return { data, sources };
+    }
+
+    const nextData: CrawlerData = { ...data };
+    const nextSources: Partial<Record<keyof CrawlerData, Website>> = { ...sources };
+
+    const preferredGenres = preferred.genres.slice(0, config.aggregation.behavior.maxGenres);
+    if (preferredGenres.length > 0) {
+      nextData.genres = preferredGenres;
+      nextSources.genres = titleSource;
+    }
+
+    for (const field of ["number", "studio", "director", "publisher", "series", "release_date"] as const) {
+      const value = preferred[field];
+      if (!value) {
+        continue;
+      }
+
+      Object.assign(nextData, { [field]: value });
+      nextSources[field] = titleSource;
+    }
+
+    return { data: nextData, sources: nextSources };
   }
 
   private getFromCache(key: string): AggregationResult | null {

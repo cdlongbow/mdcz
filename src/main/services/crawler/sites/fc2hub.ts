@@ -1,4 +1,5 @@
 import { normalizeCode, normalizeText } from "@main/utils/normalization";
+import { uniqueStrings } from "@main/utils/strings";
 import { Website } from "@shared/enums";
 import type { CrawlerData } from "@shared/types";
 import { type CheerioAPI, load } from "cheerio";
@@ -7,7 +8,7 @@ import { extractAttr, parseDate } from "../base/parser";
 import type { Context, SearchPageResolution } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
 import { BaseFc2Crawler } from "./BaseFc2Crawler";
-import { pickSearchResultDetailUrl, toAbsoluteUrl, uniqueStrings } from "./helpers";
+import { pickSearchResultDetailUrl, toAbsoluteUrl } from "./helpers";
 
 const BASE_URL = "https://javten.com";
 
@@ -209,8 +210,11 @@ const extractSellerName = ($: CheerioAPI): string | undefined => {
     .find((element) => normalizeText(element.text()).includes("売り手情報"))
     ?.closest("div.card");
 
-  const seller = sellerCard?.find("div.col-8").first().text();
-  const normalized = normalizeText(seller);
+  const sellerColumn = sellerCard?.find("div.col-8").first();
+  const sellerName = sellerColumn?.clone();
+  sellerName?.find(".badge").remove();
+
+  const normalized = normalizeText(sellerName?.text());
   return normalized || undefined;
 };
 
@@ -253,8 +257,8 @@ export class Fc2HubCrawler extends BaseFc2Crawler {
     _searchUrl: string,
   ): Promise<string | SearchPageResolution | null> {
     const pageText = $.root().text();
-    if (pageText.includes("Access denied") && pageText.includes("Cloudflare")) {
-      throw new Error("FC2HUB blocked by Cloudflare challenge");
+    if (pageText.includes("Access denied")) {
+      throw new Error("FC2HUB access denied");
     }
 
     const base = this.resolveBaseUrl(context, BASE_URL);
