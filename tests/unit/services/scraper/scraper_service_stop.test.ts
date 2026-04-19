@@ -3,9 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configManager, configurationSchema, defaultConfiguration } from "@main/services/config";
 import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
+import type { RecentAcquisitionsStore } from "@main/services/history";
+import type { OutputLibraryScanner } from "@main/services/library";
 import { NetworkClient } from "@main/services/network";
 import { SignalService } from "@main/services/SignalService";
 import { createAbortError } from "@main/services/scraper/abort";
+import { AggregationService } from "@main/services/scraper/aggregation";
 import { FileScraper } from "@main/services/scraper/FileScraper";
 import { ScraperService } from "@main/services/scraper/ScraperService";
 import type { ScrapeResult } from "@shared/types";
@@ -114,6 +117,84 @@ describe("ScraperService stop flow", () => {
 
     expect(service.getStatus().running).toBe(false);
     expect(signalService.buttonStatusEvents.at(-1)).toEqual({ startEnabled: true, stopEnabled: false });
+  });
+
+  it("records successful acquisitions and invalidates output summary before clearing aggregation cache", async () => {
+    const events: string[] = [];
+    const signalService = new CaptureSignalService(null);
+    const networkClient = new NetworkClient();
+    const crawlerProvider = new CrawlerProvider({
+      fetchGateway: new FetchGateway(networkClient),
+    });
+    const recentAcquisitionsStore = {
+      recordBatch: vi.fn(async (items: Array<{ number: string; lastKnownPath: string | null }>) => {
+        events.push(`record:${items[0]?.number}:${items[0]?.lastKnownPath}`);
+      }),
+    } as unknown as RecentAcquisitionsStore;
+    const outputLibraryScanner = {
+      invalidate: vi.fn(() => {
+        events.push("invalidate");
+      }),
+    } as unknown as OutputLibraryScanner;
+    const service = new ScraperService(
+      signalService,
+      networkClient,
+      crawlerProvider,
+      undefined,
+      undefined,
+      undefined,
+      recentAcquisitionsStore,
+      outputLibraryScanner,
+    );
+    const config = configurationSchema.parse(defaultConfiguration);
+    const mediaFilePath = await createTempMediaFile("ABP-789.mp4");
+    const outputVideoPath = join(tmpdir(), "mdcz-output", "ABP-789.mp4");
+
+    vi.spyOn(configManager, "ensureLoaded").mockResolvedValue(undefined);
+    vi.spyOn(configManager, "get").mockResolvedValue(config);
+    vi.spyOn(AggregationService.prototype, "clearCache").mockImplementation(() => {
+      events.push("clear-cache");
+    });
+    vi.spyOn(FileScraper.prototype, "scrapeFile").mockResolvedValue({
+      status: "success",
+      fileId: "abp-789",
+      fileInfo: {
+        filePath: outputVideoPath,
+        fileName: "ABP-789.mp4",
+        extension: ".mp4",
+        number: "ABP-789",
+        isSubtitled: false,
+      },
+      crawlerData: {
+        title: "ABP-789 title",
+        number: "ABP-789",
+        actors: ["Actor A"],
+        genres: [],
+        scene_images: [],
+        website: config.scrape.sites[0],
+      },
+      assets: {
+        poster: "/output/ABP-789/poster.jpg",
+        sceneImages: [],
+        downloaded: ["/output/ABP-789/poster.jpg"],
+      },
+    });
+
+    await service.start("single", [mediaFilePath]);
+    await waitForIdle(service, signalService);
+
+    expect(recentAcquisitionsStore.recordBatch).toHaveBeenCalledWith([
+      {
+        sourcePath: mediaFilePath,
+        number: "ABP-789",
+        title: "ABP-789 title",
+        actors: ["Actor A"],
+        lastKnownPath: outputVideoPath,
+        posterPath: "/output/ABP-789/poster.jpg",
+      },
+    ]);
+    expect(outputLibraryScanner.invalidate).toHaveBeenCalledTimes(1);
+    expect(events).toEqual([`record:ABP-789:${outputVideoPath}`, "invalidate", "clear-cache"]);
   });
 
   it("updates status state when pausing and resuming", async () => {

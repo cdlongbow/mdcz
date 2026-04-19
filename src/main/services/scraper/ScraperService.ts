@@ -8,7 +8,9 @@ import {
   type PersistentCooldownStore,
 } from "@main/services/cooldown/PersistentCooldownStore";
 import type { CrawlerProvider } from "@main/services/crawler";
+import { RecentAcquisitionsStore } from "@main/services/history";
 import { loggerService } from "@main/services/LoggerService";
+import { OutputLibraryScanner } from "@main/services/library";
 import type { NetworkClient } from "@main/services/network";
 import type { SignalService } from "@main/services/SignalService";
 import { didPromiseTimeout, mapWithConcurrency } from "@main/utils/async";
@@ -188,6 +190,8 @@ export class ScraperService {
     actorImageService?: ActorImageService,
     actorSourceProvider?: ActorSourceProvider,
     imageHostCooldownStore?: PersistentCooldownStore,
+    private readonly recentAcquisitionsStore = new RecentAcquisitionsStore(),
+    private readonly outputLibraryScanner = new OutputLibraryScanner(),
   ) {
     this.actorImageService = actorImageService ?? new ActorImageService();
     this.actorSourceProvider = actorSourceProvider;
@@ -359,7 +363,14 @@ export class ScraperService {
       return;
     }
 
+    const successItems = this.session.getSuccessItemsSnapshot();
     await this.session.finish();
+
+    if (successItems.length > 0) {
+      await this.recentAcquisitionsStore.recordBatch(successItems);
+    }
+    this.outputLibraryScanner.invalidate();
+
     this.aggregationService.clearCache();
 
     this.signalService.setButtonStatus(true, false);

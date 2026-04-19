@@ -140,6 +140,7 @@ const uiSchema = z.object({
   hideDock: z.boolean().default(false),
   hideMenu: z.boolean().default(false),
   hideWindowButtons: z.boolean().default(false),
+  useCustomTitleBar: z.boolean().default(true),
 });
 
 const pathsSchema = z.object({
@@ -150,6 +151,7 @@ const pathsSchema = z.object({
   failedOutputFolder: z.string().default("failed"),
   sceneImagesFolder: z.string().default("extrafanart"),
   configDirectory: z.string().default("config"),
+  outputSummaryPath: z.string().default(""),
 });
 
 const behaviorSchema = z.object({

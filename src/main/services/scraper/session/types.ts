@@ -14,6 +14,15 @@ export interface QueueTask {
   taskFn: (signal: AbortSignal) => Promise<ScrapeResult>;
 }
 
+export interface ScrapeSuccessItem {
+  sourcePath: string;
+  number: string;
+  title: string | null;
+  actors: string[];
+  lastKnownPath: string | null;
+  posterPath: string | null;
+}
+
 export interface PersistedSessionState {
   taskId: string;
   status: ScraperStatus;

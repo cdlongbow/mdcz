@@ -11,6 +11,8 @@ import {
 } from "@main/services/actorSource";
 import { createImageHostCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
 import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
+import { RecentAcquisitionsStore } from "@main/services/history";
+import { OutputLibraryScanner } from "@main/services/library";
 import { EmbyActorInfoService, EmbyActorPhotoService } from "@main/services/mediaServer/emby";
 import { JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/mediaServer/jellyfin";
 import { createElectronCookieResolver, type NetworkClient } from "@main/services/network";
@@ -38,6 +40,8 @@ export const createContainer = ({
     siteRequestConfigRegistrar: networkClient,
   });
   const imageHostCooldownStore = createImageHostCooldownStore();
+  const recentAcquisitionsStore = new RecentAcquisitionsStore();
+  const outputLibraryScanner = new OutputLibraryScanner();
   const amazonJpImageService = new AmazonJpImageService(networkClient);
   const actorImageService = new ActorImageService({ networkClient });
   const avjohoCookieResolver = createElectronCookieResolver({
@@ -60,6 +64,8 @@ export const createContainer = ({
     actorImageService,
     actorSourceProvider,
     imageHostCooldownStore,
+    recentAcquisitionsStore,
+    outputLibraryScanner,
   );
   const maintenanceService = new MaintenanceService(
     signalService,
@@ -75,6 +81,8 @@ export const createContainer = ({
     windowService,
     networkClient,
     fetchGateway,
+    recentAcquisitionsStore,
+    outputLibraryScanner,
     scraperService,
     maintenanceService,
     crawlerProvider,

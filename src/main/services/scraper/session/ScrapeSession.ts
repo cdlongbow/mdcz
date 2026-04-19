@@ -10,6 +10,7 @@ import type {
   QueueTask,
   RecoverableSessionSnapshot,
   ScrapeSessionOptions,
+  ScrapeSuccessItem,
   SessionState,
 } from "./types";
 
@@ -46,6 +47,10 @@ export class ScrapeSession {
 
   getFailedFiles(): string[] {
     return this.progress.getFailedFiles();
+  }
+
+  getSuccessItemsSnapshot(): ScrapeSuccessItem[] {
+    return this.progress.getSuccessItemsSnapshot();
   }
 
   getSignal(): AbortSignal {
