@@ -26,12 +26,15 @@ const resolveConfiguredDir = (scanDir: string, configuredPath: string | undefine
   return isAbsolutePath(trimmedPath) || !scanDir.trim() ? trimmedPath : joinPath(scanDir, trimmedPath);
 };
 
+const usesWindowsPathSemantics = (rawPath: string, normalizedPath: string): boolean =>
+  /^[A-Za-z]:\//u.test(normalizedPath) || rawPath.includes("\\");
+
 const normalizeComparablePath = (path: string): string => {
   const normalized = path
     .trim()
     .replace(/[\\/]+/gu, "/")
     .replace(/\/$/u, "");
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  return usesWindowsPathSemantics(path, normalized) ? normalized.toLowerCase() : normalized;
 };
 
 const isPathWithinDirectory = (filePath: string, directoryPath: string): boolean => {

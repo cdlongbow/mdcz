@@ -69,4 +69,11 @@ describe("mediaCandidateScan", () => {
 
     expect(mergeMediaCandidates([first], [duplicate, second])).toEqual([first, second]);
   });
+
+  it("treats windows-style paths as case-insensitive even when the test host is not Windows", () => {
+    const first = createCandidate("D:\\media\\ABC-123.mp4");
+    const duplicate = createCandidate("d:/MEDIA/abc-123.mp4");
+
+    expect(mergeMediaCandidates([first], [duplicate])).toEqual([first]);
+  });
 });
