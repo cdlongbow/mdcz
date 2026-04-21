@@ -850,6 +850,10 @@ interface TabbedConfigFormProps {
   onDeleteProfile?: () => void;
   onResetConfig?: () => void;
   configPath?: string;
+  // When true, the outer PageHeader (title/profile/reset) is suppressed because
+  // the parent layout is providing that chrome. The tab bar, search, modified-filter,
+  // and a compact Save button remain visible.
+  embedded?: boolean;
 }
 
 export interface TabbedConfigFormHandle {
@@ -872,6 +876,7 @@ export const TabbedConfigForm = forwardRef<TabbedConfigFormHandle, TabbedConfigF
     onDeleteProfile,
     onResetConfig,
     configPath,
+    embedded = false,
   }: TabbedConfigFormProps,
   ref,
 ) {
@@ -1089,99 +1094,101 @@ export const TabbedConfigForm = forwardRef<TabbedConfigFormHandle, TabbedConfigF
           event.preventDefault();
           void submit();
         }}
-        className="h-full w-full overflow-y-auto relative scroll-smooth"
+        className={cn("w-full relative scroll-smooth", embedded ? "overflow-visible" : "h-full overflow-y-auto")}
       >
         <div className="sticky top-0 z-10 bg-background/60 backdrop-blur-xl border-b">
-          <PageHeader
-            title="设置"
-            subtitle="管理媒体库、刮削策略及系统偏好"
-            icon={Server}
-            extra={
-              <div className="flex items-center gap-3">
-                {configPath && (
-                  <div
-                    className="hidden lg:flex min-w-0 flex-1 items-center gap-1.5 text-[10px] font-mono text-muted-foreground/70 max-w-[280px] truncate hover:text-muted-foreground transition-colors"
-                    title={configPath}
-                  >
-                    <FileText className="h-2.5 w-2.5" />
-                    <span className="truncate">{configPath}</span>
-                  </div>
-                )}
+          {!embedded && (
+            <PageHeader
+              title="设置"
+              subtitle="管理媒体库、刮削策略及系统偏好"
+              icon={Server}
+              extra={
                 <div className="flex items-center gap-3">
-                  {profiles.length > 0 && (
-                    <div className="flex items-center h-9 bg-muted/40 rounded-lg p-1 border">
-                      <Select value={activeProfile || "default"} onValueChange={onSwitchProfile}>
-                        <SelectTrigger className="h-full min-w-[90px] max-w-[150px] text-[10px] border-none bg-transparent focus:ring-0 shadow-none px-2">
-                          <SelectValue placeholder="默认配置" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {profiles
-                            .filter((p) => p.length > 0)
-                            .map((p) => (
-                              <SelectItem key={p} value={p}>
-                                {p}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                      <div className="h-3 w-px bg-border/60 mx-1" />
-                      <div className="flex items-center pr-0.5">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 rounded-full hover:bg-background/80"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onCreateProfile?.();
-                          }}
-                          title="新建配置档案"
-                        >
-                          <Plus className="h-3 w-3" />
-                        </Button>
-                        {profiles.length > 1 && (
+                  {configPath && (
+                    <div
+                      className="hidden lg:flex min-w-0 flex-1 items-center gap-1.5 text-[10px] font-mono text-muted-foreground/70 max-w-[280px] truncate hover:text-muted-foreground transition-colors"
+                      title={configPath}
+                    >
+                      <FileText className="h-2.5 w-2.5" />
+                      <span className="truncate">{configPath}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    {profiles.length > 0 && (
+                      <div className="flex items-center h-9 bg-muted/40 rounded-lg p-1 border">
+                        <Select value={activeProfile || "default"} onValueChange={onSwitchProfile}>
+                          <SelectTrigger className="h-full min-w-[90px] max-w-[150px] text-[10px] border-none bg-transparent focus:ring-0 shadow-none px-2">
+                            <SelectValue placeholder="默认配置" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {profiles
+                              .filter((p) => p.length > 0)
+                              .map((p) => (
+                                <SelectItem key={p} value={p}>
+                                  {p}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="h-3 w-px bg-border/60 mx-1" />
+                        <div className="flex items-center pr-0.5">
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-6 w-6 rounded-full text-destructive/80 hover:text-destructive hover:bg-destructive/10"
+                            className="h-6 w-6 rounded-full hover:bg-background/80"
                             onClick={(e) => {
                               e.stopPropagation();
-                              onDeleteProfile?.();
+                              onCreateProfile?.();
                             }}
-                            title="删除当前配置档案"
+                            title="新建配置档案"
                           >
-                            <Trash2 className="h-3 w-3" />
+                            <Plus className="h-3 w-3" />
                           </Button>
-                        )}
+                          {profiles.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 rounded-full text-destructive/80 hover:text-destructive hover:bg-destructive/10"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteProfile?.();
+                              }}
+                              title="删除当前配置档案"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-9 w-9 rounded-lg text-muted-foreground hover:text-destructive hover:border-destructive/30 hover:bg-destructive/5"
-                    onClick={onResetConfig}
-                    title="恢复默认设置"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                  </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9 rounded-lg text-muted-foreground hover:text-destructive hover:border-destructive/30 hover:bg-destructive/5"
+                      onClick={onResetConfig}
+                      title="恢复默认设置"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    </Button>
 
-                  <div className="h-6 w-px bg-border mx-1" />
+                    <div className="h-6 w-px bg-border mx-1" />
 
-                  <Button
-                    type="submit"
-                    className="rounded-lg px-6 h-9 font-semibold text-xs shadow-sm"
-                    disabled={!form.formState.isDirty || form.formState.isSubmitting}
-                  >
-                    {form.formState.isSubmitting ? "保存中..." : "保存设置"}
-                  </Button>
+                    <Button
+                      type="submit"
+                      className="rounded-lg px-6 h-9 font-semibold text-xs shadow-sm"
+                      disabled={!form.formState.isDirty || form.formState.isSubmitting}
+                    >
+                      {form.formState.isSubmitting ? "保存中..." : "保存设置"}
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            }
-          />
+              }
+            />
+          )}
           {/* Sub Header / Tab Bar */}
           <div className="px-8 pb-2 h-11 flex items-center">
             <div className="max-w-4xl w-full mx-auto flex items-center justify-between gap-4">
@@ -1279,6 +1286,16 @@ export const TabbedConfigForm = forwardRef<TabbedConfigFormHandle, TabbedConfigF
                   </div>
                 )}
               </div>
+
+              {embedded && (
+                <Button
+                  type="submit"
+                  className="rounded-lg h-9 px-4 font-semibold text-xs shadow-sm shrink-0"
+                  disabled={!form.formState.isDirty || form.formState.isSubmitting}
+                >
+                  {form.formState.isSubmitting ? "保存中..." : "保存"}
+                </Button>
+              )}
             </div>
           </div>
         </div>

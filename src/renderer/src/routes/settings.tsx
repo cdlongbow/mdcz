@@ -8,6 +8,8 @@ import { updateConfig } from "@/client/api";
 import { ipc } from "@/client/ipc";
 import type { UpdateConfigData } from "@/client/types";
 import { TabbedConfigForm, type TabbedConfigFormHandle } from "@/components/config-form/TabbedConfigForm";
+import { SectionAnchor } from "@/components/settings/SectionAnchor";
+import { SettingsLayout } from "@/components/settings/SettingsLayout";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
@@ -77,6 +79,7 @@ function SettingsComponent() {
   const [newProfileDialogOpen, setNewProfileDialogOpen] = useState(false);
   const [deleteProfileDialogOpen, setDeleteProfileDialogOpen] = useState(false);
   const [deleteProfileName, setDeleteProfileName] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const configQ = useCurrentConfig({
     refetchOnWindowFocus: false,
@@ -257,16 +260,11 @@ function SettingsComponent() {
     <div className="h-full flex flex-col overflow-hidden">
       <div className="flex-1 overflow-hidden">
         {configQ.data && (
-          <TabbedConfigForm
-            ref={settingsFormRef}
-            key={activeProfile || "default"}
-            data={configQ.data}
-            onSubmit={(data) => mutation.mutateAsync(data as NonNullable<UpdateConfigData["body"]>)}
-            serverErrors={serverErrors}
-            serverFieldErrors={serverFieldErrors}
-            onDirtyChange={onDirtyChange}
-            initialTab={settingsActiveTab}
-            onTabChange={setSettingsActiveTab}
+          <SettingsLayout
+            title="刮削设置"
+            subtitle="管理媒体库、刮削策略及系统偏好"
+            searchValue={searchQuery}
+            onSearchChange={setSearchQuery}
             profiles={profiles}
             activeProfile={activeProfile}
             onSwitchProfile={handleSwitchProfile}
@@ -274,7 +272,31 @@ function SettingsComponent() {
             onDeleteProfile={() => setDeleteProfileDialogOpen(true)}
             onResetConfig={() => setResetDialogOpen(true)}
             configPath={configInfoQ.data?.configPath}
-          />
+          >
+            <SectionAnchor id="all" label="全部设置">
+              <div className="rounded-[var(--radius-quiet-lg)] bg-surface shadow-sm overflow-hidden">
+                <TabbedConfigForm
+                  ref={settingsFormRef}
+                  key={activeProfile || "default"}
+                  data={configQ.data}
+                  onSubmit={(data) => mutation.mutateAsync(data as NonNullable<UpdateConfigData["body"]>)}
+                  serverErrors={serverErrors}
+                  serverFieldErrors={serverFieldErrors}
+                  onDirtyChange={onDirtyChange}
+                  initialTab={settingsActiveTab}
+                  onTabChange={setSettingsActiveTab}
+                  profiles={profiles}
+                  activeProfile={activeProfile}
+                  onSwitchProfile={handleSwitchProfile}
+                  onCreateProfile={() => setNewProfileDialogOpen(true)}
+                  onDeleteProfile={() => setDeleteProfileDialogOpen(true)}
+                  onResetConfig={() => setResetDialogOpen(true)}
+                  configPath={configInfoQ.data?.configPath}
+                  embedded
+                />
+              </div>
+            </SectionAnchor>
+          </SettingsLayout>
         )}
       </div>
 
