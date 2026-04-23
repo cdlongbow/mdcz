@@ -9,8 +9,8 @@ describe("settingsRegistry", () => {
     const engine = FIELD_REGISTRY.find((entry) => entry.key === "translate.engine");
     const llmApiKey = FIELD_REGISTRY.find((entry) => entry.key === "translate.llmApiKey");
 
-    expect(engine?.anchor).toBe("dataSources");
-    expect(llmApiKey?.anchor).toBe("dataSources");
+    expect(engine?.anchor).toBe("translate");
+    expect(llmApiKey?.anchor).toBe("translate");
   });
 
   it("round-trips nested config through flatten + unflatten without losing registered fields", () => {
@@ -78,8 +78,20 @@ describe("settingsRegistry", () => {
     expect(FIELD_REGISTRY.find((entry) => entry.key === "translate.llmPrompt")?.visibility).toBe("public");
     expect(FIELD_REGISTRY.find((entry) => entry.key === "paths.mediaPath")?.visibility).toBe("public");
     expect(FIELD_REGISTRY.find((entry) => entry.key === "scrape.siteConfigs.javdb.customUrl")).toMatchObject({
-      anchor: "dataSources",
+      anchor: "scrape",
       visibility: "public",
+    });
+  });
+
+  it("keeps media-server connection settings out of the settings surface", () => {
+    expect(FIELD_REGISTRY.find((entry) => entry.key === "personSync.personOverviewSources")).toMatchObject({
+      surface: "tools",
+    });
+    expect(FIELD_REGISTRY.find((entry) => entry.key === "jellyfin.url")).toMatchObject({
+      surface: "tools",
+    });
+    expect(FIELD_REGISTRY.find((entry) => entry.key === "emby.url")).toMatchObject({
+      surface: "tools",
     });
   });
 

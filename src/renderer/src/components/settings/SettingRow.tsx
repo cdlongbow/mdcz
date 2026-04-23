@@ -2,6 +2,8 @@ import { type ReactNode, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
 
+type SettingRowLayout = "horizontal" | "vertical";
+
 interface SettingRowProps {
   fieldName?: string;
   label: string;
@@ -12,12 +14,8 @@ interface SettingRowProps {
   status?: ReactNode;
   error?: string | null;
   className?: string;
-  /**
-   * When true, the control stacks below the label+description on a full-width
-   * row. Used by textarea-heavy fields (Cookie, Prompt). Defaults to false,
-   * matching the right-aligned inline layout in `src/renderer/ui/settings/code.html`.
-   */
-  fullWidthContent?: boolean;
+  controlClassName?: string;
+  layout?: SettingRowLayout;
   /** When true, apply a dimmed visual to indicate this row is filtered out by search. */
   dimmed?: boolean;
   /** When true, apply a subtle highlight to indicate this row matches the current search. */
@@ -34,7 +32,8 @@ export function SettingRow({
   status,
   error,
   className,
-  fullWidthContent,
+  controlClassName,
+  layout = "horizontal",
   dimmed,
   highlighted,
 }: SettingRowProps) {
@@ -50,13 +49,15 @@ export function SettingRow({
     [fieldName, search],
   );
 
+  const isVerticalLayout = layout === "vertical";
+
   return (
     <div
       ref={fieldName ? registerFieldNode : undefined}
       data-field-name={fieldName}
       className={cn(
         "group/setting-row flex py-3 transition-[opacity,background-color] duration-200",
-        fullWidthContent
+        isVerticalLayout
           ? "flex-col gap-2.5"
           : "flex-col gap-2.5 md:flex-row md:items-start md:justify-between md:gap-6",
         highlighted && "rounded-[var(--radius-quiet-sm)] -mx-2 px-2 bg-primary/5",
@@ -77,9 +78,11 @@ export function SettingRow({
         {description && <p className="mt-1 max-w-prose text-xs text-muted-foreground">{description}</p>}
         {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
       </div>
-      {fullWidthContent ? (
+      {isVerticalLayout ? (
         <div className="flex flex-col gap-2">
-          <div data-setting-control>{control}</div>
+          <div data-setting-control className={controlClassName}>
+            {control}
+          </div>
           {status && (
             <div aria-live="polite" className="flex min-h-[1rem] justify-end text-xs text-muted-foreground">
               {status}
@@ -88,7 +91,7 @@ export function SettingRow({
         </div>
       ) : (
         <div className="flex shrink-0 items-center gap-2.5">
-          <div data-setting-control className="min-w-0">
+          <div data-setting-control className={cn("min-w-0", controlClassName)}>
             {control}
           </div>
           {status && (

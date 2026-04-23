@@ -16,6 +16,13 @@ describe("settingsDeepLink", () => {
     });
   });
 
+  it("treats tool-owned settings as unsupported settings deep-link targets", () => {
+    expect(resolveSettingsDeepLink("jellyfin.url")).toEqual({
+      fieldKey: null,
+      sectionId: null,
+    });
+  });
+
   it("treats unknown deep links as no-op targets", () => {
     expect(resolveSettingsDeepLink(" unknown.setting ")).toEqual({
       fieldKey: null,

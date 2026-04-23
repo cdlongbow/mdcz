@@ -10,9 +10,8 @@ import {
   AggregationScrapeSection,
   AssetDownloadsSection,
   BehaviorSection,
-  EmbySection,
-  JellyfinSection,
   NamingSection,
+  NetworkConnectionSection,
   NetworkCookiesSection,
   NfoSection,
   PathsSection,
@@ -22,6 +21,7 @@ import {
   TranslateSection,
   UiSection,
 } from "./settingsContent";
+import type { FieldAnchor } from "./settingsRegistry";
 
 interface SiteOptionsProps {
   siteOptions: string[];
@@ -34,77 +34,16 @@ interface SystemSectionProps {
 }
 
 const DEFERRED_SECTION_HEIGHTS = {
-  rateLimiting: 760,
-  extractionRules: 1680,
+  scrape: 1040,
+  network: 920,
+  translate: 980,
+  naming: 1260,
+  download: 960,
+  fileBehavior: 760,
   paths: 780,
-  system: 1120,
+  system: 840,
   advancedSettings: 1760,
 } as const;
-
-export function DataSourcesSection({ siteOptions, forceOpen = false }: SiteOptionsProps) {
-  return (
-    <SectionAnchor
-      id="dataSources"
-      label={SECTION_LABELS.dataSources}
-      title={SECTION_LABELS.dataSources}
-      forceOpen={forceOpen}
-    >
-      <Subsection title="刮削站点" description="启用网站、优先级、每站 URL 与站点凭证">
-        <SitePriorityEditorField options={siteOptions} />
-        <NetworkCookiesSection />
-      </Subsection>
-      <Subsection title="翻译">
-        <TranslateSection />
-      </Subsection>
-      <Subsection title="人物同步 · Jellyfin" description="Jellyfin 连接与同步入口">
-        <JellyfinSection />
-      </Subsection>
-      <Subsection title="人物同步 · Emby">
-        <EmbySection />
-      </Subsection>
-    </SectionAnchor>
-  );
-}
-
-export function RateLimitingSection({ forceOpen = false }: { forceOpen?: boolean }) {
-  return (
-    <SectionAnchor
-      id="rateLimiting"
-      label={SECTION_LABELS.rateLimiting}
-      title={SECTION_LABELS.rateLimiting}
-      forceOpen={forceOpen}
-      deferContent
-      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.rateLimiting}
-    >
-      <Subsection title="刮削节奏">
-        <ScrapePacingSection />
-      </Subsection>
-    </SectionAnchor>
-  );
-}
-
-export function ExtractionRulesSection({ forceOpen = false }: { forceOpen?: boolean }) {
-  return (
-    <SectionAnchor
-      id="extractionRules"
-      label={SECTION_LABELS.extractionRules}
-      title={SECTION_LABELS.extractionRules}
-      forceOpen={forceOpen}
-      deferContent
-      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.extractionRules}
-    >
-      <Subsection title="命名模板">
-        <NamingSection />
-      </Subsection>
-      <Subsection title="资源下载">
-        <AssetDownloadsSection />
-      </Subsection>
-      <Subsection title="NFO">
-        <NfoSection />
-      </Subsection>
-    </SectionAnchor>
-  );
-}
 
 export function PathsTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
   return (
@@ -121,6 +60,111 @@ export function PathsTopLevelSection({ forceOpen = false }: { forceOpen?: boolea
   );
 }
 
+export function ScrapeTopLevelSection({ siteOptions, forceOpen = false }: SiteOptionsProps) {
+  return (
+    <SectionAnchor
+      id="scrape"
+      label={SECTION_LABELS.scrape}
+      title={SECTION_LABELS.scrape}
+      forceOpen={forceOpen}
+      deferContent
+      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.scrape}
+    >
+      <Subsection title="刮削站点" description="启用网站、优先级与每站自定义地址" className="mb-6 last:mb-0">
+        <SitePriorityEditorField options={siteOptions} />
+      </Subsection>
+      <Subsection title="刮削节奏" className="mb-6 last:mb-0">
+        <ScrapePacingSection />
+      </Subsection>
+    </SectionAnchor>
+  );
+}
+
+export function NetworkTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+  return (
+    <SectionAnchor
+      id="network"
+      label={SECTION_LABELS.network}
+      title={SECTION_LABELS.network}
+      forceOpen={forceOpen}
+      deferContent
+      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.network}
+    >
+      <Subsection title="代理与请求" className="mb-6 last:mb-0">
+        <NetworkConnectionSection />
+      </Subsection>
+      <Subsection title="站点凭证" className="mb-6 last:mb-0">
+        <NetworkCookiesSection />
+      </Subsection>
+    </SectionAnchor>
+  );
+}
+
+export function TranslateTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+  return (
+    <SectionAnchor
+      id="translate"
+      label={SECTION_LABELS.translate}
+      title={SECTION_LABELS.translate}
+      forceOpen={forceOpen}
+      deferContent
+      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.translate}
+    >
+      <TranslateSection />
+    </SectionAnchor>
+  );
+}
+
+export function NamingTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+  return (
+    <SectionAnchor
+      id="naming"
+      label={SECTION_LABELS.naming}
+      title={SECTION_LABELS.naming}
+      forceOpen={forceOpen}
+      deferContent
+      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.naming}
+    >
+      <NamingSection />
+    </SectionAnchor>
+  );
+}
+
+export function DownloadTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+  return (
+    <SectionAnchor
+      id="download"
+      label={SECTION_LABELS.download}
+      title={SECTION_LABELS.download}
+      forceOpen={forceOpen}
+      deferContent
+      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.download}
+    >
+      <Subsection title="资源下载" className="mb-6 last:mb-0">
+        <AssetDownloadsSection />
+      </Subsection>
+      <Subsection title="NFO" className="mb-6 last:mb-0">
+        <NfoSection />
+      </Subsection>
+    </SectionAnchor>
+  );
+}
+
+export function FileBehaviorTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+  return (
+    <SectionAnchor
+      id="fileBehavior"
+      label={SECTION_LABELS.fileBehavior}
+      title={SECTION_LABELS.fileBehavior}
+      forceOpen={forceOpen}
+      deferContent
+      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.fileBehavior}
+    >
+      <BehaviorSection />
+    </SectionAnchor>
+  );
+}
+
 export function SystemTopLevelSection({ initialUseCustomTitleBar, forceOpen = false }: SystemSectionProps) {
   return (
     <SectionAnchor
@@ -131,14 +175,11 @@ export function SystemTopLevelSection({ initialUseCustomTitleBar, forceOpen = fa
       deferContent
       estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.system}
     >
-      <Subsection title="界面">
+      <Subsection title="界面" className="mb-6 last:mb-0">
         <UiSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
       </Subsection>
-      <Subsection title="快捷键">
+      <Subsection title="快捷键" className="mb-6 last:mb-0">
         <ShortcutsSection />
-      </Subsection>
-      <Subsection title="文件行为">
-        <BehaviorSection />
       </Subsection>
     </SectionAnchor>
   );
@@ -161,16 +202,13 @@ export function AdvancedTopLevelSection({ siteOptions, forceOpen = false }: Site
       estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.advancedSettings}
     >
       <SettingsSectionModeProvider mode="advanced">
-        <AdvancedDomainSubsection anchor="dataSources">
+        <AdvancedDomainSubsection anchor="scrape">
           <AggregationPrioritySection siteOptions={siteOptions} />
-        </AdvancedDomainSubsection>
-
-        <AdvancedDomainSubsection anchor="rateLimiting">
           <AggregationScrapeSection />
+          <AggregationBehaviorSection />
         </AdvancedDomainSubsection>
 
-        <AdvancedDomainSubsection anchor="extractionRules">
-          <AggregationBehaviorSection />
+        <AdvancedDomainSubsection anchor="download">
           <AssetDownloadsSection />
         </AdvancedDomainSubsection>
       </SettingsSectionModeProvider>
@@ -178,12 +216,16 @@ export function AdvancedTopLevelSection({ siteOptions, forceOpen = false }: Site
   );
 }
 
-function AdvancedDomainSubsection({ anchor, children }: { anchor: keyof typeof SECTION_LABELS; children: ReactNode }) {
+function AdvancedDomainSubsection({ anchor, children }: { anchor: FieldAnchor; children: ReactNode }) {
   const search = useSettingsSearch();
 
   if (!search.isAdvancedAnchorVisible(anchor)) {
     return null;
   }
 
-  return <Subsection title={SECTION_LABELS[anchor]}>{children}</Subsection>;
+  return (
+    <Subsection title={SECTION_LABELS[anchor]} className="mb-6 last:mb-0">
+      {children}
+    </Subsection>
+  );
 }

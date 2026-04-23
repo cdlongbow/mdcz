@@ -262,8 +262,8 @@ export function NetworkConnectionSection() {
 export function NetworkCookiesSection() {
   return (
     <>
-      <CookieFieldWrapper name="network.javdbCookie" label="JavDB 凭证" />
-      <CookieFieldWrapper name="network.javbusCookie" label="JavBus 凭证" />
+      <CookieFieldWrapper name="network.javdbCookie" label="JavDB Cookie" />
+      <CookieFieldWrapper name="network.javbusCookie" label="JavBus Cookie" />
     </>
   );
 }

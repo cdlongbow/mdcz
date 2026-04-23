@@ -10,12 +10,12 @@ import { Progress } from "@/components/ui/Progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
 import { useToast } from "@/contexts/ToastProvider";
 import { cn } from "@/lib/utils";
+import { type PersonServer, PersonServerSettingsDialog } from "./PersonServerSettingsDialog";
 import { ToolPanel } from "./ToolPanel";
 import { TOOL_SELECT_TRIGGER_CLASS, TOOL_SUBSECTION_CLASS } from "./toolStyles";
 
 type SyncMode = "all" | "missing";
 type ConnectionCheckResult = JellyfinConnectionCheckResult | EmbyConnectionCheckResult;
-type PersonServer = "jellyfin" | "emby";
 
 function clearProgressResetTimer(timerRef: MutableRefObject<number | null>) {
   if (timerRef.current !== null) {
@@ -73,6 +73,7 @@ export function Person() {
     mutationFn: async () => ipc.tool.checkEmbyConnection(),
   });
   const [selectedPersonServer, setSelectedPersonServer] = useState<PersonServer>("jellyfin");
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [jellyfinCheckResult, setJellyfinCheckResult] = useState<JellyfinConnectionCheckResult | null>(null);
   const [embyCheckResult, setEmbyCheckResult] = useState<EmbyConnectionCheckResult | null>(null);
   const [jellyfinActorInfoMode, setJellyfinActorInfoMode] = useState<SyncMode>("missing");
@@ -355,168 +356,187 @@ export function Person() {
         };
 
   return (
-    <ToolPanel
-      toolId="media-library-tools"
-      icon={<UserCheck className="h-5 w-5" />}
-      headerExtra={
-        <>
-          <Select
-            value={selectedPersonServer}
-            onValueChange={(value) => setSelectedPersonServer(value as PersonServer)}
-            disabled={anyPersonSyncRunning || anyPersonCheckPending}
-          >
-            <SelectTrigger className={cn(TOOL_SELECT_TRIGGER_CLASS, "w-[160px] bg-surface-low")}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="jellyfin">Jellyfin</SelectItem>
-              <SelectItem value="emby">Emby</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Button
-            variant="secondary"
-            onClick={activeServerState.onCheck}
-            disabled={activeServerState.checkPending || anyPersonSyncRunning}
-            className="h-11 rounded-quiet-capsule bg-surface-low px-5 text-sm font-semibold text-foreground hover:bg-surface-raised/75"
-          >
-            {activeServerState.checkPending ? "诊断中..." : "连接诊断"}
-          </Button>
-        </>
-      }
-    >
-      {activeServerState.checkResult ? (
-        <div className={TOOL_SUBSECTION_CLASS}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                {activeServerState.diagnosticLabel}
-              </div>
-              {activeServerState.checkResult.serverInfo?.serverName ||
-              activeServerState.checkResult.serverInfo?.version ? (
-                <div className="mt-2 text-sm font-medium text-foreground">
-                  {[
-                    activeServerState.checkResult.serverInfo?.serverName,
-                    activeServerState.checkResult.serverInfo?.version,
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                </div>
-              ) : null}
-            </div>
-
-            <div
-              className={cn(
-                "rounded-quiet-capsule px-3 py-1 text-xs font-semibold",
-                !activeServerState.checkResult.success &&
-                  "bg-amber-100 text-amber-700 dark:bg-amber-500/12 dark:text-amber-300",
-                activeServerState.checkResult.success &&
-                  activeServerState.checkResult.personCount === 0 &&
-                  "bg-surface-floating text-muted-foreground dark:bg-surface-floating/80",
-                activeServerState.checkResult.success &&
-                  activeServerState.checkResult.personCount !== 0 &&
-                  "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/12 dark:text-emerald-300",
-              )}
-            >
-              {getDiagnosticHeadline(activeServerState.checkResult)}
-            </div>
-          </div>
-
-          <div className="grid gap-2.5">
-            {activeServerState.checkResult.steps.map((step) => (
-              <div key={step.key} className="rounded-quiet bg-surface-floating/94 px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-foreground">{step.label}</div>
-                    <div className="mt-1 text-xs leading-6 text-muted-foreground">{step.message}</div>
-                  </div>
-                  <div
-                    className={cn(
-                      "shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em]",
-                      getStepTone(step.status),
-                    )}
-                  >
-                    {step.status === "ok" ? "通过" : step.status === "error" ? "失败" : "跳过"}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div className="space-y-3 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5">
-          <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            演员资料同步
-          </Label>
-          <div className="flex flex-col gap-3 sm:flex-row">
+    <>
+      <ToolPanel
+        toolId="media-library-tools"
+        icon={<UserCheck className="h-5 w-5" />}
+        headerExtra={
+          <>
             <Select
-              value={activeServerState.infoMode}
-              onValueChange={(value) => activeServerState.onInfoModeChange(value as SyncMode)}
+              value={selectedPersonServer}
+              onValueChange={(value) => setSelectedPersonServer(value as PersonServer)}
+              disabled={anyPersonSyncRunning || anyPersonCheckPending}
             >
-              <SelectTrigger className="h-11 flex-1 rounded-quiet-sm border-none bg-surface-floating px-4 shadow-none focus-visible:ring-2 focus-visible:ring-ring/30">
+              <SelectTrigger className={cn(TOOL_SELECT_TRIGGER_CLASS, "w-[160px] bg-surface-low")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="missing">仅补全空白资料</SelectItem>
-                <SelectItem value="all">更新已有资料</SelectItem>
+                <SelectItem value="jellyfin">Jellyfin</SelectItem>
+                <SelectItem value="emby">Emby</SelectItem>
               </SelectContent>
             </Select>
+
             <Button
               variant="secondary"
-              onClick={activeServerState.onSyncInfo}
-              disabled={anyPersonSyncRunning || activeServerState.checkPending}
-              className="h-11 flex-1 rounded-quiet-capsule bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+              onClick={() => setSettingsDialogOpen(true)}
+              disabled={anyPersonSyncRunning || anyPersonCheckPending}
+              className="h-11 rounded-quiet-capsule bg-surface-low px-5 text-sm font-semibold text-foreground hover:bg-surface-raised/75"
             >
-              {activeServerState.infoSyncRunning ? "同步中..." : "同步信息"}
+              连接设置
             </Button>
-          </div>
-          <div className="text-xs leading-6 text-muted-foreground">{activeServerState.infoText}</div>
-        </div>
 
-        <div className="space-y-3 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5">
-          <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            演员头像同步
-          </Label>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <Select
-              value={activeServerState.photoMode}
-              onValueChange={(value) => activeServerState.onPhotoModeChange(value as SyncMode)}
-            >
-              <SelectTrigger className="h-11 flex-1 rounded-quiet-sm border-none bg-surface-floating px-4 shadow-none focus-visible:ring-2 focus-visible:ring-ring/30">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="missing">仅补全缺失头像</SelectItem>
-                <SelectItem value="all">重新同步头像</SelectItem>
-              </SelectContent>
-            </Select>
             <Button
               variant="secondary"
-              onClick={activeServerState.onSyncPhoto}
-              disabled={anyPersonSyncRunning || activeServerState.checkPending}
-              className="h-11 flex-1 rounded-quiet-capsule bg-surface-floating px-5 text-sm font-semibold text-foreground hover:bg-surface-raised/70"
+              onClick={activeServerState.onCheck}
+              disabled={activeServerState.checkPending || anyPersonSyncRunning}
+              className="h-11 rounded-quiet-capsule bg-surface-low px-5 text-sm font-semibold text-foreground hover:bg-surface-raised/75"
             >
-              {activeServerState.photoSyncRunning ? "同步中..." : "同步头像"}
+              {activeServerState.checkPending ? "诊断中..." : "连接诊断"}
             </Button>
-          </div>
-          <div className="text-xs leading-6 text-muted-foreground">{activeServerState.photoText}</div>
-          {activeServerState.photoNotice ? (
-            <div className="text-xs leading-6 text-amber-700 dark:text-amber-300">{activeServerState.photoNotice}</div>
-          ) : null}
-        </div>
-      </div>
+          </>
+        }
+      >
+        {activeServerState.checkResult ? (
+          <div className={TOOL_SUBSECTION_CLASS}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  {activeServerState.diagnosticLabel}
+                </div>
+                {activeServerState.checkResult.serverInfo?.serverName ||
+                activeServerState.checkResult.serverInfo?.version ? (
+                  <div className="mt-2 text-sm font-medium text-foreground">
+                    {[
+                      activeServerState.checkResult.serverInfo?.serverName,
+                      activeServerState.checkResult.serverInfo?.version,
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  </div>
+                ) : null}
+              </div>
 
-      {activeServerState.progress > 0 ? (
-        <div className="grid gap-3 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5">
-          <div className="flex justify-between text-xs font-semibold text-muted-foreground">
-            <span>任务进度</span>
-            <span>{Math.round(activeServerState.progress)}%</span>
+              <div
+                className={cn(
+                  "rounded-quiet-capsule px-3 py-1 text-xs font-semibold",
+                  !activeServerState.checkResult.success &&
+                    "bg-amber-100 text-amber-700 dark:bg-amber-500/12 dark:text-amber-300",
+                  activeServerState.checkResult.success &&
+                    activeServerState.checkResult.personCount === 0 &&
+                    "bg-surface-floating text-muted-foreground dark:bg-surface-floating/80",
+                  activeServerState.checkResult.success &&
+                    activeServerState.checkResult.personCount !== 0 &&
+                    "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/12 dark:text-emerald-300",
+                )}
+              >
+                {getDiagnosticHeadline(activeServerState.checkResult)}
+              </div>
+            </div>
+
+            <div className="grid gap-2.5">
+              {activeServerState.checkResult.steps.map((step) => (
+                <div key={step.key} className="rounded-quiet bg-surface-floating/94 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-foreground">{step.label}</div>
+                      <div className="mt-1 text-xs leading-6 text-muted-foreground">{step.message}</div>
+                    </div>
+                    <div
+                      className={cn(
+                        "shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em]",
+                        getStepTone(step.status),
+                      )}
+                    >
+                      {step.status === "ok" ? "通过" : step.status === "error" ? "失败" : "跳过"}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          <Progress value={activeServerState.progress} className="h-2 bg-surface-floating" />
+        ) : null}
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div className="space-y-3 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5">
+            <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              演员资料同步
+            </Label>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Select
+                value={activeServerState.infoMode}
+                onValueChange={(value) => activeServerState.onInfoModeChange(value as SyncMode)}
+              >
+                <SelectTrigger className="h-11 flex-1 rounded-quiet-sm border-none bg-surface-floating px-4 shadow-none focus-visible:ring-2 focus-visible:ring-ring/30">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="missing">仅补全空白资料</SelectItem>
+                  <SelectItem value="all">更新已有资料</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="secondary"
+                onClick={activeServerState.onSyncInfo}
+                disabled={anyPersonSyncRunning || activeServerState.checkPending}
+                className="h-11 flex-1 rounded-quiet-capsule bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+              >
+                {activeServerState.infoSyncRunning ? "同步中..." : "同步信息"}
+              </Button>
+            </div>
+            <div className="text-xs leading-6 text-muted-foreground">{activeServerState.infoText}</div>
+          </div>
+
+          <div className="space-y-3 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5">
+            <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              演员头像同步
+            </Label>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Select
+                value={activeServerState.photoMode}
+                onValueChange={(value) => activeServerState.onPhotoModeChange(value as SyncMode)}
+              >
+                <SelectTrigger className="h-11 flex-1 rounded-quiet-sm border-none bg-surface-floating px-4 shadow-none focus-visible:ring-2 focus-visible:ring-ring/30">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="missing">仅补全缺失头像</SelectItem>
+                  <SelectItem value="all">重新同步头像</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="secondary"
+                onClick={activeServerState.onSyncPhoto}
+                disabled={anyPersonSyncRunning || activeServerState.checkPending}
+                className="h-11 flex-1 rounded-quiet-capsule bg-surface-floating px-5 text-sm font-semibold text-foreground hover:bg-surface-raised/70"
+              >
+                {activeServerState.photoSyncRunning ? "同步中..." : "同步头像"}
+              </Button>
+            </div>
+            <div className="text-xs leading-6 text-muted-foreground">{activeServerState.photoText}</div>
+            {activeServerState.photoNotice ? (
+              <div className="text-xs leading-6 text-amber-700 dark:text-amber-300">
+                {activeServerState.photoNotice}
+              </div>
+            ) : null}
+          </div>
         </div>
-      ) : null}
-    </ToolPanel>
+
+        {activeServerState.progress > 0 ? (
+          <div className="grid gap-3 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5">
+            <div className="flex justify-between text-xs font-semibold text-muted-foreground">
+              <span>任务进度</span>
+              <span>{Math.round(activeServerState.progress)}%</span>
+            </div>
+            <Progress value={activeServerState.progress} className="h-2 bg-surface-floating" />
+          </div>
+        ) : null}
+      </ToolPanel>
+
+      <PersonServerSettingsDialog
+        open={settingsDialogOpen}
+        server={selectedPersonServer}
+        onOpenChange={setSettingsDialogOpen}
+      />
+    </>
   );
 }

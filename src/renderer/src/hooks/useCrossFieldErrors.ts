@@ -32,6 +32,7 @@ export function useCrossFieldErrors(sectionKey: FieldEntry["anchor"]): CrossFiel
   return useMemo(() => {
     const output: CrossFieldError[] = [];
     for (const entry of FIELD_REGISTRY) {
+      if (entry.surface !== "settings") continue;
       if (entry.anchor !== sectionKey) continue;
       const fieldState = form.getFieldState(entry.key, formState);
       const fieldError = fieldState.error;

@@ -1,6 +1,5 @@
 import { Loader2 } from "lucide-react";
-import type { ReactElement } from "react";
-import { useState } from "react";
+import { createContext, type ReactElement, type ReactNode, useContext, useState } from "react";
 import type { ControllerRenderProps, FieldValues } from "react-hook-form";
 import { useFormContext } from "react-hook-form";
 import { ipc } from "@/client/ipc";
@@ -31,13 +30,29 @@ import { ServerPathField } from "./ServerPathField";
 // ── Centralized Base Field ──
 
 type CommitMode = "debounce" | "immediate";
+type ConfigFieldLayout = "horizontal" | "vertical";
+
+interface ConfigFieldLayoutContextValue {
+  layout: ConfigFieldLayout;
+}
+
+interface ConfigFieldLayoutProviderProps {
+  layout?: ConfigFieldLayout;
+  children: ReactNode;
+}
+
+const ConfigFieldLayoutContext = createContext<ConfigFieldLayoutContextValue>({ layout: "horizontal" });
+
+export function ConfigFieldLayoutProvider({ children, layout = "horizontal" }: ConfigFieldLayoutProviderProps) {
+  return <ConfigFieldLayoutContext.Provider value={{ layout }}>{children}</ConfigFieldLayoutContext.Provider>;
+}
 
 interface BaseFieldProps {
   name: string;
   label: string;
   description?: string;
   children: (field: ControllerRenderProps<FieldValues, string>) => React.ReactNode;
-  fullWidthContent?: boolean;
+  layout?: ConfigFieldLayout;
   /**
    * When the user edits this field, should the save fire after a debounce
    * (free-text) or immediately (discrete controls like Switch/Select/pickers)?
@@ -51,14 +66,7 @@ interface BaseFieldProps {
  * `SettingRow` with the micro-status indicator in the right-aligned status
  * slot.
  */
-export function BaseField({
-  name,
-  label,
-  description,
-  children,
-  fullWidthContent,
-  commitMode = "immediate",
-}: BaseFieldProps) {
+export function BaseField({ name, label, description, children, layout, commitMode = "immediate" }: BaseFieldProps) {
   const sectionMode = useSettingsSectionMode();
 
   if (!shouldRenderFieldInSectionMode(name, sectionMode)) {
@@ -66,25 +74,25 @@ export function BaseField({
   }
 
   return (
-    <ConnectedBaseField
-      name={name}
-      label={label}
-      description={description}
-      fullWidthContent={fullWidthContent}
-      commitMode={commitMode}
-    >
+    <ConnectedBaseField name={name} label={label} description={description} layout={layout} commitMode={commitMode}>
       {children}
     </ConnectedBaseField>
   );
 }
 
-function ConnectedBaseField({ name, label, description, children, fullWidthContent, commitMode }: BaseFieldProps) {
+function ConnectedBaseField({ name, label, description, children, layout, commitMode }: BaseFieldProps) {
   const form = useFormContext();
+  const fieldLayout = useContext(ConfigFieldLayoutContext);
   const { status, resetToDefault } = useAutoSaveField(name, { mode: commitMode, label });
   const search = useOptionalSettingsSearch();
   const visible = search ? search.isFieldVisible(name) : true;
   const highlighted = search ? search.isFieldHighlighted(name) : false;
   const modified = search ? search.isFieldModified(name) : false;
+  const resolvedLayout = layout ?? fieldLayout.layout;
+  const isVerticalLayout = resolvedLayout === "vertical";
+  const controlClassName = isVerticalLayout
+    ? "flex w-full justify-end [&>div]:w-full [&_input]:w-full [&_textarea]:w-full [&_[data-slot=select-trigger]]:w-full"
+    : undefined;
 
   return (
     <FormField
@@ -108,7 +116,8 @@ function ConnectedBaseField({ name, label, description, children, fullWidthConte
               headerAction={modified ? <ResetToDefaultButton label={label} onClick={resetToDefault} /> : null}
               status={<AutoSaveStatusIndicator status={status} />}
               control={children(field)}
-              fullWidthContent={fullWidthContent}
+              controlClassName={controlClassName}
+              layout={resolvedLayout}
               highlighted={highlighted}
             />
           </FormItem>
@@ -360,7 +369,7 @@ export function CookieFieldWrapper({
   description?: string;
 }) {
   return (
-    <BaseField name={name} label={label} description={description} fullWidthContent commitMode="debounce">
+    <BaseField name={name} label={label} description={description} layout="vertical" commitMode="debounce">
       {(field) => (
         <BufferedFieldControl field={field} commitOnEnter={false}>
           {(control) => (
@@ -402,7 +411,7 @@ export function PromptFieldWrapper({
   description?: string;
 }) {
   return (
-    <BaseField name={name} label={label} description={description} fullWidthContent commitMode="debounce">
+    <BaseField name={name} label={label} description={description} layout="vertical" commitMode="debounce">
       {(field) => (
         <BufferedFieldControl field={field} commitOnEnter={false}>
           {(control) => (
@@ -482,7 +491,7 @@ export function ChipArrayFieldWrapper({
   showBulkActions?: boolean;
 }) {
   return (
-    <BaseField name={name} label={label} description={description} fullWidthContent commitMode="immediate">
+    <BaseField name={name} label={label} description={description} layout="vertical" commitMode="immediate">
       {(field) => <ChipArrayField field={field} options={options} showBulkActions={showBulkActions} />}
     </BaseField>
   );
@@ -500,7 +509,7 @@ export function OrderedSiteFieldWrapper({
   options: string[];
 }) {
   return (
-    <BaseField name={name} label={label} description={description} fullWidthContent commitMode="immediate">
+    <BaseField name={name} label={label} description={description} layout="vertical" commitMode="immediate">
       {(field) => <OrderedSiteField field={field} options={options} />}
     </BaseField>
   );

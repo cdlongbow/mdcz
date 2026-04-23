@@ -125,7 +125,7 @@ export function SectionAnchor({
         {isKnownAnchor(id) && <SectionBanner sectionKey={id} />}
         <CollapsibleContent className="data-[state=closed]:animate-none data-[state=open]:animate-none">
           {contentReady ? (
-            <div className="space-y-6">{children}</div>
+            <div className="space-y-1">{children}</div>
           ) : (
             <DeferredSectionPlaceholder estimatedContentHeight={estimatedContentHeight} />
           )}

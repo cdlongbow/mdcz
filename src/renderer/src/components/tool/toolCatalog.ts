@@ -48,7 +48,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     id: "media-library-tools",
-    title: "媒体库维护",
+    title: "Emby / Jellyfin 维护",
     description: "补全人物资料并检查库状态，让媒体信息保持一致。",
     detailTitle: "人物工具",
     detailDescription: "诊断连接状态并同步人物头像与简介。",

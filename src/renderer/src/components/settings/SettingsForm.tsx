@@ -3,11 +3,14 @@ import { useSettingsSearch } from "./SettingsSearchContext";
 import { useCrawlerSiteOptions } from "./settingsContent";
 import {
   AdvancedTopLevelSection,
-  DataSourcesSection,
-  ExtractionRulesSection,
+  DownloadTopLevelSection,
+  FileBehaviorTopLevelSection,
+  NamingTopLevelSection,
+  NetworkTopLevelSection,
   PathsTopLevelSection,
-  RateLimitingSection,
+  ScrapeTopLevelSection,
   SystemTopLevelSection,
+  TranslateTopLevelSection,
 } from "./TopLevelSections";
 
 interface SettingsFormProps {
@@ -26,9 +29,12 @@ export function SettingsForm({ flatDefaults, initialUseCustomTitleBar }: Setting
       ) : (
         <>
           <PathsTopLevelSection forceOpen={search.isSectionForceOpen("paths")} />
-          <DataSourcesSection siteOptions={siteOptions} forceOpen={search.isSectionForceOpen("dataSources")} />
-          <RateLimitingSection forceOpen={search.isSectionForceOpen("rateLimiting")} />
-          <ExtractionRulesSection forceOpen={search.isSectionForceOpen("extractionRules")} />
+          <ScrapeTopLevelSection siteOptions={siteOptions} forceOpen={search.isSectionForceOpen("scrape")} />
+          <NetworkTopLevelSection forceOpen={search.isSectionForceOpen("network")} />
+          <TranslateTopLevelSection forceOpen={search.isSectionForceOpen("translate")} />
+          <NamingTopLevelSection forceOpen={search.isSectionForceOpen("naming")} />
+          <DownloadTopLevelSection forceOpen={search.isSectionForceOpen("download")} />
+          <FileBehaviorTopLevelSection forceOpen={search.isSectionForceOpen("fileBehavior")} />
           <SystemTopLevelSection
             initialUseCustomTitleBar={initialUseCustomTitleBar}
             forceOpen={search.isSectionForceOpen("system")}

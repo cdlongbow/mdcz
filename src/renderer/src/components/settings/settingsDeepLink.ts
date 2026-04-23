@@ -24,7 +24,7 @@ export function resolveSettingsDeepLink(settingKey?: string | null): ResolvedSet
     };
   }
 
-  if (entry.visibility === "advanced") {
+  if (entry.surface !== "settings" || entry.visibility === "advanced") {
     return {
       fieldKey: null,
       sectionId: null,

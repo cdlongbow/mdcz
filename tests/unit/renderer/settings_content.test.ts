@@ -7,6 +7,11 @@ import {
   NamingSection,
   PersonSyncSharedSection,
 } from "@renderer/components/settings/settingsContent";
+import {
+  FileBehaviorTopLevelSection,
+  NetworkTopLevelSection,
+  TranslateTopLevelSection,
+} from "@renderer/components/settings/TopLevelSections";
 import { SettingsEditorAutosaveProvider } from "@renderer/hooks/useAutoSaveField";
 import { type ComponentProps, createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -127,6 +132,50 @@ function PersonSyncHarness({ mode }: { mode: "public" | "advanced" }) {
   );
 }
 
+function SettingsSectionHarness({ section }: { section: "network" | "translate" | "fileBehavior" }) {
+  const savedValues = {
+    "network.proxyType": "none",
+    "network.proxy": "",
+    "network.useProxy": false,
+    "network.timeout": 30,
+    "network.retryCount": 3,
+    "network.javdbCookie": "",
+    "network.javbusCookie": "",
+    "translate.enableTranslation": false,
+    "translate.engine": "google",
+    "translate.targetLanguage": "zh-CN",
+    "behavior.successFileMove": false,
+    "behavior.failedFileMove": false,
+    "behavior.successFileRename": false,
+    "behavior.deleteEmptyFolder": false,
+    "behavior.scrapeSoftlinkPath": false,
+    "behavior.saveLog": false,
+  };
+  const form = useForm<FieldValues>({
+    defaultValues: savedValues,
+  });
+  const sectionElement =
+    section === "network"
+      ? createElement(NetworkTopLevelSection, { forceOpen: true })
+      : section === "translate"
+        ? createElement(TranslateTopLevelSection, { forceOpen: true })
+        : createElement(FileBehaviorTopLevelSection, { forceOpen: true });
+
+  return createElement(
+    FormProvider,
+    form as ComponentProps<typeof FormProvider>,
+    createElement(
+      SettingsEditorAutosaveProvider,
+      {
+        savedValues,
+        defaultValues: savedValues,
+        defaultValuesReady: true,
+      },
+      sectionElement,
+    ),
+  );
+}
+
 describe("settingsContent", () => {
   it("renders naming template placeholder help for both template fields", () => {
     const html = renderToStaticMarkup(createElement(NamingSectionHarness));
@@ -153,6 +202,20 @@ describe("settingsContent", () => {
 
     expect(publicHtml).toContain("共享人物资料源");
     expect(advancedHtml).toBe("");
+  });
+
+  it("renders split top-level sections for network, translation, and file behavior", () => {
+    const networkHtml = renderToStaticMarkup(createElement(SettingsSectionHarness, { section: "network" }));
+    const translateHtml = renderToStaticMarkup(createElement(SettingsSectionHarness, { section: "translate" }));
+    const behaviorHtml = renderToStaticMarkup(createElement(SettingsSectionHarness, { section: "fileBehavior" }));
+
+    expect(networkHtml).toContain("网络连接");
+    expect(networkHtml).toContain("代理类型");
+    expect(networkHtml).toContain("JavDB Cookie");
+    expect(translateHtml).toContain("翻译服务");
+    expect(translateHtml).toContain("翻译引擎");
+    expect(behaviorHtml).toContain("文件行为");
+    expect(behaviorHtml).toContain("成功后移动文件");
   });
 
   it("builds nested naming preview config from flat form field values", () => {

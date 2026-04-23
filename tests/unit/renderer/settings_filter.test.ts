@@ -25,6 +25,7 @@ describe("settingsFilter", () => {
     expect(visibleKeys.has("naming.partStyle")).toBe(true);
     expect(visibleKeys.has("paths.mediaPath")).toBe(true);
     expect(visibleKeys.has("scrape.siteConfigs.javdb.customUrl")).toBe(true);
+    expect(visibleKeys.has("jellyfin.url")).toBe(false);
   });
 
   it("showAdvanced reveals advanced settings without changing the grouped ordering", () => {
@@ -70,6 +71,18 @@ describe("settingsFilter", () => {
     const visibleEntries = getVisibleEntries(FIELD_REGISTRY, buildState("@group:系统 日志面板"));
 
     expect(visibleEntries.map((entry) => entry.key)).toEqual(["ui.showLogsPanel"]);
+  });
+
+  it("supports the expanded top-level setting groups", () => {
+    expect(getVisibleEntries(FIELD_REGISTRY, buildState("@group:网络 代理类型")).map((entry) => entry.key)).toEqual([
+      "network.proxyType",
+    ]);
+    expect(getVisibleEntries(FIELD_REGISTRY, buildState("@group:翻译 密钥")).map((entry) => entry.key)).toEqual([
+      "translate.llmApiKey",
+    ]);
+    expect(getVisibleEntries(FIELD_REGISTRY, buildState("@group:命名 文件夹模板")).map((entry) => entry.key)).toEqual([
+      "naming.folderTemplate",
+    ]);
   });
 
   it("offers only the supported search tokens in visible suggestions", () => {
