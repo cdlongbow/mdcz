@@ -1,10 +1,15 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { app, BrowserWindow, nativeImage } from "electron";
+import { app, BrowserWindow, nativeImage, nativeTheme } from "electron";
 import windowStateKeeper from "electron-window-state";
 
 import iconPath from "../../../build/icon.png?asset";
+import {
+  buildTitleBarOverlay,
+  resolveCustomTitleBarWindowOptions,
+  shouldSyncTitleBarOverlay,
+} from "./windowTitleBarOptions";
 
 const appIcon = nativeImage.createFromPath(iconPath);
 
@@ -12,6 +17,11 @@ const DEFAULT_WINDOW_WIDTH = 1100;
 const DEFAULT_WINDOW_HEIGHT = 750;
 const MIN_WINDOW_WIDTH = 900;
 const MIN_WINDOW_HEIGHT = 640;
+const DEFAULT_RENDERER_ROUTE = "/overview";
+
+export interface MainWindowCreationOptions {
+  useCustomTitleBar: boolean;
+}
 
 const resolvePreloadPath = (): string => {
   const candidates = ["../preload/index.js", "../preload/index.cjs", "../preload/index.mjs"];
@@ -30,7 +40,9 @@ const resolvePreloadPath = (): string => {
 export class WindowService {
   private mainWindow: BrowserWindow | null = null;
 
-  createMainWindow(): BrowserWindow {
+  private useCustomTitleBar = false;
+
+  createMainWindow(options: MainWindowCreationOptions): BrowserWindow {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       return this.mainWindow;
     }
@@ -51,6 +63,10 @@ export class WindowService {
       show: false,
       autoHideMenuBar: true,
       icon: appIcon,
+      ...resolveCustomTitleBarWindowOptions({
+        useCustomTitleBar: options.useCustomTitleBar,
+        isDark: nativeTheme.shouldUseDarkColors,
+      }),
       webPreferences: {
         preload: preloadPath,
         contextIsolation: true,
@@ -77,20 +93,25 @@ export class WindowService {
     });
 
     this.mainWindow = mainWindow;
+    this.useCustomTitleBar = options.useCustomTitleBar;
 
     return mainWindow;
   }
 
   async loadMainWindow(): Promise<void> {
-    const mainWindow = this.createMainWindow();
+    const mainWindow = this.getMainWindow();
+    if (!mainWindow) {
+      throw new Error("Main window has not been created");
+    }
+
     const rendererUrl = process.env.ELECTRON_RENDERER_URL;
 
     if (rendererUrl) {
-      await mainWindow.loadURL(rendererUrl);
+      await mainWindow.loadURL(new URL(DEFAULT_RENDERER_ROUTE, rendererUrl).toString());
       return;
     }
 
-    await mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+    await mainWindow.loadFile(join(__dirname, "../renderer/index.html"), { hash: DEFAULT_RENDERER_ROUTE });
   }
 
   toggleDevTools(): void {
@@ -128,6 +149,19 @@ export class WindowService {
 
     mainWindow.show();
     mainWindow.focus();
+  }
+
+  syncTitleBarOverlay(isDark: boolean): void {
+    if (!this.useCustomTitleBar || !shouldSyncTitleBarOverlay()) {
+      return;
+    }
+
+    const mainWindow = this.getMainWindow();
+    if (!mainWindow) {
+      return;
+    }
+
+    mainWindow.setTitleBarOverlay(buildTitleBarOverlay(isDark));
   }
 
   applyUiConfig(config: { hideDock: boolean; hideMenu: boolean; hideWindowButtons: boolean }): void {

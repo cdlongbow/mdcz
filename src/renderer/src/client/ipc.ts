@@ -2,6 +2,7 @@ import { createClient } from "@egoist/tipc/renderer";
 import type { Configuration } from "@shared/config";
 import type { Website } from "@shared/enums";
 import { IpcChannel } from "@shared/IpcChannel";
+import type { OverviewOutputSummary, OverviewRecentAcquisitionItem } from "@shared/ipc-contracts/overviewContract";
 import type { IpcRouterContract } from "@shared/ipcContract";
 import type {
   ButtonStatusPayload,
@@ -25,6 +26,7 @@ import type {
   MaintenancePresetId,
   MaintenancePreviewResult,
   MaintenanceStatus,
+  MediaCandidate,
   ScrapeResult,
   UncensoredConfirmItem,
   UncensoredConfirmResponse,
@@ -41,9 +43,19 @@ export const ipc = {
     info: () => client[IpcChannel.App_Info](undefined) as Promise<AppInfo>,
     openExternal: (url: string) => client[IpcChannel.App_OpenExternal]({ url }),
     playMedia: (path: string) => client[IpcChannel.App_PlayMedia]({ path }),
+    relaunch: () => client[IpcChannel.App_Relaunch](undefined),
+    syncTitleBarTheme: (isDark: boolean) => client[IpcChannel.App_SyncTitleBarTheme]({ isDark }),
+  },
+  overview: {
+    getRecentAcquisitions: () =>
+      client[IpcChannel.Overview_GetRecentAcquisitions](undefined) as Promise<{
+        items: OverviewRecentAcquisitionItem[];
+      }>,
+    getOutputSummary: () => client[IpcChannel.Overview_GetOutputSummary](undefined) as Promise<OverviewOutputSummary>,
   },
   config: {
     get: (path?: string) => client[IpcChannel.Config_Get]({ path }),
+    getDefaults: () => client[IpcChannel.Config_GetDefaults](undefined) as Promise<Configuration>,
     save: (config?: Partial<Configuration>) => client[IpcChannel.Config_Save]({ config }),
     list: () => client[IpcChannel.Config_List](undefined),
     reset: (path?: string) => client[IpcChannel.Config_Reset]({ path }),
@@ -52,9 +64,22 @@ export const ipc = {
     createProfile: (name: string) => client[IpcChannel.Config_CreateProfile]({ name }),
     switchProfile: (name: string) => client[IpcChannel.Config_SwitchProfile]({ name }),
     deleteProfile: (name: string) => client[IpcChannel.Config_DeleteProfile]({ name }),
+    exportProfile: (name: string) =>
+      client[IpcChannel.Config_ExportProfile]({ name }) as Promise<{
+        canceled: boolean;
+        filePath: string | null;
+        profileName: string;
+      }>,
+    importProfile: (filePath: string, name: string, overwrite = false) =>
+      client[IpcChannel.Config_ImportProfile]({ filePath, name, overwrite }) as Promise<{
+        success: true;
+        profileName: string;
+        overwritten: boolean;
+        active: boolean;
+      }>,
   },
   scraper: {
-    start: (mode: "single" | "batch", paths: string[]) => client[IpcChannel.Scraper_Start]({ mode, paths }),
+    start: (mode: "single" | "selection", paths: string[]) => client[IpcChannel.Scraper_Start]({ mode, paths }),
     stop: () => client[IpcChannel.Scraper_Stop](undefined),
     pause: () => client[IpcChannel.Scraper_Pause](undefined),
     resume: () => client[IpcChannel.Scraper_Resume](undefined),
@@ -71,6 +96,14 @@ export const ipc = {
   crawler: {
     test: (site: Website, number: string) => client[IpcChannel.Crawler_Test]({ site, number }),
     listSites: () => client[IpcChannel.Crawler_ListSites](undefined),
+    probeSiteConnectivity: (site: Website) =>
+      client[IpcChannel.Crawler_ProbeSiteConnectivity]({ site }) as Promise<{
+        ok: boolean;
+        message: string;
+        latencyMs: number;
+        status?: number;
+        resolvedUrl?: string;
+      }>,
   },
   network: {
     checkCookies: () => client[IpcChannel.Network_CheckCookies](undefined),
@@ -81,6 +114,11 @@ export const ipc = {
   },
   file: {
     listEntries: (dirPath: string) => client[IpcChannel.File_ListEntries]({ dirPath }),
+    listMediaCandidates: (dirPath: string, excludeDirPath?: string) =>
+      client[IpcChannel.File_ListMediaCandidates]({ dirPath, excludeDirPath }) as Promise<{
+        candidates: MediaCandidate[];
+        supportedExtensions: string[];
+      }>,
     exists: (path: string) => client[IpcChannel.File_Exists]({ path }) as Promise<{ exists: boolean }>,
     browse: (type: "file" | "directory", filters?: Array<{ name: string; extensions: string[] }>) =>
       client[IpcChannel.File_Browse]({ type, filters }),
@@ -117,6 +155,8 @@ export const ipc = {
   maintenance: {
     scan: (dirPath: string) =>
       client[IpcChannel.Maintenance_Scan]({ dirPath }) as Promise<{ entries: LocalScanEntry[] }>,
+    scanFiles: (filePaths: string[]) =>
+      client[IpcChannel.Maintenance_Scan]({ filePaths }) as Promise<{ entries: LocalScanEntry[] }>,
     preview: (entries: LocalScanEntry[], presetId: MaintenancePresetId) =>
       client[IpcChannel.Maintenance_Preview]({ entries, presetId }) as Promise<MaintenancePreviewResult>,
     execute: (items: MaintenanceCommitItem[], presetId: MaintenancePresetId) =>

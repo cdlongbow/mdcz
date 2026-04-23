@@ -1,5 +1,11 @@
 import type { ScrapeResult, ScraperStatus } from "@shared/types";
-import { createIdleScraperStatus, type PersistedSessionState, SessionFileState, type SessionState } from "./types";
+import {
+  createIdleScraperStatus,
+  type PersistedSessionState,
+  type ScrapeSuccessItem,
+  SessionFileState,
+  type SessionState,
+} from "./types";
 
 interface ApplyResultOutcome {
   failureMembershipChanged: boolean;
@@ -17,6 +23,8 @@ export class SessionProgressTracker {
   private status: ScraperStatus = createIdleScraperStatus();
 
   private readonly fileStates = new Map<string, SessionFileState>();
+
+  private successItems: ScrapeSuccessItem[] = [];
 
   getState(): SessionState {
     return this.sessionState;
@@ -39,6 +47,7 @@ export class SessionProgressTracker {
     };
 
     this.fileStates.clear();
+    this.successItems = [];
     for (const file of files) {
       this.fileStates.set(file, SessionFileState.Pending);
     }
@@ -91,6 +100,14 @@ export class SessionProgressTracker {
     if (result.status === "success") {
       this.status.successCount += 1;
       this.fileStates.delete(sourcePath);
+      this.successItems.push({
+        sourcePath,
+        number: result.fileInfo.number,
+        title: result.crawlerData?.title ?? null,
+        actors: result.crawlerData?.actors ?? [],
+        lastKnownPath: result.fileInfo.filePath ?? null,
+        posterPath: result.assets?.poster ?? null,
+      });
       if (hadFailureBefore) {
         this.status.failedCount = Math.max(0, this.status.failedCount - 1);
       }
@@ -118,6 +135,13 @@ export class SessionProgressTracker {
 
   getPendingFiles(): string[] {
     return this.collectFiles(isPendingState);
+  }
+
+  getSuccessItemsSnapshot(): ScrapeSuccessItem[] {
+    return this.successItems.map((item) => ({
+      ...item,
+      actors: [...item.actors],
+    }));
   }
 
   buildSnapshot(taskId: string): PersistedSessionState {

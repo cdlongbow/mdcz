@@ -86,17 +86,18 @@ export const createScraperHandlers = (
         ),
       ),
     [IpcChannel.Scraper_Start]: t.procedure
-      .input<{ mode?: "single" | "batch"; paths?: string[] }>()
+      .input<{ mode?: "single" | "selection"; paths?: string[] }>()
       .action(({ input }) =>
         withIpcErrorHandling(
           "start scraper",
           async () => {
             const mode = input?.mode ?? "single";
             const paths = input?.paths ?? [];
-            return withLaunchMessage(
-              await scraperService.start(mode, paths),
-              mode === "single" ? "单文件刮削任务已启动" : "刮削任务已启动",
-            );
+            if (mode === "selection") {
+              return withLaunchMessage(await scraperService.startSelectedFiles(paths), "已启动选中文件刮削");
+            }
+
+            return withLaunchMessage(await scraperService.startSingle(paths), "单文件刮削任务已启动");
           },
           { mapError: toScraperServiceIpcError },
         ),

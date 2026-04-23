@@ -8,7 +8,13 @@ import { getProperty, mergeDeep, setProperty, toErrorMessage } from "@main/utils
 import { app } from "electron";
 import { ComputedConfig, type ComputedConfiguration } from "./computed";
 import { ConfigMigrationError, runMigrations } from "./migrator";
-import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "./models";
+import {
+  type Configuration,
+  configurationSchema,
+  type DeepPartial,
+  defaultConfiguration,
+  getConfigurationPathDefault,
+} from "./models";
 
 const ACTIVE_PROFILE_META_FILE = ".active-profile.json";
 const CONFIG_DIRECTORY_META_FILE = ".config-directory.json";
@@ -55,6 +61,8 @@ const normalizeProfileName = (name: string): string => {
   }
   return normalized;
 };
+
+const serializeConfiguration = (configuration: Configuration): string => `${JSON.stringify(configuration, null, 2)}\n`;
 
 export class ConfigManager extends EventEmitter {
   private readonly logger = loggerService.getLogger("ConfigManager");
@@ -138,13 +146,13 @@ export class ConfigManager extends EventEmitter {
       return;
     }
 
-    const defaultValue = getProperty(defaultConfiguration as unknown as Record<string, unknown>, path);
-    if (defaultValue === undefined) {
+    const resetDefault = getConfigurationPathDefault(path);
+    if (!resetDefault.found) {
       throw new Error(`Path not found: ${path}`);
     }
 
     const next = JSON.parse(JSON.stringify(this.configuration)) as Record<string, unknown>;
-    setProperty(next, path, defaultValue);
+    setProperty(next, path, resetDefault.value);
 
     const parsed = configurationSchema.parse(next);
     this.configuration = parsed;
@@ -191,17 +199,17 @@ export class ConfigManager extends EventEmitter {
   async createProfile(name: string): Promise<void> {
     await this.ensureLoaded();
     const profileName = normalizeProfileName(name);
-    const filePath = join(this.getDataDirectory(), `${profileName}.json`);
+    const filePath = this.getProfilePath(profileName);
     if (existsSync(filePath)) throw new Error(`Profile "${profileName}" already exists`);
     await mkdir(this.getDataDirectory(), { recursive: true });
-    await writeFile(filePath, JSON.stringify(defaultConfiguration, null, 2), "utf8");
+    await writeFile(filePath, serializeConfiguration(defaultConfiguration), "utf8");
     this.logger.info(`Created profile: ${profileName}`);
   }
 
   async switchProfile(name: string): Promise<void> {
     await this.ensureLoaded();
     const profileName = normalizeProfileName(name);
-    const filePath = join(this.getDataDirectory(), `${profileName}.json`);
+    const filePath = this.getProfilePath(profileName);
     if (!existsSync(filePath)) throw new Error(`Profile "${profileName}" not found`);
     this.activeProfileName = profileName;
     await this.persistActiveProfileName();
@@ -215,10 +223,54 @@ export class ConfigManager extends EventEmitter {
     await this.ensureLoaded();
     const profileName = normalizeProfileName(name);
     if (profileName === this.activeProfileName) throw new Error("Cannot delete the active profile");
-    const filePath = join(this.getDataDirectory(), `${profileName}.json`);
+    const filePath = this.getProfilePath(profileName);
     if (!existsSync(filePath)) throw new Error(`Profile "${profileName}" not found`);
     await unlink(filePath);
     this.logger.info(`Deleted profile: ${profileName}`);
+  }
+
+  async exportProfile(name: string, destinationPath: string): Promise<void> {
+    await this.ensureLoaded();
+    const profileName = normalizeProfileName(name);
+    const configuration =
+      profileName === this.activeProfileName
+        ? this.configuration
+        : await this.readProfileConfiguration(this.getProfilePath(profileName), profileName);
+
+    await writeFile(destinationPath, serializeConfiguration(configuration), "utf8");
+    this.logger.info(`Exported profile: ${profileName} -> ${destinationPath}`);
+  }
+
+  async importProfile(
+    sourcePath: string,
+    name: string,
+    overwrite = false,
+  ): Promise<{ profileName: string; overwritten: boolean; active: boolean }> {
+    await this.ensureLoaded();
+
+    const profileName = normalizeProfileName(name);
+    const targetPath = this.getProfilePath(profileName);
+    const overwritten = existsSync(targetPath);
+
+    if (overwritten && !overwrite) {
+      throw new Error(`Profile "${profileName}" already exists`);
+    }
+
+    const configuration = await this.readConfigurationFile(sourcePath);
+
+    await mkdir(this.getDataDirectory(), { recursive: true });
+    await writeFile(targetPath, serializeConfiguration(configuration), "utf8");
+
+    const active = profileName === this.activeProfileName;
+    if (active) {
+      this.initializePromise = null;
+      await this.ensureLoaded();
+      this.notify();
+    }
+
+    this.logger.info(`${overwritten ? "Overwrote" : "Imported"} profile: ${profileName} <- ${sourcePath}`);
+
+    return { profileName, overwritten, active };
   }
 
   private notify(): void {
@@ -232,12 +284,16 @@ export class ConfigManager extends EventEmitter {
     return join(app.getPath("userData"), this.configDirectory);
   }
 
+  private getProfilePath(profileName: string): string {
+    return join(this.getDataDirectory(), `${profileName}.json`);
+  }
+
   private getConfigDirectoryMetaPath(): string {
     return join(app.getPath("userData"), CONFIG_DIRECTORY_META_FILE);
   }
 
   private getConfigPath(): string {
-    return join(this.getDataDirectory(), `${this.activeProfileName}.json`);
+    return this.getProfilePath(this.activeProfileName);
   }
 
   private getActiveProfileMetaPath(): string {
@@ -313,9 +369,28 @@ export class ConfigManager extends EventEmitter {
 
   private async persist(): Promise<void> {
     await mkdir(this.getDataDirectory(), { recursive: true });
-    await writeFile(this.getConfigPath(), JSON.stringify(this.configuration, null, 2), "utf8");
+    await writeFile(this.getConfigPath(), serializeConfiguration(this.configuration), "utf8");
     await this.persistActiveProfileName();
     await this.persistConfigDirectory();
+  }
+
+  private parseConfigurationContent(content: string): Configuration {
+    const raw = JSON.parse(content) as Record<string, unknown>;
+    runMigrations(raw);
+    return configurationSchema.parse(raw);
+  }
+
+  private async readConfigurationFile(filePath: string): Promise<Configuration> {
+    const content = await readFile(filePath, "utf8");
+    return this.parseConfigurationContent(content);
+  }
+
+  private async readProfileConfiguration(filePath: string, profileName: string): Promise<Configuration> {
+    if (!existsSync(filePath)) {
+      throw new Error(`Profile "${profileName}" not found`);
+    }
+
+    return await this.readConfigurationFile(filePath);
   }
 
   private async loadInternal(): Promise<void> {

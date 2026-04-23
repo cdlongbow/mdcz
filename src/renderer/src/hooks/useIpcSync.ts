@@ -1,6 +1,8 @@
 import { toErrorMessage } from "@shared/error";
 import type { MaintenanceStatus, ScraperStatus } from "@shared/types";
+import type { QueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { overviewKeys } from "@/api/overview";
 import { ipc } from "@/client/ipc";
 import { createRuntimeLog, useLogStore } from "@/store/logStore";
 import { useMaintenanceExecutionStore } from "@/store/maintenanceExecutionStore";
@@ -51,7 +53,6 @@ const applyScrapeStatusSnapshot = (status: ScraperStatus) => {
   const scrapeStore = useScrapeStore.getState();
   const activeState = status.state ?? (status.running ? "running" : "idle");
   const active = activeState !== "idle";
-  const pending = Math.max(status.totalFiles - status.completedFiles, 0);
   const shouldSyncProgressFromStatus = activeState === "idle" || activeState === "paused";
 
   scrapeStore.setScraping(active);
@@ -62,12 +63,19 @@ const applyScrapeStatusSnapshot = (status: ScraperStatus) => {
   }
 
   scrapeStore.setFailedCount(status.failedCount);
-  scrapeStore.setStatusText(
-    `${activeState === "paused" ? "已暂停 | " : activeState === "stopping" ? "正在停止 | " : ""}待处理: ${pending} | 成功: ${status.successCount} | 失败: ${status.failedCount} | 跳过: ${status.skippedCount}`,
-  );
 };
 
-export const useIpcSync = () => {
+export const createOverviewInvalidationTracker = () => {
+  let lastButtonStatusActive = false;
+
+  return (nextActive: boolean): boolean => {
+    const shouldInvalidate = lastButtonStatusActive && !nextActive;
+    lastButtonStatusActive = nextActive;
+    return shouldInvalidate;
+  };
+};
+
+export const useIpcSync = (queryClient: QueryClient) => {
   const [runtimeReady, setRuntimeReady] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
 
@@ -75,6 +83,7 @@ export const useIpcSync = () => {
     let disposed = false;
     let pollTimeout: number | undefined;
     let syncPromise: Promise<void> | null = null;
+    const shouldInvalidateOverview = createOverviewInvalidationTracker();
     const unsubscribers: Array<() => void> = [];
 
     const reportAsyncError = (context: string, error: unknown) => {
@@ -161,12 +170,6 @@ export const useIpcSync = () => {
         );
 
         unsubscribers.push(
-          ipc.on.scrapeInfo((payload) => {
-            useScrapeStore.getState().setCurrentFilePath(payload.fileInfo.filePath);
-          }),
-        );
-
-        unsubscribers.push(
           ipc.on.maintenanceItemResult((payload) => {
             applyMaintenanceExecutionItemResult(payload);
             safeSync("maintenance item result", "maintenance");
@@ -208,9 +211,13 @@ export const useIpcSync = () => {
             const isRunning = !payload.startEnabled && payload.stopEnabled;
             const isStopping = !payload.startEnabled && !payload.stopEnabled;
             const active = isRunning || isStopping;
+            const nextStatus = isRunning ? "running" : isStopping ? "stopping" : "idle";
 
             scrapeStore.setScraping(active);
-            scrapeStore.setScrapeStatus(isRunning ? "running" : isStopping ? "stopping" : "idle");
+            scrapeStore.setScrapeStatus(nextStatus);
+            if (shouldInvalidateOverview(active)) {
+              void queryClient.invalidateQueries({ queryKey: overviewKeys.all });
+            }
             safeSync("button status", "scrape");
           }),
         );
@@ -245,7 +252,7 @@ export const useIpcSync = () => {
         unsubscribe();
       }
     };
-  }, []);
+  }, [queryClient]);
 
   return {
     runtimeReady,

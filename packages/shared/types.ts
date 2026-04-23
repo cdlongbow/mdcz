@@ -23,7 +23,6 @@ export interface VideoMeta {
   durationSeconds: number;
   width: number;
   height: number;
-  codec?: string;
   bitrate?: number;
 }
 
@@ -134,6 +133,16 @@ export interface NamingPreviewItem {
   label: string;
   folder: string;
   file: string;
+}
+
+export interface MediaCandidate {
+  path: string;
+  name: string;
+  size: number;
+  lastModified: string | null;
+  extension: string;
+  relativePath: string;
+  relativeDirectory: string;
 }
 
 export interface ScraperStatus {

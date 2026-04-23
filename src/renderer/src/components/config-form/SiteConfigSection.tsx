@@ -3,8 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
 import { ipc } from "@/client/ipc";
-import { Row } from "@/components/shared/Row";
+import { SiteConnectivityPill } from "@/components/settings/SiteConnectivityPill";
+import { FormControl } from "@/components/ui/Form";
 import { Input } from "@/components/ui/Input";
+import { BaseField } from "./FieldRenderer";
 
 interface SiteInfo {
   site: Website;
@@ -13,7 +15,11 @@ interface SiteInfo {
   native: boolean;
 }
 
-export function SiteConfigSection() {
+interface SiteConfigSectionProps {
+  sitesOverride?: string[];
+}
+
+export function SiteConfigSection({ sitesOverride }: SiteConfigSectionProps) {
   const form = useFormContext<FieldValues>();
   const sites =
     (useWatch({
@@ -30,38 +36,35 @@ export function SiteConfigSection() {
     staleTime: 60_000,
   });
 
-  const visibleSites = [...new Set(sites)];
+  const visibleSites = [...new Set((sitesOverride ?? sites) as Website[])];
   const siteInfoMap = new Map((sitesQ.data ?? []).map((site) => [site.site, site]));
 
   if (visibleSites.length === 0) return null;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="px-1">
-        <h2 className="text-xl font-bold tracking-tight mb-1 text-foreground">站点配置</h2>
-        <p className="text-muted-foreground text-sm">为每个已启用站点设置自定义 URL</p>
-      </div>
+    <div className="space-y-1">
+      {visibleSites.map((site) => {
+        const urlKey = `scrape.siteConfigs.${site}.customUrl`;
+        const siteInfo = siteInfoMap.get(site);
 
-      <div className="bg-card rounded-xl border shadow-sm overflow-hidden divide-y divide-border/50">
-        {visibleSites.map((site) => {
-          const urlKey = `scrape.siteConfigs.${site}.customUrl`;
-          const urlValue = (form.watch(urlKey) as string) ?? "";
-          const siteInfo = siteInfoMap.get(site);
-
-          return (
-            <Row key={site} variant="form" label={siteInfo?.name ?? site}>
-              <div className="flex items-center gap-6 flex-1 justify-end">
-                <Input
-                  value={urlValue}
-                  onChange={(e) => form.setValue(urlKey, e.target.value, { shouldDirty: true })}
-                  placeholder="默认 URL（留空使用内置地址）"
-                  className="h-8 text-sm bg-background/50 focus:bg-background transition-all max-w-[320px]"
-                />
-              </div>
-            </Row>
-          );
-        })}
-      </div>
+        return (
+          <BaseField key={site} name={urlKey} label={siteInfo?.name ?? site} commitMode="debounce">
+            {(field) => (
+              <FormControl>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Input
+                    {...field}
+                    value={(field.value as string) ?? ""}
+                    placeholder="请填写"
+                    className="h-8 min-w-[240px] flex-1 text-sm bg-background/50 transition-all focus:bg-background"
+                  />
+                  <SiteConnectivityPill site={site} />
+                </div>
+              </FormControl>
+            )}
+          </BaseField>
+        );
+      })}
     </div>
   );
 }
