@@ -37,8 +37,8 @@ const createCandidate = (path: string): MediaCandidate => ({
   relativeDirectory: "",
 });
 
-describe("mediaCandidateScan", () => {
-  it("builds a scrape scan plan that excludes failed output folders and adds the softlink scan root", () => {
+describe("workbench setup contract", () => {
+  it("plans normal scrape scans from configured paths and excludes output folders", () => {
     const plan = resolveMediaCandidateScanPlan("scrape", rootDir, successDir, createConfig());
 
     expect(plan.excludeDirPath).toBe(successDir);
@@ -46,7 +46,7 @@ describe("mediaCandidateScan", () => {
     expect(plan.extraScanDirs).toEqual([softlinkDir]);
   });
 
-  it("filters candidates that live inside excluded output directories", () => {
+  it("filters output-folder candidates and dedupes merged scan roots", () => {
     const keptVideo = createCandidate(
       process.platform === "win32" ? "D:\\media\\library\\ABC-123.mp4" : "/media/library/ABC-123.mp4",
     );
@@ -56,24 +56,17 @@ describe("mediaCandidateScan", () => {
     const successVideo = createCandidate(
       process.platform === "win32" ? "D:\\media\\JAV_output\\DONE-001.mp4" : "/media/JAV_output/DONE-001.mp4",
     );
-
-    expect(filterMediaCandidates([keptVideo, failedVideo, successVideo], [successDir, failedDir])).toEqual([keptVideo]);
-  });
-
-  it("dedupes merged candidate groups while preserving the first occurrence", () => {
-    const first = createCandidate(process.platform === "win32" ? "D:\\media\\ABC-123.mp4" : "/media/ABC-123.mp4");
-    const duplicate = createCandidate(process.platform === "win32" ? "D:\\MEDIA\\ABC-123.mp4" : "/media/ABC-123.mp4");
-    const second = createCandidate(
+    const duplicate = createCandidate(
+      process.platform === "win32" ? "D:\\MEDIA\\library\\ABC-123.mp4" : keptVideo.path,
+    );
+    const softlinkVideo = createCandidate(
       process.platform === "win32" ? "D:\\softlink\\SOFT-001.mp4" : "/softlink/SOFT-001.mp4",
     );
 
-    expect(mergeMediaCandidates([first], [duplicate, second])).toEqual([first, second]);
-  });
-
-  it("treats windows-style paths as case-insensitive even when the test host is not Windows", () => {
-    const first = createCandidate("D:\\media\\ABC-123.mp4");
-    const duplicate = createCandidate("d:/MEDIA/abc-123.mp4");
-
-    expect(mergeMediaCandidates([first], [duplicate])).toEqual([first]);
+    expect(filterMediaCandidates([keptVideo, failedVideo, successVideo], [successDir, failedDir])).toEqual([keptVideo]);
+    expect(mergeMediaCandidates([keptVideo], [duplicate, softlinkVideo])).toEqual([keptVideo, softlinkVideo]);
+    expect(
+      mergeMediaCandidates([createCandidate("D:\\media\\ABC-123.mp4")], [createCandidate("d:/MEDIA/abc-123.mp4")]),
+    ).toEqual([createCandidate("D:\\media\\ABC-123.mp4")]);
   });
 });

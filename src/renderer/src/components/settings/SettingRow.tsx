@@ -16,8 +16,6 @@ interface SettingRowProps {
   className?: string;
   controlClassName?: string;
   layout?: SettingRowLayout;
-  /** When true, apply a dimmed visual to indicate this row is filtered out by search. */
-  dimmed?: boolean;
   /** When true, apply a subtle highlight to indicate this row matches the current search. */
   highlighted?: boolean;
 }
@@ -34,7 +32,6 @@ export function SettingRow({
   className,
   controlClassName,
   layout = "horizontal",
-  dimmed,
   highlighted,
 }: SettingRowProps) {
   const search = useOptionalSettingsSearch();
@@ -61,7 +58,6 @@ export function SettingRow({
           ? "flex-col gap-2.5"
           : "flex-col gap-2.5 md:flex-row md:items-start md:justify-between md:gap-6",
         highlighted && "rounded-[var(--radius-quiet-sm)] -mx-2 px-2 bg-primary/5",
-        dimmed && "opacity-40",
         className,
       )}
     >

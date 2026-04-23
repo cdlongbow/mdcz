@@ -16,12 +16,11 @@ import {
   NfoSection,
   PathsSection,
   ScrapePacingSection,
-  SECTION_LABELS,
   ShortcutsSection,
   TranslateSection,
   UiSection,
 } from "./settingsContent";
-import type { FieldAnchor } from "./settingsRegistry";
+import { type FieldAnchor, SECTION_LABELS } from "./settingsRegistry";
 
 interface SiteOptionsProps {
   siteOptions: string[];

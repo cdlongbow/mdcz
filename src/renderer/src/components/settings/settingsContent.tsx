@@ -27,26 +27,13 @@ import {
   UrlField,
 } from "@/components/config-form/FieldRenderer";
 import { Button } from "@/components/ui/Button";
-import { Form, FormControl } from "@/components/ui/Form";
+import { FormControl } from "@/components/ui/Form";
 import { Switch } from "@/components/ui/Switch";
 import { useSettingsSavingStore } from "@/store/settingsSavingStore";
 import { AggregationPriorityEditorField } from "./AggregationPriorityEditorField";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
 import { shouldRenderFieldInSectionMode, useSettingsSectionMode } from "./SettingsSectionModeContext";
-import {
-  AGGREGATION_PRIORITY_FIELDS,
-  FIELD_REGISTRY,
-  type FieldEntry,
-  flattenConfig,
-  getNestedValue,
-  isRecord,
-  SECTION_LABELS,
-  unflattenConfig,
-} from "./settingsRegistry";
-
-export { Form };
-export { FIELD_REGISTRY, SECTION_LABELS, flattenConfig, unflattenConfig };
-export type { FieldEntry };
+import { AGGREGATION_PRIORITY_FIELDS, getNestedValue, isRecord, unflattenConfig } from "./settingsRegistry";
 
 // ── Constants ──
 
