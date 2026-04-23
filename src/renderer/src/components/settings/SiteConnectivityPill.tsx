@@ -19,7 +19,7 @@ interface SiteConnectivityPillProps {
 }
 
 const STATUS_LABELS: Record<ConnectivityState["kind"], string> = {
-  idle: "未测",
+  idle: "",
   loading: "检测中",
   success: "正常",
   error: "异常",
@@ -106,19 +106,6 @@ export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
 
   return (
     <div className="flex items-center gap-2">
-      <span
-        title={state.message}
-        className={cn(
-          "inline-flex min-w-[64px] items-center justify-center gap-1 rounded-[var(--radius-quiet-capsule)] px-2.5 py-1 text-[11px] font-medium",
-          state.kind === "idle" && "bg-surface-low text-muted-foreground",
-          state.kind === "loading" && "bg-surface-low text-foreground",
-          state.kind === "success" && "bg-emerald-500/10 text-emerald-700",
-          state.kind === "error" && "bg-rose-500/10 text-rose-700",
-        )}
-      >
-        {state.kind === "loading" && <Loader2 className="h-3 w-3 animate-spin" />}
-        <span>{STATUS_LABELS[state.kind]}</span>
-      </span>
       <Button
         type="button"
         variant="ghost"
@@ -130,6 +117,19 @@ export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
       >
         测试
       </Button>
+      <span
+        title={state.message}
+        hidden={state.kind === "idle"}
+        className={cn(
+          "inline-flex min-w-[64px] items-center justify-center gap-1 rounded-[var(--radius-quiet-capsule)] px-2.5 py-1 text-[11px] font-medium",
+          state.kind === "loading" && "bg-surface-low text-foreground",
+          state.kind === "success" && "bg-emerald-500/10 text-emerald-700",
+          state.kind === "error" && "bg-rose-500/10 text-rose-700",
+        )}
+      >
+        {state.kind === "loading" && <Loader2 className="h-3 w-3 animate-spin" />}
+        <span>{STATUS_LABELS[state.kind]}</span>
+      </span>
     </div>
   );
 }

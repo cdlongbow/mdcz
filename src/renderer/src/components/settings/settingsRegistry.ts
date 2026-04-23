@@ -3,6 +3,7 @@
  * `settingsContent.tsx` so hooks and filter logic can reuse the same metadata
  * without pulling in React renderers.
  */
+import { Website } from "@shared/enums";
 
 export const SECTION_ORDER = ["dataSources", "rateLimiting", "extractionRules", "paths", "system"] as const;
 
@@ -27,13 +28,13 @@ export interface AggregationPriorityFieldDefinition {
   aliases: string[];
 }
 
-export const SECTION_DESCRIPTIONS: Record<FieldAnchor, string> = {
-  dataSources: "刮削站点、翻译、人物同步服务的数据来源与凭证",
-  rateLimiting: "并发、延迟、重试、代理等节奏与连接控制",
-  extractionRules: "抓取策略、命名模板、资源下载与 NFO",
-  paths: "媒体库、头像库、输出与配置目录",
-  system: "界面、快捷键、刮削后的文件行为",
-};
+interface SiteCustomUrlFieldDefinition {
+  key: `scrape.siteConfigs.${string}.customUrl`;
+  label: string;
+  anchor: "dataSources";
+  description: string;
+  aliases: string[];
+}
 
 export const SECTION_LABELS: Record<FieldAnchor, string> = {
   dataSources: "数据源",
@@ -148,6 +149,18 @@ const AGGREGATION_PRIORITY_ALIASES = Object.fromEntries(
   AGGREGATION_PRIORITY_FIELDS.map((entry) => [entry.key, entry.aliases]),
 ) as Record<string, string[]>;
 
+const SITE_CUSTOM_URL_FIELDS: SiteCustomUrlFieldDefinition[] = Object.values(Website).map((site) => ({
+  key: `scrape.siteConfigs.${site}.customUrl`,
+  label: `${site} 站点地址`,
+  anchor: "dataSources",
+  description: `覆盖 ${site} 的内置地址，并用于当前配置下的连通性测试。`,
+  aliases: [site, `${site} url`, `${site} 地址`, "custom url", "mirror", "站点地址", "连通性"],
+}));
+
+const SITE_CUSTOM_URL_ALIASES = Object.fromEntries(
+  SITE_CUSTOM_URL_FIELDS.map((entry) => [entry.key, entry.aliases]),
+) as Record<string, string[]>;
+
 const ADVANCED_FIELD_KEYS = new Set<string>([
   "download.sceneImageConcurrency",
   "aggregation.maxParallelCrawlers",
@@ -162,6 +175,7 @@ const ADVANCED_FIELD_KEYS = new Set<string>([
 
 const FIELD_ALIASES: Record<string, string[]> = {
   ...AGGREGATION_PRIORITY_ALIASES,
+  ...SITE_CUSTOM_URL_ALIASES,
   "paths.mediaPath": ["media", "library", "媒体库"],
   "paths.actorPhotoFolder": ["actor", "photo", "头像", "演员"],
   "paths.softlinkPath": ["symlink", "softlink", "链接"],
@@ -207,6 +221,7 @@ const RAW_FIELD_REGISTRY: Array<Pick<FieldEntry, "key" | "label" | "anchor" | "d
   { key: "paths.sceneImagesFolder", label: "剧照目录名", anchor: "paths" },
   { key: "paths.configDirectory", label: "配置文件目录", anchor: "paths" },
   { key: "scrape.sites", label: "启用站点与优先级", anchor: "dataSources" },
+  ...SITE_CUSTOM_URL_FIELDS,
   { key: "scrape.threadNumber", label: "并发线程数", anchor: "rateLimiting" },
   { key: "scrape.javdbDelaySeconds", label: "JavDB 请求延迟(秒)", anchor: "rateLimiting" },
   { key: "scrape.restAfterCount", label: "连续刮削后休息(条数)", anchor: "rateLimiting" },

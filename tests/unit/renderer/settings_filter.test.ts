@@ -24,6 +24,7 @@ describe("settingsFilter", () => {
     expect(visibleKeys.has("aggregation.maxParallelCrawlers")).toBe(false);
     expect(visibleKeys.has("naming.partStyle")).toBe(true);
     expect(visibleKeys.has("paths.mediaPath")).toBe(true);
+    expect(visibleKeys.has("scrape.siteConfigs.javdb.customUrl")).toBe(true);
   });
 
   it("showAdvanced reveals advanced settings without changing the grouped ordering", () => {

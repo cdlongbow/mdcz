@@ -9,15 +9,7 @@ import { ResetToDefaultButton } from "@/components/settings/ResetToDefaultButton
 import { SettingRow } from "@/components/settings/SettingRow";
 import { useOptionalSettingsSearch } from "@/components/settings/SettingsSearchContext";
 import { Button } from "@/components/ui/Button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
+import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { FormItem } from "@/components/ui/Form";
 import { useAutoSaveField } from "@/hooks/useAutoSaveField";
 import { cn } from "@/lib/utils";
@@ -44,7 +36,6 @@ export function SitePriorityEditorField({
   options,
   name = "scrape.sites",
   label = "启用站点与优先级",
-  description = "勾选启用站点，上下移动调整优先级。",
 }: SitePriorityEditorFieldProps) {
   const form = useFormContext<FieldValues>();
   const search = useOptionalSettingsSearch();
@@ -88,7 +79,6 @@ export function SitePriorityEditorField({
         <SettingRow
           fieldName={name}
           label={label}
-          description={description}
           error={rowError}
           headerAction={modified ? <ResetToDefaultButton label={label} onClick={resetToDefault} /> : null}
           status={<AutoSaveStatusIndicator status={status} />}
@@ -123,20 +113,14 @@ export function SitePriorityEditorField({
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className={EDITOR_DIALOG_CLASS_NAME}>
-          <DialogHeader className="gap-3 px-7 pt-7 text-left">
+          <DialogHeader className="gap-3 px-7 pt-7 pb-2 text-left">
             <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">刮削站点</p>
             <DialogTitle className="text-2xl font-semibold tracking-tight">{label}</DialogTitle>
-            <DialogDescription className="max-w-2xl text-sm leading-6">{description}</DialogDescription>
           </DialogHeader>
           <div className="max-h-[min(74vh,880px)] overflow-y-auto border-y border-border/50 px-6 py-6">
             <div className="space-y-8">
               <section className="space-y-4">
-                <header className="space-y-1">
-                  <h3 className="font-numeric text-lg font-semibold tracking-[-0.02em] text-foreground">
-                    启用站点与优先级
-                  </h3>
-                  <p className="text-sm leading-6 text-muted-foreground">勾选启用站点，上下移动调整优先级。</p>
-                </header>
+                <p className="text-sm leading-6 text-muted-foreground">勾选启用站点，上下移动调整优先级。</p>
                 <OrderedSiteFieldEditor value={draftValue} options={options} onChange={setDraftValue} />
               </section>
 
@@ -146,7 +130,7 @@ export function SitePriorityEditorField({
                     站点地址与连通性
                   </h3>
                   <p className="text-sm leading-6 text-muted-foreground">
-                    为已启用站点覆盖内置地址，并直接在这里测试当前代理、Cookie 与站点连通性。
+                    为已启用站点覆盖内置地址，留空则使用内置地址。
                   </p>
                 </header>
                 <SiteConfigSection sitesOverride={draftValue} />

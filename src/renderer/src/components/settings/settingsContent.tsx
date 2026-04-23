@@ -40,13 +40,12 @@ import {
   flattenConfig,
   getNestedValue,
   isRecord,
-  SECTION_DESCRIPTIONS,
   SECTION_LABELS,
   unflattenConfig,
 } from "./settingsRegistry";
 
 export { Form };
-export { FIELD_REGISTRY, SECTION_DESCRIPTIONS, SECTION_LABELS, flattenConfig, unflattenConfig };
+export { FIELD_REGISTRY, SECTION_LABELS, flattenConfig, unflattenConfig };
 export type { FieldEntry };
 
 // ── Constants ──
@@ -219,7 +218,7 @@ export function PathsSection() {
       <PathFieldWrapper
         name="paths.actorPhotoFolder"
         label="演员头像库目录"
-        description="建议放在媒体库目录下。这里的头像会优先使用；如果希望优先使用在线头像，请在“人物头像来源顺序”中调整“本地”的位置或移除它。"
+        description="建议放在媒体目录下。这里的头像会优先使用；如希望优先使用在线头像，请在“人物头像来源顺序”中调整“本地”的位置或移除它。"
         isDirectory
       />
       <PathFieldWrapper name="paths.softlinkPath" label="软链接目录" isDirectory />

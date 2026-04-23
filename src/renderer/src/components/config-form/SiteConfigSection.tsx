@@ -55,7 +55,7 @@ export function SiteConfigSection({ sitesOverride }: SiteConfigSectionProps) {
                   <Input
                     {...field}
                     value={(field.value as string) ?? ""}
-                    placeholder="默认 URL（留空使用内置地址）"
+                    placeholder="请填写"
                     className="h-8 min-w-[240px] flex-1 text-sm bg-background/50 transition-all focus:bg-background"
                   />
                   <SiteConnectivityPill site={site} />

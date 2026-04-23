@@ -77,6 +77,10 @@ describe("settingsRegistry", () => {
     expect(FIELD_REGISTRY.find((entry) => entry.key === "naming.partStyle")?.visibility).toBe("public");
     expect(FIELD_REGISTRY.find((entry) => entry.key === "translate.llmPrompt")?.visibility).toBe("public");
     expect(FIELD_REGISTRY.find((entry) => entry.key === "paths.mediaPath")?.visibility).toBe("public");
+    expect(FIELD_REGISTRY.find((entry) => entry.key === "scrape.siteConfigs.javdb.customUrl")).toMatchObject({
+      anchor: "dataSources",
+      visibility: "public",
+    });
   });
 
   it("exposes public advanced download and aggregation keys while hiding other-surface or internal keys", () => {

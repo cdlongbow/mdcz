@@ -25,10 +25,10 @@ export function SettingsForm({ flatDefaults, initialUseCustomTitleBar }: Setting
         <SettingsEmptyState />
       ) : (
         <>
+          <PathsTopLevelSection forceOpen={search.isSectionForceOpen("paths")} />
           <DataSourcesSection siteOptions={siteOptions} forceOpen={search.isSectionForceOpen("dataSources")} />
           <RateLimitingSection forceOpen={search.isSectionForceOpen("rateLimiting")} />
           <ExtractionRulesSection forceOpen={search.isSectionForceOpen("extractionRules")} />
-          <PathsTopLevelSection forceOpen={search.isSectionForceOpen("paths")} />
           <SystemTopLevelSection
             initialUseCustomTitleBar={initialUseCustomTitleBar}
             forceOpen={search.isSectionForceOpen("system")}

@@ -1,10 +1,4 @@
-import {
-  type FieldAnchor,
-  type FieldEntry,
-  SECTION_DESCRIPTIONS,
-  SECTION_FILTER_ALIASES,
-  SECTION_LABELS,
-} from "./settingsRegistry";
+import { type FieldAnchor, type FieldEntry, SECTION_FILTER_ALIASES, SECTION_LABELS } from "./settingsRegistry";
 
 export interface ParsedSettingsQuery {
   raw: string;
@@ -25,7 +19,7 @@ export interface SettingsSuggestion {
   kind: "token" | "group";
   label: string;
   insertValue: string;
-  description: string;
+  description?: string;
 }
 
 const TOKEN_MODIFIED = "@modified";
@@ -41,11 +35,8 @@ function tokenize(query: string): string[] {
 
 function entrySearchText(entry: FieldEntry): string {
   const sectionLabel = SECTION_LABELS[entry.anchor];
-  const sectionDescription = SECTION_DESCRIPTIONS[entry.anchor];
   const aliases = SECTION_FILTER_ALIASES[entry.anchor];
-  return normalize(
-    [entry.label, entry.description, ...entry.aliases, sectionLabel, sectionDescription, ...aliases].join(" "),
-  );
+  return normalize([entry.label, entry.description, ...entry.aliases, sectionLabel, ...aliases].join(" "));
 }
 
 function matchesGroup(anchor: FieldAnchor, term: string): boolean {
@@ -172,7 +163,6 @@ function buildGroupSuggestions(prefix: string): SettingsSuggestion[] {
       kind: "group" as const,
       label: `按分组筛选: ${label}`,
       insertValue: `${TOKEN_GROUP}${label}`,
-      description: SECTION_DESCRIPTIONS[anchor as FieldAnchor],
     }));
 }
 
