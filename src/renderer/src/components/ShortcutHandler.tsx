@@ -101,7 +101,6 @@ export function ShortcutHandler() {
               try {
                 await stopScrape();
                 useScrapeStore.getState().setScrapeStatus("stopping");
-                useScrapeStore.getState().setStatusText("正在停止...");
                 toast.info("正在停止刮削任务...");
               } catch (error) {
                 toast.error(`停止失败: ${toErrorMessage(error)}`);

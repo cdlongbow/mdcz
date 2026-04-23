@@ -17,6 +17,7 @@ const DEFAULT_WINDOW_WIDTH = 1100;
 const DEFAULT_WINDOW_HEIGHT = 750;
 const MIN_WINDOW_WIDTH = 900;
 const MIN_WINDOW_HEIGHT = 640;
+const DEFAULT_RENDERER_ROUTE = "/overview";
 
 export interface MainWindowCreationOptions {
   useCustomTitleBar: boolean;
@@ -106,11 +107,11 @@ export class WindowService {
     const rendererUrl = process.env.ELECTRON_RENDERER_URL;
 
     if (rendererUrl) {
-      await mainWindow.loadURL(rendererUrl);
+      await mainWindow.loadURL(new URL(DEFAULT_RENDERER_ROUTE, rendererUrl).toString());
       return;
     }
 
-    await mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+    await mainWindow.loadFile(join(__dirname, "../renderer/index.html"), { hash: DEFAULT_RENDERER_ROUTE });
   }
 
   toggleDevTools(): void {
