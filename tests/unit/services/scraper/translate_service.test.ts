@@ -192,6 +192,40 @@ describe("TranslateService term consistency", () => {
     expect(sleepMock).toHaveBeenCalledWith(1000, undefined, undefined);
   });
 
+  it("retries llm request after a timeout", async () => {
+    const timeoutError = new Error(
+      "LLM request failed for https://generativelanguage.googleapis.com/v1beta/openai/chat/completions: Request timeout (10000 ms) exceeded.",
+    );
+    const generateText = vi.fn().mockRejectedValueOnce(timeoutError).mockResolvedValueOnce("超时重试成功");
+    const llmApiClient = createLlmApiClient(generateText);
+
+    const service = new TranslateService(new NetworkClient({}), llmApiClient);
+    const config = createBaseConfig();
+
+    await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("超时重试成功");
+
+    expect(generateText).toHaveBeenCalledTimes(2);
+    expect(sleepMock).toHaveBeenCalledWith(1000, undefined, undefined);
+  });
+
+  it("does not retry llm request when the provider returns an empty successful response", async () => {
+    const emptyResponseError = new Error(
+      'LLM response did not contain text for https://generativelanguage.googleapis.com/v1beta/openai/chat/completions: {"choices":[{"message":{"role":"assistant"}}],"usage":{"completion_tokens":0}}',
+    );
+    const generateText = vi.fn().mockRejectedValue(emptyResponseError);
+    const llmApiClient = createLlmApiClient(generateText);
+    const networkClient = new NetworkClient({});
+    vi.spyOn(networkClient, "getJson").mockRejectedValue(new Error("network disabled"));
+
+    const service = new TranslateService(networkClient, llmApiClient);
+    const config = createBaseConfig();
+
+    await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("hello");
+
+    expect(generateText).toHaveBeenCalledTimes(1);
+    expect(sleepMock).not.toHaveBeenCalled();
+  });
+
   it("does not retry llm request for non-429 errors", async () => {
     const serverError = Object.assign(new Error("server error"), {
       status: 500,

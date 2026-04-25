@@ -1,5 +1,6 @@
 import type { NetworkJsonResponse } from "@main/services/network";
 import { NetworkClient } from "@main/services/network";
+import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_LLM_BASE_URL } from "@shared/llm";
 
 type LlmHeadersInit = Headers | Record<string, string> | Array<[string, string]>;
@@ -46,6 +47,8 @@ interface ChatCompletionsResponse {
 }
 
 const RESPONSES_UNSUPPORTED_STATUS_CODES = new Set([404, 405, 415, 422, 501]);
+const GOOGLE_AI_STUDIO_HOSTNAME = "generativelanguage.googleapis.com";
+const GOOGLE_OPENAI_PATH_SUFFIX = "/openai";
 
 export class LlmApiError extends Error {
   constructor(
@@ -85,7 +88,7 @@ export class LlmApiClient {
     }
 
     const responsesUrl = `${baseUrl}/responses`;
-    const responsesResponse = await this.transport.postJsonDetailed<ResponsesApiResponse>(
+    const responsesResponse = await this.postJsonDetailed<ResponsesApiResponse>(
       responsesUrl,
       {
         model: request.model,
@@ -96,7 +99,11 @@ export class LlmApiClient {
     );
 
     if (responsesResponse.ok) {
-      return this.extractResponsesText(responsesResponse.data);
+      return this.requireExtractedText(
+        responsesUrl,
+        responsesResponse,
+        this.extractResponsesText(responsesResponse.data),
+      );
     }
 
     if (this.shouldFallbackToChatCompletions(responsesResponse)) {
@@ -113,7 +120,7 @@ export class LlmApiClient {
     signal?: AbortSignal,
   ): Promise<string | null> {
     const chatUrl = `${baseUrl}/chat/completions`;
-    const response = await this.transport.postJsonDetailed<ChatCompletionsResponse>(
+    const response = await this.postJsonDetailed<ChatCompletionsResponse>(
       chatUrl,
       {
         model: request.model,
@@ -132,7 +139,7 @@ export class LlmApiClient {
       throw this.toLlmApiError(chatUrl, response);
     }
 
-    return this.extractChatCompletionsText(response.data);
+    return this.requireExtractedText(chatUrl, response, this.extractChatCompletionsText(response.data));
   }
 
   private buildHeaders(apiKey: string): Headers {
@@ -141,6 +148,43 @@ export class LlmApiClient {
       headers.set("authorization", `Bearer ${apiKey.trim()}`);
     }
     return headers;
+  }
+
+  private async postJsonDetailed<TResponse>(
+    url: string,
+    payload: unknown,
+    init?: { headers?: LlmHeadersInit; signal?: AbortSignal },
+  ): Promise<NetworkJsonResponse<TResponse>> {
+    try {
+      return await this.transport.postJsonDetailed<TResponse>(url, payload, init);
+    } catch (error) {
+      throw new Error(`LLM request failed for ${url}: ${toErrorMessage(error)}`);
+    }
+  }
+
+  private requireExtractedText(
+    url: string,
+    response: NetworkJsonResponse<unknown>,
+    text: string | null,
+  ): string | null {
+    if (typeof text === "string" && text.trim()) {
+      return text;
+    }
+
+    throw new LlmApiError(
+      `LLM response did not contain text for ${url}: ${this.summarizeResponseData(response.data)}`,
+      response.status,
+      response.headers,
+      response.data,
+    );
+  }
+
+  private summarizeResponseData(data: unknown): string {
+    const text = typeof data === "string" ? data : JSON.stringify(data);
+    if (!text || text.trim().length === 0) {
+      return "(empty body)";
+    }
+    return text.length > 500 ? `${text.slice(0, 500)}...` : text;
   }
 
   private shouldFallbackToChatCompletions(response: NetworkJsonResponse<ResponsesApiResponse>): boolean {
@@ -164,9 +208,8 @@ export class LlmApiClient {
   private shouldUseChatCompletionsFirst(baseUrl: string): boolean {
     try {
       const url = new URL(baseUrl);
-      return (
-        url.hostname === "generativelanguage.googleapis.com" && url.pathname.replace(/\/+$/u, "").endsWith("/openai")
-      );
+      const normalizedPath = url.pathname.replace(/\/+$/u, "");
+      return url.hostname === GOOGLE_AI_STUDIO_HOSTNAME && normalizedPath.endsWith(GOOGLE_OPENAI_PATH_SUFFIX);
     } catch {
       return false;
     }

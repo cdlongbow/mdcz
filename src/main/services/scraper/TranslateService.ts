@@ -108,7 +108,7 @@ export class TranslateService {
       }
     }
 
-    this.logger.warn(`Translation engine failed, returning original text`);
+    this.logger.warn("Translation engine failed, returning original text");
     return text;
   }
 }

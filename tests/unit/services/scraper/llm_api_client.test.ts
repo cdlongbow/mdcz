@@ -131,6 +131,14 @@ describe("LlmApiClient", () => {
       "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
       "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
     ]);
+    expect(postJsonDetailed.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    );
+
+    const headers = postJsonDetailed.mock.calls[0][2].headers as Headers;
+    expect(headers.get("authorization")).toBe("Bearer test-key");
   });
 
   it("throws a typed error when responses fails without a supported fallback", async () => {
@@ -161,5 +169,35 @@ describe("LlmApiClient", () => {
       status: 401,
       message: expect.stringContaining("Invalid API key"),
     });
+  });
+
+  it("throws a clear error when a successful response contains no text", async () => {
+    const postJsonDetailed = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      resolvedUrl: `${DEFAULT_LLM_BASE_URL}/chat/completions`,
+      headers: new Headers(),
+      data: {
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {},
+          },
+        ],
+      },
+    });
+
+    const client = new LlmApiClient({ postJsonDetailed });
+
+    await expect(
+      client.generateText({
+        model: "gpt-5.2",
+        apiKey: "test-key",
+        baseUrl: "",
+        temperature: 1,
+        prompt: "hello",
+      }),
+    ).rejects.toThrow("LLM response did not contain text");
   });
 });

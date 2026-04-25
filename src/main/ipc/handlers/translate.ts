@@ -48,9 +48,7 @@ export const createTranslateHandlers = (
           apiKey: llmApiKey,
           baseUrl: normalizedBaseUrl,
           temperature: Math.min(2, Math.max(0, llmTemperature)),
-          prompt: llmPrompt
-            .replaceAll("{lang}", "简体中文")
-            .replaceAll("{content}", "雨上がりの街で見つけた小さな約束"),
+          prompt: llmPrompt.replaceAll("{lang}", "简体中文").replaceAll("{content}", "ある日の暮方の事である。"),
         });
         logger.info(`Test LLM connectivity: Success, reply="${content}"`);
 
