@@ -5,9 +5,13 @@
   "type": "module",
   "exports": {
     ".": "./index.ts",
+    "./stores": "./stores/index.ts",
+    "./stores/*": "./stores/*.ts",
+    "./viewModels/*": "./viewModels/*.ts",
     "./*": "./*.ts"
   },
   "dependencies": {
+    "zustand": "^5.0.9",
     "zod": "^4.3.6"
   }
 }

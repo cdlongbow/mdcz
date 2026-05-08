@@ -62,8 +62,37 @@ CREATE TABLE `scrape_results` (
   `nfo_relative_path` text,
   `output_relative_path` text,
   `manual_url` text,
+  `uncensored_ambiguous` integer NOT NULL DEFAULT 0,
   `created_at` integer NOT NULL,
   `updated_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `maintenance_previews` (
+  `id` text PRIMARY KEY NOT NULL,
+  `task_id` text NOT NULL,
+  `root_id` text NOT NULL,
+  `relative_path` text NOT NULL,
+  `preset_id` text NOT NULL,
+  `status` text NOT NULL,
+  `error_message` text,
+  `field_diffs_json` text NOT NULL DEFAULT '[]',
+  `unchanged_field_diffs_json` text NOT NULL DEFAULT '[]',
+  `path_diff_json` text,
+  `proposed_crawler_data_json` text,
+  `created_at` integer NOT NULL,
+  `updated_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `maintenance_apply_log` (
+  `id` text PRIMARY KEY NOT NULL,
+  `task_id` text NOT NULL,
+  `preview_id` text NOT NULL,
+  `root_id` text NOT NULL,
+  `relative_path` text NOT NULL,
+  `preset_id` text NOT NULL,
+  `status` text NOT NULL,
+  `error_message` text,
+  `applied_at` integer NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `library_entries` (
@@ -83,4 +112,42 @@ CREATE TABLE `library_entries` (
   `last_known_path` text,
   `indexed_at` integer NOT NULL,
   UNIQUE(`root_id`, `root_relative_path`)
+);
+--> statement-breakpoint
+CREATE TABLE `library_items` (
+  `id` text PRIMARY KEY NOT NULL,
+  `media_identity` text,
+  `crawler_data_json` text,
+  `source_task_id` text,
+  `scrape_output_id` text,
+  `title` text,
+  `number` text,
+  `actors_json` text NOT NULL DEFAULT '[]',
+  `indexed_at` integer NOT NULL,
+  `last_refreshed_at` integer
+);
+--> statement-breakpoint
+CREATE TABLE `library_item_files` (
+  `id` text PRIMARY KEY NOT NULL,
+  `item_id` text NOT NULL,
+  `root_id` text NOT NULL,
+  `root_relative_path` text NOT NULL,
+  `file_name` text NOT NULL,
+  `directory` text NOT NULL,
+  `size` integer NOT NULL DEFAULT 0,
+  `modified_at` integer,
+  `last_known_path` text,
+  `created_at` integer NOT NULL,
+  `updated_at` integer NOT NULL,
+  UNIQUE(`item_id`, `root_id`, `root_relative_path`)
+);
+--> statement-breakpoint
+CREATE TABLE `library_item_assets` (
+  `id` text PRIMARY KEY NOT NULL,
+  `item_id` text NOT NULL,
+  `kind` text NOT NULL,
+  `uri` text NOT NULL,
+  `root_id` text,
+  `relative_path` text,
+  `created_at` integer NOT NULL
 );

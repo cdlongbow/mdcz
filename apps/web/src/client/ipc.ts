@@ -1,4 +1,6 @@
 import type { Configuration } from "@mdcz/shared/config";
+import type { Website } from "@mdcz/shared/enums";
+import type { TranslateTestLlmInputDto } from "@mdcz/shared/serverDtos";
 import { api } from "../client";
 
 /**
@@ -78,8 +80,20 @@ const triggerDownload = (fileName: string, content: string, mimeType: string): v
 
 export const ipc = {
   app: {
-    ensureWatermarkDirectory: async () => ({ path: "(server)", warnings: [] as string[] }),
-    openWatermarkDirectory: async () => undefined,
+    ensureWatermarkDirectory: async () => await api.app.ensureWatermarkDirectory(),
+    openWatermarkDirectory: async () => {
+      const result = await api.app.ensureWatermarkDirectory();
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(result.path);
+        return { copied: true, message: "已复制服务器角标图片目录路径。", path: result.path, unsupported: true };
+      }
+      return {
+        copied: false,
+        message: "浏览器无法打开服务器文件夹，请复制上方服务器路径。",
+        path: result.path,
+        unsupported: true,
+      };
+    },
     relaunch: async () => {
       if (typeof window !== "undefined") {
         window.location.reload();
@@ -87,14 +101,14 @@ export const ipc = {
     },
   },
   crawler: {
-    listSites: async () => ({ sites: [] as Array<unknown> }),
-    probeSiteConnectivity: async (_site: string) => ({ ok: false, message: "WebUI 暂不支持站点连通性测试" }),
+    listSites: async () => await api.crawler.listSites(),
+    probeSiteConnectivity: async (site: Website) => await api.crawler.probeSiteConnectivity({ site }),
   },
   network: {
-    checkCookies: async () => ({ results: [] as Array<{ site: string; valid: boolean; message: string }> }),
+    checkCookies: async () => await api.network.checkCookies(),
   },
   translate: {
-    testLlm: async (_input: unknown) => ({ success: false, message: "WebUI 暂不支持 LLM 测试" }),
+    testLlm: async (input: TranslateTestLlmInputDto) => await api.translate.testLlm(input),
   },
   config: {
     get: async (path?: string) => {
@@ -131,7 +145,7 @@ export const ipc = {
         throw new Error("已选择的文件不可用，请重新选择。");
       }
       const content = await entry.file.text();
-      const result = await api.config.profiles.import({ name, content, overwrite });
+      const result = await api.config.profiles.import({ name, content, fileName: entry.file.name, overwrite });
       importFileStash.delete(filePath);
       return {
         success: true as const,

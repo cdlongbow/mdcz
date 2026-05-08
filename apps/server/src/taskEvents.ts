@@ -1,10 +1,13 @@
-import type { WebTaskUpdateDto } from "@mdcz/shared/serverDtos";
+import type { TaskRealtimeEventDto, WebTaskUpdateDto } from "@mdcz/shared/serverDtos";
 
-export type TaskEventPayload = WebTaskUpdateDto;
+export type TaskUpdatePayload = WebTaskUpdateDto;
+export type TaskRealtimePayload = TaskRealtimeEventDto;
+export type TaskEventPayload = TaskRealtimePayload | TaskUpdatePayload;
+export type TaskSseEventName = "task-event" | "task-update";
 
 export interface TaskEventEnvelope {
   id: string;
-  event: "task-update";
+  event: TaskSseEventName;
   data: TaskEventPayload;
 }
 
@@ -21,10 +24,18 @@ export class TaskEventBus {
     };
   }
 
-  publish(payload: TaskEventPayload): TaskEventEnvelope {
+  publish(payload: TaskUpdatePayload): TaskEventEnvelope {
+    return this.publishEnvelope("task-update", payload);
+  }
+
+  publishRealtime(payload: TaskRealtimePayload): TaskEventEnvelope {
+    return this.publishEnvelope("task-event", payload);
+  }
+
+  private publishEnvelope(eventName: TaskSseEventName, payload: TaskEventPayload): TaskEventEnvelope {
     const event: TaskEventEnvelope = {
       id: String(this.#nextEventId),
-      event: "task-update",
+      event: eventName,
       data: payload,
     };
 

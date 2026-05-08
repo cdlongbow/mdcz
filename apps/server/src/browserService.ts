@@ -1,7 +1,7 @@
 import { lstat } from "node:fs/promises";
+import { listRootDirectory, resolveRootRelativePath } from "@mdcz/media-store";
 import type { RootBrowserEntryDto, RootBrowserInput, RootBrowserResponse } from "@mdcz/shared/serverDtos";
 import { classifyFileName, isVideoFileName } from "@mdcz/shared/videoClassification";
-import { listRootDirectory, resolveRootRelativePath } from "@mdcz/storage";
 import { type MediaRootService, toMediaRootDto } from "./mediaRootService";
 
 export class BrowserService {

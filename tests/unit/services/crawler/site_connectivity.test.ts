@@ -3,7 +3,7 @@ import {
   buildSiteConnectivityHeaders,
   probeSiteConnectivity,
   resolveSiteConnectivityTargetUrl,
-} from "@main/services/crawler/siteConnectivity";
+} from "@mdcz/runtime/crawler";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it, vi } from "vitest";
 

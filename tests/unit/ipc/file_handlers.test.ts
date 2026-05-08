@@ -110,49 +110,4 @@ describe("createFileHandlers", () => {
       }),
     ]);
   });
-
-  it("skips media files inside an excluded output directory nested under the scan root", async () => {
-    const root = await createTempDir();
-    const libraryDir = join(root, "library");
-    const outputDir = join(root, "output");
-    const keepVideo = join(libraryDir, "ABC-123.mp4");
-    const skippedVideo = join(outputDir, "XYZ-999.mp4");
-
-    await mkdir(libraryDir, { recursive: true });
-    await mkdir(outputDir, { recursive: true });
-    await writeFile(keepVideo, "keep");
-    await writeFile(skippedVideo, "skip");
-
-    const handlers = createFileHandlers(createContext());
-    const result = await handlers[IpcChannel.File_ListMediaCandidates].action(
-      actionArgs({ dirPath: root, excludeDirPath: outputDir }),
-    );
-
-    expect(result.candidates).toHaveLength(1);
-    expect(result.candidates[0]).toEqual(
-      expect.objectContaining({
-        path: keepVideo,
-        relativePath: join("library", "ABC-123.mp4"),
-      }),
-    );
-  });
-
-  it("does not exclude the entire scan root when excludeDirPath matches the root", async () => {
-    const root = await createTempDir();
-    const videoPath = join(root, "ABC-123.mp4");
-
-    await writeFile(videoPath, "video");
-
-    const handlers = createFileHandlers(createContext());
-    const result = await handlers[IpcChannel.File_ListMediaCandidates].action(
-      actionArgs({ dirPath: root, excludeDirPath: root }),
-    );
-
-    expect(result.candidates).toHaveLength(1);
-    expect(result.candidates[0]).toEqual(
-      expect.objectContaining({
-        path: videoPath,
-      }),
-    );
-  });
 });

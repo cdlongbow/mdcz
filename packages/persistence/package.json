@@ -8,7 +8,7 @@
     "./test": "./src/testDatabase.ts"
   },
   "dependencies": {
-    "@mdcz/storage": "workspace:*",
+    "@mdcz/media-store": "workspace:*",
     "better-sqlite3": "^12.9.0",
     "drizzle-orm": "^0.45.2"
   },

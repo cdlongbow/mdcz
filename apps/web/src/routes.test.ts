@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DESKTOP_ROUTE_DEFINITIONS } from "@mdcz/shared/desktopNavigation";
+import { MAINTENANCE_PRESET_OPTIONS } from "@mdcz/shared/maintenancePresets";
 import { taskKindSchema } from "@mdcz/shared/serverDtos";
 import {
   FIELD_REGISTRY,
@@ -12,8 +13,8 @@ import {
 } from "@mdcz/shared/settingsRegistry";
 import { TOOL_DEFINITIONS } from "@mdcz/shared/toolCatalog";
 import { describe, expect, it } from "vitest";
+import { taskKindLabels } from "./routeCommon";
 import { buildHref, includesSearch, normalizeSearchText } from "./routeHelpers";
-import { taskKindLabels } from "./routes/common";
 
 const WEB_SRC_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -76,6 +77,7 @@ describe("route helpers", () => {
       "概览",
       "工作台",
       "工具",
+      "媒体库",
       "设置",
       "日志",
       "关于",
@@ -88,7 +90,6 @@ describe("route helpers", () => {
       "symlink-manager",
       "file-cleaner",
       "batch-nfo-translator",
-      "missing-number-finder",
     ]);
   });
 
@@ -99,6 +100,15 @@ describe("route helpers", () => {
       scan: "扫描",
       scrape: "刮削",
     });
+  });
+
+  it("uses desktop maintenance preset IDs and labels", () => {
+    expect(MAINTENANCE_PRESET_OPTIONS.map((preset) => [preset.id, preset.label])).toEqual([
+      ["read_local", "读取本地"],
+      ["refresh_data", "刷新数据"],
+      ["organize_files", "整理目录"],
+      ["rebuild_all", "全量重整"],
+    ]);
   });
 
   it("keeps WebUI primitive exports free of fabricated layout wrappers", async () => {

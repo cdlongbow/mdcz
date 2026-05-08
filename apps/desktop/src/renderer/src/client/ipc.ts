@@ -120,8 +120,8 @@ export const ipc = {
   },
   file: {
     listEntries: (dirPath: string) => client[IpcChannel.File_ListEntries]({ dirPath }),
-    listMediaCandidates: (dirPath: string, excludeDirPath?: string) =>
-      client[IpcChannel.File_ListMediaCandidates]({ dirPath, excludeDirPath }) as Promise<{
+    listMediaCandidates: (dirPath: string) =>
+      client[IpcChannel.File_ListMediaCandidates]({ dirPath }) as Promise<{
         candidates: MediaCandidate[];
         supportedExtensions: string[];
       }>,

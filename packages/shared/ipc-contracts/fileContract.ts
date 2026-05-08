@@ -16,7 +16,7 @@ export type FileIpcContract = {
     }
   >;
   [IpcChannel.File_ListMediaCandidates]: IpcProcedure<
-    { dirPath?: string; excludeDirPath?: string },
+    { dirPath?: string },
     {
       candidates: MediaCandidate[];
       supportedExtensions: string[];

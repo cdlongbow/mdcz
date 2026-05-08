@@ -1,14 +1,34 @@
+import { cp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
+import type { Plugin } from "vite";
 import pkg from "./package.json" with { type: "json" };
 
 const appResolve = (subpath: string): string => resolve(__dirname, subpath);
 const workspaceResolve = (subpath: string): string => resolve(__dirname, "../..", subpath);
-const workspacePackages = ["@mdcz/persistence", "@mdcz/shared", "@mdcz/storage", "@mdcz/ui"];
+const workspacePackages = [
+  "@mdcz/persistence",
+  "@mdcz/runtime",
+  "@mdcz/shared",
+  "@mdcz/media-store",
+  "@mdcz/ui",
+  "@mdcz/views",
+];
 const externalDependencies = Object.keys(pkg.dependencies).filter(
   (dependency) => !workspacePackages.includes(dependency),
 );
+
+const desktopDistributionAssets = (): Plugin => ({
+  name: "mdcz-desktop-distribution-assets",
+  async buildStart() {
+    const target = appResolve("out/drizzle");
+    await rm(target, { recursive: true, force: true });
+    await cp(workspaceResolve("packages/persistence/drizzle"), target, {
+      recursive: true,
+    });
+  },
+});
 
 const isIgnorableUseClientWarning = (message: string): boolean =>
   message.includes("Module level directives cause errors when bundled") && message.includes('"use client"');
@@ -19,14 +39,16 @@ const isIgnorableUseClientSourcemapWarning = (message: string): boolean =>
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: workspacePackages })],
+    plugins: [externalizeDepsPlugin({ exclude: workspacePackages }), desktopDistributionAssets()],
     resolve: {
       alias: {
         "@main": appResolve("src/main"),
         "@mdcz/persistence": workspaceResolve("packages/persistence/src/index.ts"),
+        "@mdcz/runtime": workspaceResolve("packages/runtime/src"),
         "@mdcz/shared": workspaceResolve("packages/shared"),
-        "@mdcz/storage": workspaceResolve("packages/storage/src/index.ts"),
+        "@mdcz/media-store": workspaceResolve("packages/media-store/src/index.ts"),
         "@mdcz/ui": workspaceResolve("packages/ui/src/index.ts"),
+        "@mdcz/views": workspaceResolve("packages/views/src"),
       },
     },
     build: {
@@ -62,6 +84,8 @@ export default defineConfig({
         "@": appResolve("src/renderer/src"),
         "@renderer": appResolve("src/renderer/src"),
         "@mdcz/shared": workspaceResolve("packages/shared"),
+        "@mdcz/runtime": workspaceResolve("packages/runtime/src"),
+        "@mdcz/views": workspaceResolve("packages/views/src"),
       },
     },
     build: {

@@ -10,6 +10,7 @@ proxyType = "http"
 
 [paths]
 configDirectory = "server-config"
+failedOutputFolder = "custom-failed"
 
 [scrape]
 sites = ["dmm", "javdb"]
@@ -31,6 +32,7 @@ describe("configuration codec", () => {
     expect(parsed.network.timeout).toBe(25);
     expect(parsed.network.retryCount).toBe(4);
     expect(parsed.paths.configDirectory).toBe("server-config");
+    expect(parsed.paths.defaultScanExcludeDirs).toEqual(["JAV_output", "failed"]);
     expect(parsed.scrape.sites).toEqual(["dmm", "javdb"]);
     expect(parsed.download.downloadThumb).toBe(true);
   });

@@ -9,13 +9,13 @@ import {
   LocalActorSource,
   OfficialActorSource,
 } from "@main/services/actorSource";
-import { createImageHostCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
+import { createImageHostCooldownStore, PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
 import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
-import { RecentAcquisitionsStore } from "@main/services/history";
 import { OutputLibraryScanner } from "@main/services/library";
 import { EmbyActorInfoService, EmbyActorPhotoService } from "@main/services/mediaServer/emby";
 import { JellyfinActorInfoService, JellyfinActorPhotoService } from "@main/services/mediaServer/jellyfin";
 import { createElectronCookieResolver, type NetworkClient } from "@main/services/network";
+import { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
 import { ScraperService } from "@main/services/scraper";
 import { AmazonJpImageService } from "@main/services/scraper/AmazonJpImageService";
@@ -37,11 +37,15 @@ export const createContainer = ({
   const fetchGateway = new FetchGateway(networkClient);
   const crawlerProvider = new CrawlerProvider({
     fetchGateway,
+    siteCooldownStore: new PersistentCooldownStore({
+      fileName: "crawler-site-cooldowns.json",
+      loggerName: "CrawlerSiteCooldownStore",
+    }),
     siteRequestConfigRegistrar: networkClient,
   });
   const imageHostCooldownStore = createImageHostCooldownStore();
-  const recentAcquisitionsStore = new RecentAcquisitionsStore();
-  const outputLibraryScanner = new OutputLibraryScanner();
+  const persistenceService = new DesktopPersistenceService();
+  const outputLibraryScanner = new OutputLibraryScanner({ persistenceService });
   const amazonJpImageService = new AmazonJpImageService(networkClient);
   const actorImageService = new ActorImageService({ networkClient });
   const avjohoCookieResolver = createElectronCookieResolver({
@@ -64,8 +68,8 @@ export const createContainer = ({
     actorImageService,
     actorSourceProvider,
     imageHostCooldownStore,
-    recentAcquisitionsStore,
     outputLibraryScanner,
+    persistenceService,
   );
   const maintenanceService = new MaintenanceService(
     signalService,
@@ -81,8 +85,8 @@ export const createContainer = ({
     windowService,
     networkClient,
     fetchGateway,
-    recentAcquisitionsStore,
     outputLibraryScanner,
+    persistenceService,
     scraperService,
     maintenanceService,
     crawlerProvider,
@@ -112,7 +116,12 @@ export const createContainer = ({
     amazonPosterToolService: new AmazonPosterToolService(networkClient, amazonJpImageService),
     batchTranslateToolService: new BatchTranslateToolService(networkClient),
     shutdown: async () => {
-      await Promise.allSettled([scraperService.shutdown(), maintenanceService.shutdown(), crawlerProvider.shutdown()]);
+      await Promise.allSettled([
+        scraperService.shutdown(),
+        maintenanceService.shutdown(),
+        crawlerProvider.shutdown(),
+        persistenceService.close(),
+      ]);
     },
   };
 };

@@ -1,9 +1,10 @@
-import { createMediaRoot } from "@mdcz/storage";
+import { createMediaRoot } from "@mdcz/media-store";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
 import { LibraryRepository } from "./libraryRepository";
+import { MaintenanceRepository } from "./maintenanceRepository";
 import { MediaRootRepository } from "./mediaRootRepository";
 import { createTestPersistenceDatabase } from "./testDatabase";
 
@@ -27,7 +28,12 @@ describe("MediaRootRepository", () => {
     expect(tables).toContain("task_records");
     expect(tables).toContain("scrape_outputs");
     expect(tables).toContain("scrape_results");
+    expect(tables).toContain("maintenance_previews");
+    expect(tables).toContain("maintenance_apply_log");
     expect(tables).toContain("library_entries");
+    expect(tables).toContain("library_items");
+    expect(tables).toContain("library_item_files");
+    expect(tables).toContain("library_item_assets");
     expect(tables).toContain("__drizzle_migrations");
   });
 
@@ -62,6 +68,40 @@ describe("MediaRootRepository", () => {
   });
 });
 
+describe("MaintenanceRepository", () => {
+  it("persists maintenance previews and apply logs", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new MaintenanceRepository(database);
+    const createdAt = new Date("2026-05-01T00:00:00.000Z");
+
+    const preview = await repository.upsertPreview({
+      id: "preview-1",
+      taskId: "task-1",
+      rootId: "root-1",
+      relativePath: "ABC-123.mp4",
+      presetId: "read_local",
+      status: "ready",
+      fieldDiffsJson: "[]",
+      unchangedFieldDiffsJson: "[]",
+      createdAt,
+      updatedAt: createdAt,
+    });
+    const log = await repository.addApplyLog({
+      id: "apply-1",
+      taskId: "task-1",
+      previewId: preview.id,
+      rootId: preview.rootId,
+      relativePath: preview.relativePath,
+      presetId: preview.presetId,
+      status: "success",
+      appliedAt: createdAt,
+    });
+
+    await expect(repository.listPreviews("task-1")).resolves.toEqual([preview]);
+    await expect(repository.listApplyLogs("task-1")).resolves.toEqual([log]);
+  });
+});
+
 describe("LibraryRepository", () => {
   it("persists scrape result rows for task review", async () => {
     database = createTestPersistenceDatabase();
@@ -78,11 +118,15 @@ describe("LibraryRepository", () => {
       nfoRelativePath: "ABC-123.nfo",
       outputRelativePath: "ABC-123.mp4",
       manualUrl: "https://example.invalid/detail",
+      uncensoredAmbiguous: true,
       createdAt,
       updatedAt: createdAt,
     });
 
-    await expect(repository.getScrapeResult("result-1")).resolves.toEqual(result);
+    await expect(repository.getScrapeResult("result-1")).resolves.toEqual({
+      ...result,
+      uncensoredAmbiguous: true,
+    });
     await expect(repository.listScrapeResults("task-1")).resolves.toEqual([result]);
   });
 
@@ -109,6 +153,7 @@ describe("LibraryRepository", () => {
       title: "Title",
       number: "ABC-123",
       actors: ["Actor"],
+      crawlerDataJson: JSON.stringify({ title: "Title", number: "ABC-123", poster_url: "poster.jpg" }),
       indexedAt: completedAt,
     });
     await repository.upsertEntry({
@@ -124,6 +169,7 @@ describe("LibraryRepository", () => {
         rootRelativePath: "ABC-123/ABC-123.mp4",
         size: 11,
         actors: [],
+        crawlerDataJson: null,
       }),
     ]);
   });

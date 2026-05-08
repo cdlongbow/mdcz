@@ -1,9 +1,36 @@
 import { rm } from "node:fs/promises";
 import path from "node:path";
-import type { ScrapeResultRecord } from "@mdcz/persistence";
-import { NfoGenerator, RuntimeScrapeProcessor } from "@mdcz/runtime/scrape";
+import {
+  atomicWriteRootFile,
+  type MediaRoot,
+  readRootFile,
+  resolveRootRelativePath,
+  StorageError,
+  storageErrorCodes,
+} from "@mdcz/media-store";
+import type { ScrapeResultRecord, TaskRecord, TaskRecordStatus } from "@mdcz/persistence";
+import { toLibraryAssets } from "@mdcz/runtime/library";
+import { NetworkClient } from "@mdcz/runtime/network";
+import {
+  applyScrapeNetworkPolicy,
+  createScrapeExecutionPolicy,
+  type MountedRootScrapeRuntime,
+  NfoGenerator,
+  parseNfo,
+  runScrapeItems,
+} from "@mdcz/runtime/scrape";
+import {
+  type RuntimeTaskAction,
+  RuntimeTaskQueueRunner,
+  resolveRecoverableSession as resolveRuntimeRecoverableSession,
+  summarizeRecoverableSession,
+  toRuntimeTaskSnapshot,
+  toServerTaskStatus,
+  transitionTask,
+} from "@mdcz/runtime/tasks";
+import { validateManualScrapeUrl } from "@mdcz/shared/manualScrapeUrl";
 import type {
-  CrawlerDataDto,
+  AmbiguousUncensoredItemDto,
   FileActionInput,
   FileActionResponse,
   LogListResponse,
@@ -14,47 +41,118 @@ import type {
   ScanTaskDetailResponse,
   ScanTaskDto,
   ScanTaskListResponse,
+  ScrapeConfirmUncensoredInput,
+  ScrapeRecoverableSessionResolveInput,
+  ScrapeRecoverableSessionResolveResponse,
+  ScrapeRecoverableSessionResponse,
   ScrapeResultDetailResponse,
   ScrapeResultDto,
   ScrapeResultListResponse,
   ScrapeStartInput,
+  ScrapeStartSelectedFilesInput,
   ScrapeTaskControlInput,
   TaskEventDto,
   TaskEventListResponse,
 } from "@mdcz/shared/serverDtos";
-import { resolveRootRelativePath } from "@mdcz/storage";
+import type { UncensoredChoice } from "@mdcz/shared/types";
+import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
+import { decorateTaskLog } from "./runtimeLogService";
+import { toRootRelativeAssetPath, toScrapeResultDto } from "./scrapeDtos";
+import { createServerScrapeRuntime } from "./scrapeRuntimeFactory";
+import { toScanTaskDto, toTaskEventDto } from "./taskDto";
 import type { TaskEventBus } from "./taskEvents";
 
-const toIso = (value: Date | null): string | null => value?.toISOString() ?? null;
+const recoverableTaskStatuses = new Set<TaskRecordStatus>(["queued", "running", "paused", "stopping", "failed"]);
+const recoverableResultStatuses = new Set<ScrapeResultRecord["status"]>(["pending", "processing", "failed"]);
 
 export class ScrapeService {
-  #running = false;
   #stopRequested = new Set<string>();
   #paused = new Set<string>();
-  private readonly runtime = new RuntimeScrapeProcessor(new NfoGenerator());
+  #controllers = new Map<string, AbortController>();
+  #uncensoredConfirmedTasks = new Set<string>();
+  #uncensoredChoices = new Map<string, Map<string, UncensoredChoice>>();
+  private readonly networkClient = new NetworkClient();
+  private readonly nfoGenerator = new NfoGenerator();
+  private readonly runtime: MountedRootScrapeRuntime;
+  private readonly runner: RuntimeTaskQueueRunner<TaskRecord>;
 
   constructor(
     private readonly persistence: ServerPersistenceService,
     private readonly mediaRoots: MediaRootService,
+    private readonly config: ServerConfigService,
     private readonly taskEvents: TaskEventBus,
-  ) {}
+    runtime?: MountedRootScrapeRuntime,
+  ) {
+    this.runtime = runtime ?? createServerScrapeRuntime(this.config, this.networkClient);
+    this.runner = new RuntimeTaskQueueRunner({
+      getNextTask: async () => await (await this.persistence.getState()).repositories.tasks.nextQueued("scrape"),
+      runTask: async (task) => {
+        await this.runTask(task.id);
+      },
+    });
+  }
 
-  async start(input: ScrapeStartInput): Promise<ScanTaskDto> {
+  async start(
+    input: ScrapeStartInput,
+    options?: { uncensoredChoices?: Map<string, UncensoredChoice> },
+  ): Promise<ScanTaskDto> {
     const firstRootId = input.refs[0].rootId;
     const task = await (await this.persistence.getState()).repositories.tasks.createTask({
       kind: "scrape",
       rootId: firstRootId,
     });
+    if (input.uncensoredConfirmed === true) {
+      this.#uncensoredConfirmedTasks.add(task.id);
+    }
+    const inputChoices =
+      options?.uncensoredChoices ??
+      new Map(input.refs.map((ref) => [`${ref.rootId}:${ref.relativePath}`, "uncensored" as const]));
     for (const ref of input.refs) {
       await this.mediaRoots.getActiveRoot(ref.rootId);
       await this.upsertPendingResult(task.id, ref.rootId, ref.relativePath, input.manualUrl ?? null);
     }
+    if (input.uncensoredConfirmed === true) {
+      this.#uncensoredChoices.set(task.id, inputChoices);
+    }
     await this.addEvent(task.id, "queued", `刮削任务已排队：${input.refs.length} 个文件`);
     this.taskEvents.publish({ kind: "task", task: await this.toDto(task.id) });
-    void this.drain();
+    this.drain();
     return await this.toDto(task.id);
+  }
+
+  async startSelectedFiles(input: ScrapeStartSelectedFilesInput): Promise<ScanTaskDto> {
+    if (!input.scanDir) {
+      throw new Error("scanDir is required when starting selected host files");
+    }
+    const normalizedScanDir = path.resolve(input.scanDir);
+    const roots = (await this.mediaRoots.list()).roots.filter((root) => root.enabled);
+    const refs = input.filePaths.map((filePath) => {
+      const resolvedPath = path.resolve(filePath);
+      const relativeToScan = path.relative(normalizedScanDir, resolvedPath);
+      if (!relativeToScan || relativeToScan.startsWith("..") || path.isAbsolute(relativeToScan)) {
+        throw new Error(`文件不在扫描目录内：${filePath}`);
+      }
+      const root = roots.find((candidate) => {
+        const relativeToRoot = path.relative(candidate.hostPath, resolvedPath);
+        return relativeToRoot && !relativeToRoot.startsWith("..") && !path.isAbsolute(relativeToRoot);
+      });
+      if (!root) {
+        throw new Error(`文件不在已注册媒体目录内：${filePath}`);
+      }
+      const relative = path.relative(root.hostPath, resolvedPath);
+      return {
+        rootId: root.id,
+        relativePath: relative.replace(/\\/gu, "/"),
+      };
+    });
+
+    return await this.start({
+      refs,
+      manualUrl: input.manualUrl,
+      uncensoredConfirmed: input.uncensoredConfirmed,
+    });
   }
 
   async list(): Promise<ScanTaskListResponse> {
@@ -93,18 +191,13 @@ export class ScrapeService {
   }
 
   async stop(input: ScrapeTaskControlInput): Promise<ScanTaskDto> {
-    this.#stopRequested.add(input.taskId);
-    const state = await this.persistence.getState();
-    const task = await state.repositories.tasks.get(input.taskId);
-    if (task.status === "queued" || task.status === "paused") {
-      await state.repositories.tasks.patch(input.taskId, {
-        status: "failed",
-        completedAt: new Date(),
-        error: "刮削已停止",
-      });
-    } else if (task.status === "running") {
-      await state.repositories.tasks.patch(input.taskId, { status: "stopping" });
+    const task = await (await this.persistence.getState()).repositories.tasks.get(input.taskId);
+    if (task.status === "running" || task.status === "stopping") {
+      this.#stopRequested.add(input.taskId);
+      this.#controllers.get(input.taskId)?.abort();
     }
+    this.#paused.delete(input.taskId);
+    await this.transitionTask(input.taskId, "stop", "刮削已停止");
     await this.addEvent(input.taskId, "stopping", "正在停止刮削任务");
     this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
     return await this.toDto(input.taskId);
@@ -112,7 +205,7 @@ export class ScrapeService {
 
   async pause(input: ScrapeTaskControlInput): Promise<ScanTaskDto> {
     this.#paused.add(input.taskId);
-    await (await this.persistence.getState()).repositories.tasks.patch(input.taskId, { status: "paused" });
+    await this.transitionTask(input.taskId, "pause");
     await this.addEvent(input.taskId, "paused", "刮削任务已暂停");
     this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
     return await this.toDto(input.taskId);
@@ -120,14 +213,10 @@ export class ScrapeService {
 
   async resume(input: ScrapeTaskControlInput): Promise<ScanTaskDto> {
     this.#paused.delete(input.taskId);
-    const state = await this.persistence.getState();
-    const task = await state.repositories.tasks.get(input.taskId);
-    if (task.status === "paused") {
-      await state.repositories.tasks.patch(input.taskId, { status: "queued", startedAt: null });
-    }
+    await this.transitionTask(input.taskId, "resume");
     await this.addEvent(input.taskId, "queued", "刮削任务已恢复排队");
     this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
-    void this.drain();
+    this.drain();
     return await this.toDto(input.taskId);
   }
 
@@ -137,6 +226,8 @@ export class ScrapeService {
     if (task.status === "running" || task.status === "queued") {
       throw new Error("Only completed, failed, paused, or stopped scrape tasks can be retried");
     }
+    this.#paused.delete(input.taskId);
+    this.#stopRequested.delete(input.taskId);
     const results = await state.repositories.library.listScrapeResults(input.taskId);
     await state.repositories.library.deleteEntriesForTask(input.taskId);
     for (const result of results) {
@@ -147,9 +238,118 @@ export class ScrapeService {
         relativePath: result.relativePath,
         status: "pending",
         manualUrl: result.manualUrl,
+        uncensoredAmbiguous: false,
       });
     }
+    const next = transitionTask(toRuntimeTaskSnapshot(task), { action: "retry" });
     await state.repositories.tasks.patch(input.taskId, {
+      status: toServerTaskStatus(next.status),
+      startedAt: next.startedAt,
+      completedAt: next.completedAt,
+      videoCount: 0,
+      directoryCount: 0,
+      error: next.error,
+    });
+    await this.addEvent(input.taskId, "queued", "重试刮削已排队");
+    this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
+    this.drain();
+    return await this.toDto(input.taskId);
+  }
+
+  async confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<ScanTaskDto> {
+    const state = await this.persistence.getState();
+    const task = await state.repositories.tasks.get(input.taskId);
+    if (task.kind !== "scrape") {
+      throw new Error(`Task is not a scrape task: ${input.taskId}`);
+    }
+
+    const results = await state.repositories.library.listScrapeResults(input.taskId);
+    const resultByRef = new Map(results.map((result) => [`${result.rootId}:${result.relativePath}`, result]));
+    const selectedItems =
+      input.items ??
+      input.refs?.map((ref) => ({
+        ref,
+        choice: "uncensored" as const,
+      })) ??
+      [];
+    const choicesByRef = new Map(
+      selectedItems.map((item) => [`${item.ref.rootId}:${item.ref.relativePath}`, item.choice]),
+    );
+    const refs = selectedItems.map((item) => {
+      const ref = item.ref;
+      const result = resultByRef.get(`${ref.rootId}:${ref.relativePath}`);
+      if (!result) {
+        throw new Error(`Ref does not belong to scrape task: ${ref.rootId}:${ref.relativePath}`);
+      }
+      return ref;
+    });
+    if (refs.length === 0) {
+      throw new Error("No uncensored confirmation refs provided");
+    }
+
+    const newTask = await this.start(
+      {
+        refs,
+        manualUrl: results.find((result) => result.manualUrl)?.manualUrl ?? undefined,
+        uncensoredConfirmed: true,
+      },
+      { uncensoredChoices: choicesByRef },
+    );
+    return newTask;
+  }
+
+  async getRecoverableSession(): Promise<ScrapeRecoverableSessionResponse> {
+    const recoverable = await this.findRecoverableTask();
+    if (!recoverable) {
+      return { ...summarizeRecoverableSession({}), taskId: null };
+    }
+
+    const summary = summarizeRecoverableSession({
+      pendingCount: recoverable.results.filter(
+        (result) => result.status === "pending" || result.status === "processing",
+      ).length,
+      failedCount: recoverable.results.filter((result) => result.status === "failed").length,
+    });
+    return { ...summary, taskId: recoverable.task.id };
+  }
+
+  async resolveRecoverableSession(
+    input?: ScrapeRecoverableSessionResolveInput,
+  ): Promise<ScrapeRecoverableSessionResolveResponse> {
+    return await resolveRuntimeRecoverableSession(
+      {
+        summarize: async () => await this.getRecoverableSession(),
+        recover: async () => await this.recoverSession(),
+        discard: async () => {
+          await this.discardRecoverableSession();
+        },
+      },
+      {
+        action: input?.action,
+        discardMessage: "已放弃上次未完成的刮削任务",
+        recoverMessage: "恢复任务已启动",
+      },
+    );
+  }
+
+  async recoverSession(): Promise<ScanTaskDto> {
+    const recoverable = await this.findRecoverableTask();
+    if (!recoverable) {
+      throw new Error("No recoverable scrape session found");
+    }
+
+    const state = await this.persistence.getState();
+    this.#paused.delete(recoverable.task.id);
+    this.#stopRequested.delete(recoverable.task.id);
+    for (const result of recoverable.results) {
+      await state.repositories.library.upsertScrapeResult({
+        ...result,
+        status: "pending",
+        error: null,
+      });
+    }
+    await state.repositories.library.deleteEntriesForTask(recoverable.task.id);
+    await state.repositories.tasks.patch(recoverable.task.id, {
       status: "queued",
       startedAt: null,
       completedAt: null,
@@ -157,32 +357,63 @@ export class ScrapeService {
       directoryCount: 0,
       error: null,
     });
-    await this.addEvent(input.taskId, "queued", "重试刮削已排队");
-    this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
-    void this.drain();
-    return await this.toDto(input.taskId);
+    await this.addEvent(recoverable.task.id, "queued", "恢复未完成刮削并重新排队");
+    this.taskEvents.publish({ kind: "task", task: await this.toDto(recoverable.task.id) });
+    this.drain();
+    return await this.toDto(recoverable.task.id);
+  }
+
+  async discardRecoverableSession(): Promise<void> {
+    const recoverable = await this.findRecoverableTask();
+    if (!recoverable) {
+      return;
+    }
+
+    const state = await this.persistence.getState();
+    this.#paused.delete(recoverable.task.id);
+    this.#stopRequested.delete(recoverable.task.id);
+    this.#controllers.get(recoverable.task.id)?.abort();
+    for (const result of recoverable.results) {
+      await state.repositories.library.upsertScrapeResult({
+        ...result,
+        status: "skipped",
+        error: "已放弃未完成刮削",
+      });
+    }
+    await state.repositories.tasks.patch(recoverable.task.id, {
+      status: "failed",
+      completedAt: new Date(),
+      error: "已放弃未完成刮削",
+    });
+    await this.addEvent(recoverable.task.id, "discarded", "已放弃未完成刮削任务");
+    this.taskEvents.publish({ kind: "task", task: await this.toDto(recoverable.task.id) });
   }
 
   async resumeQueued(): Promise<void> {
     const state = await this.persistence.getState();
     await state.repositories.tasks.requeueRunning("scrape");
-    void this.drain();
+    this.drain();
   }
 
   async nfoRead(input: NfoReadInput): Promise<NfoReadResponse> {
     const root = await this.mediaRoots.getActiveRoot(input.rootId);
-    const result = await this.runtime.readNfo(root, input.relativePath);
+    const content = await readRootFile(root, input.relativePath).catch((error: unknown) => {
+      if (error instanceof StorageError && error.code === storageErrorCodes.MissingPath) {
+        return null;
+      }
+      throw error;
+    });
     return {
       rootId: input.rootId,
       relativePath: input.relativePath,
-      exists: result.exists,
-      data: result.data,
+      exists: content !== null,
+      data: content === null ? null : parseNfo(content.toString("utf-8"), input.relativePath),
     };
   }
 
   async nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse> {
     const root = await this.mediaRoots.getActiveRoot(input.rootId);
-    await this.runtime.writeNfo(root, input.relativePath, input.data);
+    await atomicWriteRootFile(root, input.relativePath, this.nfoGenerator.buildXml(input.data));
     return { rootId: input.rootId, relativePath: input.relativePath, data: input.data };
   }
 
@@ -192,113 +423,136 @@ export class ScrapeService {
     return { ok: true, rootId: input.rootId, relativePath: input.relativePath };
   }
 
-  private async drain(): Promise<void> {
-    if (this.#running) return;
-    this.#running = true;
-    try {
-      while (true) {
-        const state = await this.persistence.getState();
-        const task = await state.repositories.tasks.nextQueued("scrape");
-        if (!task) return;
-        await this.runTask(task.id);
-      }
-    } finally {
-      this.#running = false;
-    }
+  private drain(): void {
+    this.runner.drain();
   }
 
   private async runTask(taskId: string): Promise<void> {
     const state = await this.persistence.getState();
-    await state.repositories.tasks.patch(taskId, { status: "running", startedAt: new Date(), error: null });
+    const controller = new AbortController();
+    this.#controllers.set(taskId, controller);
+    await this.transitionTask(taskId, "start");
     await this.addEvent(taskId, "running", "开始刮削媒体文件");
     this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
 
     try {
       const results = await state.repositories.library.listScrapeResults(taskId);
-      let successCount = 0;
-      let failedCount = 0;
-      let totalBytes = 0;
-      for (const result of results) {
-        if (this.#stopRequested.has(taskId)) {
-          throw new Error("刮削已停止");
-        }
-        if (this.#paused.has(taskId)) {
-          return;
-        }
-        await state.repositories.library.upsertScrapeResult({ ...result, status: "processing" });
-        const root = await this.mediaRoots.getActiveRoot(result.rootId);
-        const runtimeResult = await this.runtime.scrapePlaceholder({
-          root,
-          relativePath: result.relativePath,
-          manualUrl: result.manualUrl,
-        });
-        if (runtimeResult.status === "failed") {
-          failedCount += 1;
-          await state.repositories.library.upsertScrapeResult({
-            ...result,
-            status: "failed",
-            error: runtimeResult.error,
-          });
-          await this.addEvent(taskId, "item-failed", `${result.relativePath}: ${runtimeResult.error}`);
-          continue;
-        }
-
-        const stored = await state.repositories.library.upsertScrapeResult({
-          id: result.id,
-          taskId,
-          rootId: result.rootId,
-          relativePath: result.relativePath,
-          status: "success",
-          crawlerDataJson: JSON.stringify(runtimeResult.crawlerData),
-          nfoRelativePath: runtimeResult.nfoRelativePath,
-          outputRelativePath: runtimeResult.outputRelativePath,
-          manualUrl: result.manualUrl,
-        });
-        totalBytes += runtimeResult.size;
-        await state.repositories.library.upsertEntry({
-          rootId: result.rootId,
-          rootRelativePath: result.relativePath,
-          size: runtimeResult.size,
-          modifiedAt: runtimeResult.modifiedAt,
-          sourceTaskId: taskId,
-          scrapeOutputId: stored.id,
-          title: runtimeResult.crawlerData.title,
-          number: runtimeResult.crawlerData.number,
-          actors: runtimeResult.crawlerData.actors,
-          thumbnailPath: runtimeResult.crawlerData.thumb_url ?? runtimeResult.crawlerData.poster_url ?? null,
-          lastKnownPath: result.relativePath,
-        });
-        successCount += 1;
-        await this.addEvent(taskId, "item-success", `已生成 NFO：${runtimeResult.nfoRelativePath}`);
+      const config = await this.config.get();
+      applyScrapeNetworkPolicy(this.networkClient, config);
+      const policy = createScrapeExecutionPolicy(config, { logger: console });
+      const counters = { successCount: 0, failedCount: 0, totalBytes: 0 };
+      await runScrapeItems(
+        results,
+        {
+          concurrency: policy.concurrency,
+          signal: controller.signal,
+          control: {
+            isStopRequested: () => this.#stopRequested.has(taskId),
+            isPaused: () => this.#paused.has(taskId),
+            onPaused: async () => {
+              await this.transitionTask(taskId, "pause");
+              await this.addEvent(taskId, "paused", "刮削任务已暂停");
+              this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
+            },
+          },
+        },
+        (result, index) => ({
+          item: result,
+          index,
+          run: async (signal) => {
+            if (this.#stopRequested.has(taskId)) {
+              throw new Error("刮削已停止");
+            }
+            if (this.#paused.has(taskId)) {
+              return;
+            }
+            await policy.restGate?.waitBeforeStart(signal);
+            const processingResult = await state.repositories.library.upsertScrapeResult({
+              ...result,
+              status: "processing",
+            });
+            this.taskEvents.publishRealtime({
+              id: `${processingResult.id}:processing:${new Date().toISOString()}`,
+              taskId,
+              createdAt: processingResult.updatedAt.toISOString(),
+              kind: "scrape-result",
+              result: await this.resultToDto(processingResult),
+            });
+            this.taskEvents.publishRealtime({
+              id: `${processingResult.id}:progress:${index + 1}`,
+              taskId,
+              createdAt: processingResult.updatedAt.toISOString(),
+              kind: "task-progress",
+              taskKind: "scrape",
+              current: index + 1,
+              total: results.length,
+              message: result.relativePath,
+            });
+            const root = await this.mediaRoots.getActiveRoot(result.rootId);
+            const runtimeResult = await this.runtime.scrape({
+              root,
+              relativePath: result.relativePath,
+              manualScrape: this.resolveManualScrape(result.manualUrl),
+              progress: { fileIndex: index + 1, totalFiles: results.length },
+              localState: this.resolveConfirmedLocalState(taskId, result),
+              signal,
+              onEvent: async (type, message) => {
+                await this.addEvent(taskId, type, message);
+              },
+            });
+            await this.persistRuntimeResult(taskId, result, root, runtimeResult, counters);
+          },
+        }),
+      );
+      if (this.#stopRequested.has(taskId)) {
+        throw new Error("刮削已停止");
       }
+      if (this.#paused.has(taskId)) {
+        return;
+      }
+      this.#paused.delete(taskId);
       const output = await state.repositories.library.upsertScrapeOutput({
         taskId,
         rootId: results[0]?.rootId ?? null,
         outputDirectory: null,
-        fileCount: successCount,
-        totalBytes,
+        fileCount: counters.successCount,
+        totalBytes: counters.totalBytes,
         completedAt: new Date(),
+      });
+      const next = transitionTask(toRuntimeTaskSnapshot(await state.repositories.tasks.get(taskId)), {
+        action: counters.failedCount > 0 && counters.successCount === 0 ? "fail" : "complete",
+        error: counters.failedCount > 0 && counters.successCount === 0 ? "所有文件刮削失败" : null,
       });
       await state.repositories.tasks.patch(taskId, {
-        status: failedCount > 0 && successCount === 0 ? "failed" : "completed",
-        completedAt: new Date(),
-        videoCount: successCount,
+        status: toServerTaskStatus(next.status),
+        completedAt: next.completedAt,
+        videoCount: counters.successCount,
         directoryCount: 0,
-        error: failedCount > 0 && successCount === 0 ? "所有文件刮削失败" : null,
+        error: next.error,
       });
-      await this.addEvent(
+      const completedEvent = await this.addEvent(
         taskId,
         "completed",
-        `刮削完成：${successCount} 成功，${failedCount} 失败，输出 ${output.id}`,
+        `刮削完成：${counters.successCount} 成功，${counters.failedCount} 失败，输出 ${output.id}`,
+        { publish: false },
       );
+      const ambiguousUncensoredItems = await this.buildAmbiguousUncensoredItems(taskId);
+      this.taskEvents.publish({
+        kind: "event",
+        event: completedEvent,
+        ...(ambiguousUncensoredItems.length > 0 ? { ambiguousUncensoredItems } : {}),
+      });
       this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await state.repositories.tasks.patch(taskId, { status: "failed", completedAt: new Date(), error: message });
+      await this.transitionTask(taskId, "fail", message);
       await this.addEvent(taskId, "failed", message);
       this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
     } finally {
+      this.#controllers.delete(taskId);
       this.#stopRequested.delete(taskId);
+      this.#uncensoredConfirmedTasks.delete(taskId);
+      this.#uncensoredChoices.delete(taskId);
     }
   }
 
@@ -317,68 +571,230 @@ export class ScrapeService {
     });
   }
 
+  private async persistRuntimeResult(
+    taskId: string,
+    result: ScrapeResultRecord,
+    root: MediaRoot,
+    runtimeResult: Awaited<ReturnType<MountedRootScrapeRuntime["scrape"]>>,
+    counters: { successCount: number; failedCount: number; totalBytes: number },
+  ): Promise<void> {
+    const state = await this.persistence.getState();
+    if (this.#stopRequested.has(taskId)) {
+      await state.repositories.library.upsertScrapeResult({
+        ...result,
+        status: "skipped",
+        error: "刮削已停止",
+      });
+      throw new Error("刮削已停止");
+    }
+    if (runtimeResult.status !== "success") {
+      counters.failedCount += 1;
+      const failedResult = await state.repositories.library.upsertScrapeResult({
+        ...result,
+        status: "failed",
+        error: runtimeResult.error,
+      });
+      this.taskEvents.publishRealtime({
+        id: `${failedResult.id}:result:${failedResult.updatedAt.toISOString()}`,
+        taskId,
+        createdAt: failedResult.updatedAt.toISOString(),
+        kind: "scrape-result",
+        result: await this.resultToDto(failedResult),
+      });
+      await this.addEvent(taskId, "item-failed", `${result.relativePath}: ${runtimeResult.error}`);
+      return;
+    }
+
+    const thumbnailPath = toRootRelativeAssetPath(
+      root,
+      runtimeResult.result.assets?.thumb ?? runtimeResult.result.assets?.poster,
+    );
+    const libraryAssets = toLibraryAssets(root, runtimeResult.result.assets);
+    const stored = await state.repositories.library.upsertScrapeResult({
+      id: result.id,
+      taskId,
+      rootId: result.rootId,
+      relativePath: result.relativePath,
+      status: "success",
+      crawlerDataJson: JSON.stringify(runtimeResult.crawlerData),
+      nfoRelativePath: runtimeResult.nfoRelativePath,
+      outputRelativePath: runtimeResult.outputRelativePath,
+      manualUrl: result.manualUrl,
+      uncensoredAmbiguous: this.#uncensoredConfirmedTasks.has(taskId)
+        ? false
+        : (runtimeResult.result.uncensoredAmbiguous ?? false),
+    });
+    counters.totalBytes += runtimeResult.size;
+    await state.repositories.library.upsertEntry({
+      rootId: result.rootId,
+      rootRelativePath: runtimeResult.outputRelativePath,
+      mediaIdentity: runtimeResult.crawlerData.number,
+      size: runtimeResult.size,
+      modifiedAt: runtimeResult.modifiedAt,
+      sourceTaskId: taskId,
+      scrapeOutputId: stored.id,
+      title: runtimeResult.crawlerData.title,
+      number: runtimeResult.crawlerData.number,
+      actors: runtimeResult.crawlerData.actors,
+      crawlerDataJson: JSON.stringify(runtimeResult.crawlerData),
+      thumbnailPath:
+        thumbnailPath ?? runtimeResult.crawlerData.thumb_url ?? runtimeResult.crawlerData.poster_url ?? null,
+      assets: libraryAssets,
+      lastKnownPath: runtimeResult.outputRelativePath,
+    });
+    counters.successCount += 1;
+    this.taskEvents.publishRealtime({
+      id: `${stored.id}:result:${stored.updatedAt.toISOString()}`,
+      taskId,
+      createdAt: stored.updatedAt.toISOString(),
+      kind: "scrape-result",
+      result: await this.resultToDto(stored),
+    });
+    await this.addEvent(taskId, "item-success", `已生成 NFO：${runtimeResult.nfoRelativePath ?? "未生成"}`);
+  }
+
+  private async findRecoverableTask(): Promise<{ task: TaskRecord; results: ScrapeResultRecord[] } | null> {
+    const state = await this.persistence.getState();
+    const tasks = await state.repositories.tasks.list("scrape");
+    for (const task of tasks) {
+      if (!recoverableTaskStatuses.has(task.status)) {
+        continue;
+      }
+
+      const results = await state.repositories.library.listScrapeResults(task.id);
+      const recoverableResults = results.filter((result) => recoverableResultStatuses.has(result.status));
+      if (recoverableResults.length > 0) {
+        return { task, results: recoverableResults };
+      }
+    }
+    return null;
+  }
+
   private async toDto(taskId: string): Promise<ScanTaskDto> {
     const state = await this.persistence.getState();
     const task = await state.repositories.tasks.get(taskId);
     const root = await state.repositories.mediaRoots.get(task.rootId, { includeDeleted: true }).catch(() => null);
     const results = await state.repositories.library.listScrapeResults(taskId);
-    return {
-      id: task.id,
-      kind: task.kind,
-      rootId: task.rootId,
+    return toScanTaskDto(task, {
       rootDisplayName: root?.displayName ?? "未知媒体目录",
-      status: task.status,
-      createdAt: task.createdAt.toISOString(),
-      updatedAt: task.updatedAt.toISOString(),
-      startedAt: toIso(task.startedAt),
-      completedAt: toIso(task.completedAt),
       videoCount: task.videoCount || results.length,
-      directoryCount: task.directoryCount,
-      error: task.error,
       videos: results.map((result) => result.relativePath),
-    };
+    });
+  }
+
+  private async transitionTask(taskId: string, action: RuntimeTaskAction, error?: string | null): Promise<void> {
+    const state = await this.persistence.getState();
+    const task = await state.repositories.tasks.get(taskId);
+    const next = transitionTask(toRuntimeTaskSnapshot(task), { action, error });
+    await state.repositories.tasks.patch(taskId, {
+      status: toServerTaskStatus(next.status),
+      startedAt: next.startedAt,
+      completedAt: next.completedAt,
+      error: next.error,
+    });
   }
 
   private async resultToDto(record: ScrapeResultRecord): Promise<ScrapeResultDto> {
     const root = await (await this.persistence.getState()).repositories.mediaRoots
       .get(record.rootId, { includeDeleted: true })
       .catch(() => null);
+    return toScrapeResultDto(record, { rootDisplayName: root?.displayName ?? "未知媒体目录" });
+  }
+
+  private async buildAmbiguousUncensoredItems(taskId: string): Promise<AmbiguousUncensoredItemDto[]> {
+    const records = await (await this.persistence.getState()).repositories.library.listScrapeResults(taskId);
+    return records
+      .filter((record) => record.uncensoredAmbiguous)
+      .filter((record) => record.status === "success")
+      .map((record) => {
+        const crawlerData = record.crawlerDataJson ? JSON.parse(record.crawlerDataJson) : null;
+        const number =
+          typeof crawlerData?.number === "string" && crawlerData.number.trim()
+            ? crawlerData.number
+            : path.posix.basename(record.relativePath, path.posix.extname(record.relativePath));
+        const title =
+          typeof crawlerData?.title_zh === "string" && crawlerData.title_zh.trim()
+            ? crawlerData.title_zh
+            : typeof crawlerData?.title === "string" && crawlerData.title.trim()
+              ? crawlerData.title
+              : null;
+        return {
+          id: record.id,
+          ref: {
+            rootId: record.rootId,
+            relativePath: record.relativePath,
+          },
+          fileId: `${record.rootId}:${record.relativePath}`,
+          fileName: path.posix.basename(record.relativePath),
+          number,
+          title,
+          nfoRelativePath: record.nfoRelativePath,
+        };
+      });
+  }
+
+  private async addEvent(
+    taskId: string,
+    type: string,
+    message: string,
+    options: { publish?: boolean } = {},
+  ): Promise<TaskEventDto> {
+    const event = await (await this.persistence.getState()).repositories.tasks.addEvent({ taskId, type, message });
+    const dto = toTaskEventDto(event);
+    if (options.publish !== false) {
+      this.taskEvents.publish({ kind: "event", event: dto });
+    }
+    this.taskEvents.publishRealtime({
+      id: dto.id,
+      taskId: dto.taskId,
+      createdAt: dto.createdAt,
+      kind: "log",
+      log: decorateTaskLog(dto),
+    });
+    if (type === "failed") {
+      this.taskEvents.publishRealtime({
+        id: `${dto.id}:failed`,
+        taskId: dto.taskId,
+        createdAt: dto.createdAt,
+        kind: "task-failed",
+        message,
+        error: message,
+      });
+    } else if (
+      !["running", "queued", "paused", "stopping", "completed", "item-success", "item-failed"].includes(type)
+    ) {
+      this.taskEvents.publishRealtime({
+        id: `${dto.id}:stage`,
+        taskId: dto.taskId,
+        createdAt: dto.createdAt,
+        kind: "scrape-stage",
+        stage: type,
+        message,
+      });
+    }
+    return dto;
+  }
+
+  private resolveManualScrape(
+    manualUrl?: string | null,
+  ): Parameters<MountedRootScrapeRuntime["scrape"]>[0]["manualScrape"] {
+    const trimmed = manualUrl?.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+
+    const validation = validateManualScrapeUrl(trimmed);
+    if (!validation.valid) {
+      throw new Error(validation.message);
+    }
     return {
-      id: record.id,
-      taskId: record.taskId,
-      rootId: record.rootId,
-      rootDisplayName: root?.displayName ?? "未知媒体目录",
-      relativePath: record.relativePath,
-      fileName: path.posix.basename(record.relativePath),
-      status: record.status,
-      error: record.error,
-      crawlerData: record.crawlerDataJson ? (JSON.parse(record.crawlerDataJson) as CrawlerDataDto) : null,
-      nfoRelativePath: record.nfoRelativePath,
-      outputRelativePath: record.outputRelativePath,
-      manualUrl: record.manualUrl,
-      createdAt: record.createdAt.toISOString(),
-      updatedAt: record.updatedAt.toISOString(),
+      site: validation.route.site,
+      detailUrl: validation.route.detailUrl,
     };
   }
 
-  private async addEvent(taskId: string, type: string, message: string): Promise<TaskEventDto> {
-    const event = await (await this.persistence.getState()).repositories.tasks.addEvent({ taskId, type, message });
-    const dto = toTaskEventDto(event);
-    this.taskEvents.publish({ kind: "event", event: dto });
-    return dto;
+  private resolveConfirmedLocalState(taskId: string, result: ScrapeResultRecord) {
+    const choice = this.#uncensoredChoices.get(taskId)?.get(`${result.rootId}:${result.relativePath}`);
+    return choice ? { uncensoredChoice: choice } : undefined;
   }
 }
-
-const toTaskEventDto = (event: {
-  id: string;
-  taskId: string;
-  type: string;
-  message: string;
-  createdAt: Date;
-}): TaskEventDto => ({
-  id: event.id,
-  taskId: event.taskId,
-  type: event.type,
-  message: event.message,
-  createdAt: event.createdAt.toISOString(),
-});

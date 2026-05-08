@@ -1,5 +1,6 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
+import { createMediaRoot, type MediaRoot, normalizeHostPath } from "@mdcz/media-store";
 import {
   type MediaRootAvailabilityDto,
   type MediaRootAvailabilityResponse,
@@ -9,7 +10,6 @@ import {
   mediaRootCreateInputSchema,
   mediaRootUpdateInputSchema,
 } from "@mdcz/shared/serverDtos";
-import { createMediaRoot, type MediaRoot, normalizeHostPath } from "@mdcz/storage";
 import type { ServerPersistenceService } from "./persistenceService";
 
 const isRemoteUrl = (value: string): boolean => /^[a-z][a-z0-9+.-]*:\/\//iu.test(value.trim());

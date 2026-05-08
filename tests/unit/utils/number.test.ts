@@ -1,12 +1,25 @@
-import { extractNumber, parseFileInfo } from "@main/utils/number";
+import { extractNumber, parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
 import { describe, expect, it } from "vitest";
 
 describe("extractNumber", () => {
+  it("preserves explicit hyphenated catalog codes before bare part stripping", () => {
+    const cases = [
+      { input: "MFC-2001", expected: "MFC-2001" },
+      { input: "AFC-2001", expected: "AFC-2001" },
+      { input: "S2MBD-047", expected: "S2MBD-047" },
+    ];
+
+    for (const { input, expected } of cases) {
+      expect(extractNumber(input)).toBe(expected);
+    }
+  });
+
   it("extracts canonical numbers after stripping naming suffixes", () => {
     const cases = [
       { input: "ABC-123-C-CD1", expected: "ABC-123" },
       { input: "ABC-123-中文字幕", expected: "ABC-123" },
       { input: "FC2-PPV-123456-U", expected: "FC2-123456" },
+      { input: "FC-123456", expected: "FC2-123456" },
       { input: "FC2-123456-1", expected: "FC2-123456" },
       { input: "FC2-123456-4", expected: "FC2-123456" },
       { input: "FC2-123456-前番", expected: "FC2-123456" },
@@ -205,6 +218,16 @@ describe("parseFileInfo", () => {
   });
 
   it("does not misread numeric identifiers as bare multipart suffixes", () => {
+    expect(parseFileInfo("/tmp/MFC-2001.mp4")).toMatchObject({
+      number: "MFC-2001",
+      part: undefined,
+    });
+
+    expect(parseFileInfo("/tmp/AFC-2001.mp4")).toMatchObject({
+      number: "AFC-2001",
+      part: undefined,
+    });
+
     expect(parseFileInfo("/tmp/123-456.mp4")).toMatchObject({
       number: "123-456",
       part: undefined,

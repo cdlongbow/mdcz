@@ -1,16 +1,21 @@
-import type { MediaCandidate } from "@mdcz/shared/types";
-import type { ConfigOutput } from "@renderer/client/types";
 import {
   filterMediaCandidates,
   mergeMediaCandidates,
   resolveMediaCandidateScanPlan,
-} from "@renderer/components/workbench/mediaCandidateScan";
-import { useWorkbenchSetupStore } from "@renderer/store/workbenchSetupStore";
+} from "@mdcz/shared/mediaCandidate";
+import { useWorkbenchSetupStore } from "@mdcz/shared/stores/workbenchSetupStore";
+import type { MediaCandidate } from "@mdcz/shared/types";
+import { WorkbenchSetupView } from "@mdcz/views/workbench";
+import type { ConfigOutput } from "@renderer/client/types";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
 
 const rootDir = process.platform === "win32" ? "D:\\media" : "/media";
 const successDir = process.platform === "win32" ? "D:\\media\\JAV_output" : "/media/JAV_output";
 const failedDir = process.platform === "win32" ? "D:\\media\\failed" : "/media/failed";
+const skippedDir = process.platform === "win32" ? "D:\\media\\skip" : "/media/skip";
+const absoluteSkippedDir = process.platform === "win32" ? "E:\\skip" : "/skip";
 const softlinkDir = process.platform === "win32" ? "D:\\softlink" : "/softlink";
 
 const createConfig = (overrides?: Partial<ConfigOutput>): ConfigOutput =>
@@ -19,6 +24,7 @@ const createConfig = (overrides?: Partial<ConfigOutput>): ConfigOutput =>
       mediaPath: rootDir,
       successOutputFolder: "JAV_output",
       failedOutputFolder: "failed",
+      defaultScanExcludeDirs: ["JAV_output", "failed"],
       softlinkPath: softlinkDir,
       outputSummaryPath: "",
     },
@@ -47,7 +53,7 @@ const resetWorkbenchSetupStore = () => {
     scanStatus: "idle",
     scanError: "",
     lastScannedDir: "",
-    lastScannedExcludeDir: "",
+    lastScannedPlanKey: "",
     supportedExtensions: [],
   });
 };
@@ -58,11 +64,29 @@ describe("workbench setup contract", () => {
   });
 
   it("plans normal scrape scans from configured paths and excludes output folders", () => {
-    const plan = resolveMediaCandidateScanPlan("scrape", rootDir, successDir, createConfig());
+    const plan = resolveMediaCandidateScanPlan("scrape", rootDir, createConfig());
 
-    expect(plan.excludeDirPath).toBe(successDir);
     expect(plan.filterDirPaths).toEqual([successDir, failedDir]);
     expect(plan.extraScanDirs).toEqual([softlinkDir]);
+  });
+
+  it("plans default scan exclusions from configured relative and absolute directories", () => {
+    const plan = resolveMediaCandidateScanPlan(
+      "scrape",
+      rootDir,
+      createConfig({
+        paths: {
+          mediaPath: rootDir,
+          successOutputFolder: "JAV_output",
+          failedOutputFolder: "failed",
+          defaultScanExcludeDirs: ["JAV_output", "failed", "skip", absoluteSkippedDir],
+          softlinkPath: softlinkDir,
+          outputSummaryPath: "",
+        },
+      } as Partial<ConfigOutput>),
+    );
+
+    expect(plan.filterDirPaths).toEqual([successDir, failedDir, skippedDir, absoluteSkippedDir]);
   });
 
   it("filters output-folder candidates and dedupes merged scan roots", () => {
@@ -113,5 +137,56 @@ describe("workbench setup contract", () => {
     expect(state.candidates).toEqual([]);
     expect(state.selectedPaths).toEqual([]);
     expect(state.scanStatus).toBe("idle");
+  });
+
+  it("hides Web native browse buttons while keeping custom server path autocomplete inputs", () => {
+    const html = renderToStaticMarkup(
+      createElement(WorkbenchSetupView, {
+        mode: "scrape",
+        scanDir: "",
+        targetDir: "",
+        candidates: [],
+        selectedPaths: [],
+        selectedSize: 0,
+        totalSize: 0,
+        extensionCount: 0,
+        scanStatus: "idle",
+        scanning: false,
+        startPending: false,
+        supportedExtensions: [".mp4"],
+        presetId: "read_local",
+        runSummary: "",
+        primaryDisabled: true,
+        supportsPathBrowse: false,
+        formatBytes: () => "0 B",
+        onBrowseScanDir: () => undefined,
+        onBrowseTargetDir: () => undefined,
+        onRefreshScan: () => undefined,
+        onPresetChange: () => undefined,
+        onStart: () => undefined,
+        onToggleCandidate: () => undefined,
+        onToggleAll: () => undefined,
+        onScanDirChange: () => undefined,
+        onTargetDirChange: () => undefined,
+        onSuggestScanDir: async () => ({
+          path: "",
+          parentPath: "",
+          exists: false,
+          accessible: true,
+          entries: [],
+        }),
+        onSuggestTargetDir: async () => ({
+          path: "",
+          parentPath: "",
+          exists: false,
+          accessible: true,
+          entries: [],
+        }),
+      }),
+    );
+
+    expect(html).not.toContain(">浏览<");
+    expect(html).not.toContain("<datalist");
+    expect(html.match(/aria-autocomplete="list"/g)?.length).toBe(2);
   });
 });

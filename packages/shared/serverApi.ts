@@ -1,5 +1,6 @@
 import type { Configuration } from "./config";
 import type {
+  AppEnsureWatermarkDirectoryResponse,
   AuthLoginInput,
   AuthSessionDto,
   ConfigImportInput,
@@ -11,6 +12,8 @@ import type {
   ConfigProfileNameInput,
   ConfigProfileNameResponse,
   ConfigUpdateInput,
+  CrawlerListSitesResponse,
+  CrawlerProbeSiteConnectivityInput,
   DiagnosticsSummaryResponse,
   FileActionInput,
   FileActionResponse,
@@ -19,13 +22,23 @@ import type {
   LibraryDetailResponse,
   LibraryListInput,
   LibraryListResponse,
+  LibraryRelinkInput,
+  LogListInput,
   LogListResponse,
+  MaintenanceApplyInput,
+  MaintenanceApplyResponse,
+  MaintenancePreviewResponse,
+  MaintenanceScanSelectedFilesInput,
+  MaintenanceScanSelectedFilesResponse,
+  MaintenanceStartInput,
+  MaintenanceTaskInput,
   MediaRootAvailabilityResponse,
   MediaRootCreateInput,
   MediaRootDto,
   MediaRootIdInput,
   MediaRootListResponse,
   MediaRootUpdateInput,
+  NetworkCheckCookiesResponse,
   NfoReadInput,
   NfoReadResponse,
   NfoWriteInput,
@@ -34,19 +47,35 @@ import type {
   PersistenceStatusDto,
   RootBrowserInput,
   RootBrowserResponse,
+  ScanCandidatesInput,
+  ScanCandidatesResponse,
   ScanStartInput,
   ScanTaskDetailResponse,
   ScanTaskDto,
   ScanTaskIdInput,
   ScanTaskListResponse,
+  ScrapeConfirmUncensoredInput,
+  ScrapeRecoverableSessionResolveInput,
+  ScrapeRecoverableSessionResolveResponse,
+  ScrapeRecoverableSessionResponse,
   ScrapeResultDetailResponse,
   ScrapeResultIdInput,
   ScrapeResultListResponse,
   ScrapeStartInput,
+  ScrapeStartSelectedFilesInput,
   ScrapeTaskControlInput,
+  ServerPathSuggestInput,
+  ServerPathSuggestResponse,
   SetupCompleteInput,
   SetupStatusDto,
+  SiteConnectivityProbeResponse,
+  SystemAboutResponse,
   TaskEventListResponse,
+  ToolCatalogResponse,
+  ToolExecuteInput,
+  ToolExecuteResponse,
+  TranslateTestLlmInputDto,
+  TranslateTestLlmResponse,
 } from "./serverDtos";
 import type { NamingPreviewItem } from "./types";
 
@@ -54,11 +83,27 @@ export interface ServerApiContract {
   health: {
     read(): Promise<HealthResponse>;
   };
+  system: {
+    about(): Promise<SystemAboutResponse>;
+  };
   auth: {
     setup(): Promise<AuthSessionDto>;
     status(): Promise<AuthSessionDto>;
     login(input: AuthLoginInput): Promise<AuthSessionDto>;
     logout(): Promise<AuthSessionDto>;
+  };
+  app: {
+    ensureWatermarkDirectory(): Promise<AppEnsureWatermarkDirectoryResponse>;
+  };
+  crawler: {
+    listSites(): Promise<CrawlerListSitesResponse>;
+    probeSiteConnectivity(input: CrawlerProbeSiteConnectivityInput): Promise<SiteConnectivityProbeResponse>;
+  };
+  network: {
+    checkCookies(): Promise<NetworkCheckCookiesResponse>;
+  };
+  translate: {
+    testLlm(input: TranslateTestLlmInputDto): Promise<TranslateTestLlmResponse>;
   };
   config: {
     defaults(): Promise<Configuration>;
@@ -82,17 +127,36 @@ export interface ServerApiContract {
     status(): Promise<PersistenceStatusDto>;
   };
   logs: {
-    list(): Promise<LogListResponse>;
+    list(input?: LogListInput): Promise<LogListResponse>;
+    clearRuntime(): Promise<{ ok: true; cleared: number }>;
+  };
+  maintenance: {
+    scanSelectedFiles(input: MaintenanceScanSelectedFilesInput): Promise<MaintenanceScanSelectedFilesResponse>;
+    start(input: MaintenanceStartInput): Promise<ScanTaskDto>;
+    preview(input: MaintenanceTaskInput): Promise<MaintenancePreviewResponse>;
+    apply(input: MaintenanceApplyInput): Promise<MaintenanceApplyResponse>;
+    pause(input: MaintenanceTaskInput): Promise<ScanTaskDto>;
+    resume(input: MaintenanceTaskInput): Promise<ScanTaskDto>;
+    stop(input: MaintenanceTaskInput): Promise<ScanTaskDto>;
+    recover(): Promise<ScanTaskListResponse>;
   };
   library: {
     list(input?: LibraryListInput): Promise<LibraryListResponse>;
+    search(input?: LibraryListInput): Promise<LibraryListResponse>;
     detail(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
+    refresh(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
+    rescan(input: LibraryDetailInput): Promise<ScanTaskDto>;
+    relink(input: LibraryRelinkInput): Promise<LibraryDetailResponse>;
   };
   overview: {
     summary(): Promise<OverviewSummaryResponse>;
   };
   diagnostics: {
     summary(): Promise<DiagnosticsSummaryResponse>;
+  };
+  tools: {
+    catalog(): Promise<ToolCatalogResponse>;
+    execute(input: ToolExecuteInput): Promise<ToolExecuteResponse>;
   };
   setup: {
     status(): Promise<SetupStatusDto>;
@@ -110,8 +174,12 @@ export interface ServerApiContract {
   browser: {
     list(input: RootBrowserInput): Promise<RootBrowserResponse>;
   };
+  serverPaths: {
+    suggest(input: ServerPathSuggestInput): Promise<ServerPathSuggestResponse>;
+  };
   scans: {
     start(input: ScanStartInput): Promise<ScanTaskDto>;
+    candidates(input: ScanCandidatesInput): Promise<ScanCandidatesResponse>;
     list(): Promise<ScanTaskListResponse>;
     detail(input: ScanTaskIdInput): Promise<ScanTaskDetailResponse>;
     events(input: ScanTaskIdInput): Promise<TaskEventListResponse>;
@@ -119,12 +187,18 @@ export interface ServerApiContract {
   };
   scrape: {
     start(input: ScrapeStartInput): Promise<ScanTaskDto>;
+    startSelectedFiles(input: ScrapeStartSelectedFilesInput): Promise<ScanTaskDto>;
     listResults(input?: ScrapeTaskControlInput): Promise<ScrapeResultListResponse>;
     result(input: ScrapeResultIdInput): Promise<ScrapeResultDetailResponse>;
     stop(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
     pause(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
     resume(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
+    confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<ScanTaskDto>;
     retry(input: ScrapeTaskControlInput): Promise<ScanTaskDto>;
+    getRecoverableSession(): Promise<ScrapeRecoverableSessionResponse>;
+    resolveRecoverableSession(
+      input?: ScrapeRecoverableSessionResolveInput,
+    ): Promise<ScrapeRecoverableSessionResolveResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
     nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse>;
     deleteFile(input: FileActionInput): Promise<FileActionResponse>;
@@ -139,10 +213,16 @@ export interface ServerApiContract {
 
 export type ServerApiProcedure =
   | "health.read"
+  | "system.about"
   | "auth.setup"
   | "auth.status"
   | "auth.login"
   | "auth.logout"
+  | "app.ensureWatermarkDirectory"
+  | "crawler.listSites"
+  | "crawler.probeSiteConnectivity"
+  | "network.checkCookies"
+  | "translate.testLlm"
   | "config.defaults"
   | "config.read"
   | "config.previewNaming"
@@ -159,8 +239,23 @@ export type ServerApiProcedure =
   | "config.profiles.import"
   | "persistence.status"
   | "logs.list"
+  | "logs.clearRuntime"
+  | "maintenance.scanSelectedFiles"
+  | "maintenance.start"
+  | "maintenance.preview"
+  | "maintenance.execute"
+  | "maintenance.pause"
+  | "maintenance.resume"
+  | "maintenance.stop"
+  | "maintenance.recover"
+  | "tools.catalog"
+  | "tools.execute"
   | "library.list"
+  | "library.search"
   | "library.detail"
+  | "library.refresh"
+  | "library.rescan"
+  | "library.relink"
   | "overview.summary"
   | "diagnostics.summary"
   | "setup.status"
@@ -173,18 +268,24 @@ export type ServerApiProcedure =
   | "mediaRoots.disable"
   | "mediaRoots.delete"
   | "browser.list"
+  | "serverPaths.suggest"
   | "scans.start"
+  | "scans.candidates"
   | "scans.list"
   | "scans.detail"
   | "scans.events"
   | "scans.retry"
   | "scrape.start"
+  | "scrape.startSelectedFiles"
   | "scrape.listResults"
   | "scrape.result"
   | "scrape.stop"
   | "scrape.pause"
   | "scrape.resume"
   | "scrape.retry"
+  | "scrape.confirmUncensored"
+  | "scrape.getRecoverableSession"
+  | "scrape.resolveRecoverableSession"
   | "scrape.nfoRead"
   | "scrape.nfoWrite"
   | "scrape.deleteFile"

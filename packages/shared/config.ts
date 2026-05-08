@@ -153,6 +153,7 @@ const pathsSchema = z.object({
   softlinkPath: z.string().default("softlink"),
   successOutputFolder: z.string().default("JAV_output"),
   failedOutputFolder: z.string().default("failed"),
+  defaultScanExcludeDirs: z.array(z.string()).default(["JAV_output", "failed"]),
   sceneImagesFolder: z.string().default("extrafanart"),
   configDirectory: z.string().default("config"),
   outputSummaryPath: z.string().default(""),

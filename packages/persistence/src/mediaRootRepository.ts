@@ -1,4 +1,4 @@
-import type { MediaRoot } from "@mdcz/storage";
+import type { MediaRoot } from "@mdcz/media-store";
 import { and, eq } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";

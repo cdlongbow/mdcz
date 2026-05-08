@@ -1,6 +1,11 @@
+import { lstat } from "node:fs/promises";
 import path from "node:path";
+import { listRootFiles, type MediaRoot, normalizeHostPath } from "@mdcz/media-store";
+import { isHostPathWithinDirectory } from "@mdcz/shared/mediaCandidate";
 import type {
   LogListResponse,
+  ScanCandidatesInput,
+  ScanCandidatesResponse,
   ScanTaskDetailResponse,
   ScanTaskDto,
   ScanTaskListResponse,
@@ -8,9 +13,9 @@ import type {
   TaskEventListResponse,
 } from "@mdcz/shared/serverDtos";
 import { isVideoFileName } from "@mdcz/shared/videoClassification";
-import { listRootFiles, type MediaRoot } from "@mdcz/storage";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
+import { decorateTaskLog } from "./runtimeLogService";
 import type { TaskEventBus } from "./taskEvents";
 
 interface ScanFileResult {
@@ -25,6 +30,7 @@ interface ScanDirectoryResult {
 }
 
 const toIso = (value: Date | null): string | null => value?.toISOString() ?? null;
+const toPosixPath = (value: string): string => value.replace(/\\/gu, "/");
 
 export class ScanQueueService {
   #running = false;
@@ -94,6 +100,59 @@ export class ScanQueueService {
     this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
     void this.drain();
     return await this.toDto(taskId);
+  }
+
+  async candidates(input: ScanCandidatesInput): Promise<ScanCandidatesResponse> {
+    const hostPath = normalizeHostPath(input.scanDir);
+    const registeredRoots = (await this.mediaRoots.list()).roots.filter((root) => root.enabled);
+    const root: MediaRoot = {
+      id: "adhoc-scan",
+      displayName: path.basename(hostPath) || hostPath,
+      hostPath,
+      rootType: "mounted-filesystem",
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const supported = new Set(
+      (input.supportedExtensions ?? []).map((extension) => extension.replace(/^\./u, "").toLowerCase()),
+    );
+    const files = await listRootFiles(root, "", true);
+    const candidates = await Promise.all(
+      files
+        .filter((file) => {
+          const extension = path.extname(file.relativePath).replace(/^\./u, "").toLowerCase();
+          return supported.size > 0 ? supported.has(extension) : isVideoFileName(path.basename(file.relativePath));
+        })
+        .map(async (file) => {
+          const absolutePath = path.resolve(hostPath, file.relativePath);
+          const stats = await lstat(absolutePath).catch(() => null);
+          if (stats?.isSymbolicLink()) {
+            return null;
+          }
+          const registeredRoot = registeredRoots.find((candidate) =>
+            isHostPathWithinDirectory(absolutePath, candidate.hostPath),
+          );
+          const rootRelativePath = registeredRoot
+            ? toPosixPath(path.relative(registeredRoot.hostPath, absolutePath))
+            : undefined;
+          return {
+            path: absolutePath,
+            name: path.basename(file.relativePath),
+            size: file.size,
+            lastModified: file.modifiedAt?.toISOString() ?? null,
+            extension: path.extname(file.relativePath).replace(/^\./u, "").toLowerCase(),
+            relativePath: file.relativePath,
+            relativeDirectory:
+              path.posix.dirname(file.relativePath) === "." ? "" : path.posix.dirname(file.relativePath),
+            rootId: registeredRoot?.id,
+            rootRelativePath,
+          };
+        }),
+    );
+    return {
+      candidates: candidates.filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate)),
+    };
   }
 
   async resumeQueued(): Promise<void> {
@@ -202,6 +261,23 @@ export class ScanQueueService {
     const event = await state.repositories.tasks.addEvent({ taskId, type, message });
     const dto = toTaskEventDto(event);
     this.taskEvents.publish({ kind: "event", event: dto });
+    this.taskEvents.publishRealtime({
+      id: dto.id,
+      taskId: dto.taskId,
+      createdAt: dto.createdAt,
+      kind: "log",
+      log: decorateTaskLog(dto),
+    });
+    if (type === "failed") {
+      this.taskEvents.publishRealtime({
+        id: `${dto.id}:failed`,
+        taskId: dto.taskId,
+        createdAt: dto.createdAt,
+        kind: "task-failed",
+        message,
+        error: message,
+      });
+    }
     return dto;
   }
 }

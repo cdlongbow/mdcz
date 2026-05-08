@@ -1,65 +1,99 @@
 import { Website } from "@mdcz/shared/enums";
-import { parseBufferedNumberValue } from "@renderer/components/config-form/BufferedFieldControls";
-import { OrderedSiteFieldEditor } from "@renderer/components/config-form/OrderedSiteField";
-import { ProfileCapsule } from "@renderer/components/settings/ProfileCapsule";
-import { SectionAnchor } from "@renderer/components/settings/SectionAnchor";
-import { AdvancedSettingsFooterContent } from "@renderer/components/settings/SettingsForm";
+import { OrderedSiteFieldEditor, parseBufferedNumberValue, ServerPathField } from "@mdcz/views/config-form";
+import { dedupePathAutocompleteSuggestions } from "@mdcz/views/path";
 import {
-  SettingsSectionModeProvider,
-  shouldRenderFieldInSectionMode,
-} from "@renderer/components/settings/SettingsSectionModeContext";
-import { buildSitePrioritySummary } from "@renderer/components/settings/SitePriorityEditorField";
-import { buildSettingsBrowseState } from "@renderer/components/settings/settingsBrowseState";
-import {
+  AdvancedSettingsFooterContent,
   AssetDownloadsSection,
-  buildNamingPreviewConfig,
-  NamingSection,
-} from "@renderer/components/settings/settingsContent";
-import { resolveSettingsDeepLink } from "@renderer/components/settings/settingsDeepLink";
-import { getSettingsSuggestions } from "@renderer/components/settings/settingsFilter";
-import { FIELD_REGISTRY, flattenConfig, unflattenConfig } from "@renderer/components/settings/settingsRegistry";
-import {
-  moveSitePriorityOption,
-  resolveSitePriorityOptions,
-  toggleSitePriorityOption,
-} from "@renderer/components/settings/sitePriorityOptions";
-import {
-  FileBehaviorTopLevelSection,
-  NetworkTopLevelSection,
-  TranslateTopLevelSection,
-} from "@renderer/components/settings/TopLevelSections";
-import {
   buildAutoSaveFlatPayload,
+  buildNamingPreviewConfig,
+  buildSettingsBrowseState,
+  buildSitePrioritySummary,
+  FIELD_REGISTRY,
+  FileBehaviorTopLevelSection,
+  flattenConfig,
+  getSettingsSuggestions,
   mergeConfigWithFlatPayload,
+  moveSitePriorityOption,
+  NamingSection,
+  NetworkTopLevelSection,
+  PathsSection,
+  ProfileCapsule,
+  resolveSettingsDeepLink,
+  resolveSitePriorityOptions,
   runLatestRevisionTask,
+  SectionAnchor,
   SettingsEditorAutosaveProvider,
-} from "@renderer/hooks/useAutoSaveField";
+  SettingsSectionModeProvider,
+  type SettingsServices,
+  SettingsServicesProvider,
+  shouldRenderFieldInSectionMode,
+  TranslateTopLevelSection,
+  toggleSitePriorityOption,
+  unflattenConfig,
+} from "@mdcz/views/settings";
 import { type ComponentProps, createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { type FieldValues, FormProvider, useForm } from "react-hook-form";
 import { describe, expect, it, vi } from "vitest";
 
 const noop = vi.fn();
+const testSettingsServices = {
+  browsePath: vi.fn(async () => ({})),
+  checkCookies: vi.fn(async () => ({ results: [] })),
+  decrementInFlightSaves: vi.fn(),
+  ensureWatermarkDirectory: vi.fn(async () => ({ path: "" })),
+  getInFlightSaves: vi.fn(() => 0),
+  incrementInFlightSaves: vi.fn(),
+  listCrawlerSites: vi.fn(async () => ({ sites: [] })),
+  openWatermarkDirectory: vi.fn(async () => undefined),
+  previewNaming: vi.fn(async () => ({ items: [] })),
+  probeSiteConnectivity: vi.fn(async () => ({ ok: true, message: "" })),
+  relaunchApp: vi.fn(async () => undefined),
+  resetConfig: vi.fn(async () => undefined),
+  saveConfig: vi.fn(async () => undefined),
+  testLlm: vi.fn(async () => ({ success: true, message: "" })),
+} satisfies SettingsServices;
+const createTestSettingsServices = (overrides: Partial<SettingsServices> = {}): SettingsServices => ({
+  ...testSettingsServices,
+  ...overrides,
+});
+const testSettingsNotifier = {
+  error: vi.fn(),
+  info: vi.fn(),
+  success: vi.fn(),
+};
 
 function entry(key: string) {
   return FIELD_REGISTRY.find((candidate) => candidate.key === key);
 }
 
-function FormHarness({ children, values = {} }: { children?: ReactNode; values?: Record<string, unknown> }) {
+function FormHarness({
+  children,
+  services = testSettingsServices,
+  values = {},
+}: {
+  children?: ReactNode;
+  services?: SettingsServices;
+  values?: Record<string, unknown>;
+}) {
   const form = useForm<FieldValues>({ defaultValues: values });
   const flatValues = flattenConfig(values);
 
   return createElement(
-    FormProvider,
-    form as ComponentProps<typeof FormProvider>,
+    SettingsServicesProvider,
+    { notifier: testSettingsNotifier, services },
     createElement(
-      SettingsEditorAutosaveProvider,
-      {
-        savedValues: flatValues,
-        defaultValues: flatValues,
-        defaultValuesReady: true,
-      },
-      children,
+      FormProvider,
+      form as ComponentProps<typeof FormProvider>,
+      createElement(
+        SettingsEditorAutosaveProvider,
+        {
+          savedValues: flatValues,
+          defaultValues: flatValues,
+          defaultValuesReady: true,
+        },
+        children,
+      ),
     ),
   );
 }
@@ -109,6 +143,7 @@ describe("settings editor metadata and filtering", () => {
     expect(entry("download.tagBadgeImageOverrides")).toMatchObject({ anchor: "download", visibility: "public" });
     expect(entry("aggregation.fieldPriorities.durationSeconds")?.visibility).toBe("advanced");
     expect(entry("naming.partStyle")?.visibility).toBe("public");
+    expect(entry("paths.defaultScanExcludeDirs")).toMatchObject({ anchor: "paths", visibility: "public" });
     expect(entry("scrape.r18MetadataLanguage")).toMatchObject({ anchor: "scrape", visibility: "hidden" });
     expect(entry("jellyfin.url")).toMatchObject({ surface: "tools" });
 
@@ -157,6 +192,27 @@ describe("settings editor metadata and filtering", () => {
       scrape: { sites: ["javdb"], r18MetadataLanguage: "en" },
       aggregation: { fieldPriorities: { durationSeconds: ["dmm_tv", "avbase"] } },
     });
+  });
+
+  it("keeps scan exclusion directories in the paths settings surface", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        FormHarness,
+        {
+          values: {
+            paths: {
+              failedOutputFolder: "failed",
+              defaultScanExcludeDirs: ["E:/Output", "failed_22"],
+            },
+          },
+        },
+        createElement(PathsSection),
+      ),
+    );
+
+    expect(html).toContain("E:/Output");
+    expect(html).toContain("failed_22");
+    expect(html.match(/aria-autocomplete="list"/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
   it("applies PRD visibility rules for normal, advanced, modified, group, and deep-link browsing", () => {
@@ -518,6 +574,20 @@ describe("settings editor save and content helpers", () => {
 });
 
 describe("settings editor render contracts", () => {
+  it("deduplicates path autocomplete suggestions by normalized host path", () => {
+    expect(
+      dedupePathAutocompleteSuggestions([
+        { label: "Drive G", path: "G:/" },
+        { label: "Drive G duplicate", path: "G:\\" },
+        { label: "Movies", path: "G:/Movies/" },
+        { label: "Movies duplicate", path: "g:/Movies" },
+      ]),
+    ).toEqual([
+      { label: "Drive G", path: "G:/" },
+      { label: "Movies", path: "G:/Movies/" },
+    ]);
+  });
+
   it("keeps OrderedSiteFieldEditor simple mode stable while rendering grouped row details", () => {
     const simpleHtml = renderToStaticMarkup(
       createElement(
@@ -648,6 +718,36 @@ describe("settings editor render contracts", () => {
 
     expect(filteredHtml).not.toContain("显示高级设置");
     expect(browseHtml).toContain("显示高级设置");
+  });
+
+  it("hides unsupported path browse buttons while keeping server path suggestions", () => {
+    const services = createTestSettingsServices({
+      getPathSuggestions: () => [
+        { label: "Movies", path: "E:/Movies" },
+        { label: "Output", path: "E:/Output" },
+      ],
+      supportsPathBrowse: false,
+    });
+    const html = renderToStaticMarkup(
+      createElement(
+        FormHarness,
+        { services, values: { paths: { mediaPath: "" } } },
+        createElement(ServerPathField, {
+          field: {
+            name: "paths.mediaPath",
+            onBlur: noop,
+            onChange: noop,
+            ref: noop,
+            value: "",
+          },
+        }),
+      ),
+    );
+
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("<datalist");
+    expect(html).toContain('aria-autocomplete="list"');
+    expect(html).toContain("运行 MDCz 服务的主机路径");
   });
 
   it("renders the PRD split sections and keeps advanced-only content out of public rows", () => {

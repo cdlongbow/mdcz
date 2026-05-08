@@ -3,11 +3,11 @@ import { dirname, extname, join, relative } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { configManager } from "@main/services/config/ConfigManager";
 import { loggerService } from "@main/services/LoggerService";
-import { isGeneratedSidecarVideo } from "@main/services/scraper/media";
 import { findExistingNfoPath, nfoGenerator } from "@main/services/scraper/NfoGenerator";
 import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles } from "@main/utils/file";
 import { parseNfo, parseNfoSnapshot } from "@main/utils/nfo";
+import { isGeneratedSidecarVideo } from "@mdcz/runtime/scrape";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
@@ -105,7 +105,7 @@ export const createFileHandlers = (
         }
       },
     ),
-    [IpcChannel.File_ListMediaCandidates]: t.procedure.input<{ dirPath?: string; excludeDirPath?: string }>().action(
+    [IpcChannel.File_ListMediaCandidates]: t.procedure.input<{ dirPath?: string }>().action(
       async ({
         input,
       }): Promise<{
@@ -114,20 +114,13 @@ export const createFileHandlers = (
       }> => {
         try {
           const dirPath = input?.dirPath?.trim();
-          const excludeDirPath = input?.excludeDirPath?.trim();
           if (!dirPath) {
             throw createIpcError(IpcErrorCode.DIRECTORY_NOT_FOUND, "Directory path is required");
           }
 
           await assertDirectory(dirPath);
 
-          const discoveredPaths = await listVideoFiles(
-            dirPath,
-            true,
-            DEFAULT_VIDEO_EXTENSIONS,
-            undefined,
-            excludeDirPath ? [excludeDirPath] : [],
-          );
+          const discoveredPaths = await listVideoFiles(dirPath, true, DEFAULT_VIDEO_EXTENSIONS);
           const uniquePaths = [...new Set(discoveredPaths.filter((filePath) => !isGeneratedSidecarVideo(filePath)))];
           const candidates: MediaCandidate[] = [];
 

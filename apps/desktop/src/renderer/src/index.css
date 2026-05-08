@@ -1,6 +1,11 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+@source "./**/*.{ts,tsx}";
+@source "../../../../../packages/ui/src/**/*.{ts,tsx}";
+@source "../../../../../packages/views/src/**/*.{ts,tsx}";
+@source "../../../../../packages/shared/**/*.{ts,tsx}";
+
 @custom-variant dark (&:is(.dark *));
 
 @font-face {
@@ -87,6 +92,7 @@
 }
 
 :root {
+  color-scheme: light;
   --background: hsl(240 5% 96%);
   --foreground: hsl(240 10% 4%);
   --card: hsl(0 0% 100%);
@@ -118,6 +124,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: hsl(212 25% 12%);
   --foreground: hsl(0 0% 98%);
   --card: hsl(212 25% 12%);

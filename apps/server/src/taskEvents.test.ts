@@ -44,6 +44,33 @@ describe("TaskEventBus", () => {
     expect(receivedEvents).toEqual([event]);
     expect(taskEvents.listenerCount()).toBe(0);
   });
+
+  it("publishes realtime task events on the task-event channel", () => {
+    const taskEvents = createTaskEventBus();
+    const receivedEvents: TaskEventEnvelope[] = [];
+    taskEvents.subscribe((event) => {
+      receivedEvents.push(event);
+    });
+
+    const event = taskEvents.publishRealtime({
+      id: "log-1",
+      taskId: "runtime",
+      createdAt: "2026-05-06T00:00:00.000Z",
+      kind: "log",
+      log: {
+        id: "log-1",
+        taskId: "runtime",
+        type: "info",
+        message: "ready",
+        createdAt: "2026-05-06T00:00:00.000Z",
+        source: "runtime",
+        level: "INFO",
+      },
+    });
+
+    expect(event.event).toBe("task-event");
+    expect(receivedEvents).toEqual([event]);
+  });
 });
 
 describe("formatSseEvent", () => {
@@ -55,5 +82,27 @@ describe("formatSseEvent", () => {
         data: { kind: "task", task },
       }),
     ).toBe(`id: 7\nevent: task-update\ndata: ${JSON.stringify({ kind: "task", task })}\n\n`);
+  });
+
+  it("formats a realtime task event envelope as an SSE message", () => {
+    const payload = {
+      id: "log-1",
+      taskId: "runtime",
+      createdAt: "2026-05-06T00:00:00.000Z",
+      kind: "log" as const,
+      log: {
+        id: "log-1",
+        taskId: "runtime",
+        type: "info",
+        message: "ready",
+        createdAt: "2026-05-06T00:00:00.000Z",
+        source: "runtime" as const,
+        level: "INFO" as const,
+      },
+    };
+
+    expect(formatSseEvent({ id: "8", event: "task-event", data: payload })).toBe(
+      `id: 8\nevent: task-event\ndata: ${JSON.stringify(payload)}\n\n`,
+    );
   });
 });

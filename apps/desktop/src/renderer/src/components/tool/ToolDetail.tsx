@@ -3,7 +3,6 @@ import { AmazonPoster } from "./AmazonPoster";
 import { BatchNfoTranslator } from "./BatchNfoTranslator";
 import { CrawlerTester } from "./CrawlerTester";
 import { FileCleaner } from "./FileCleaner";
-import { MissingNumberFinder } from "./MissingNumberFinder";
 import { Person } from "./Person";
 import { SingleFileScraper } from "./SingleFileScraper";
 import { SymlinkManager } from "./SymlinkManager";
@@ -21,7 +20,6 @@ const TOOL_COMPONENTS: Record<ToolId, ComponentType> = {
   "symlink-manager": SymlinkManager,
   "file-cleaner": FileCleaner,
   "batch-nfo-translator": BatchNfoTranslator,
-  "missing-number-finder": MissingNumberFinder,
 };
 
 export function ToolDetail({ toolId }: ToolDetailProps) {

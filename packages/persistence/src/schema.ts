@@ -64,8 +64,37 @@ export const scrapeResults = sqliteTable("scrape_results", {
   nfoRelativePath: text("nfo_relative_path"),
   outputRelativePath: text("output_relative_path"),
   manualUrl: text("manual_url"),
+  uncensoredAmbiguous: integer("uncensored_ambiguous", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const maintenancePreviews = sqliteTable("maintenance_previews", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id").notNull(),
+  rootId: text("root_id").notNull(),
+  relativePath: text("relative_path").notNull(),
+  presetId: text("preset_id").notNull(),
+  status: text("status").notNull(),
+  errorMessage: text("error_message"),
+  fieldDiffsJson: text("field_diffs_json").notNull().default("[]"),
+  unchangedFieldDiffsJson: text("unchanged_field_diffs_json").notNull().default("[]"),
+  pathDiffJson: text("path_diff_json"),
+  proposedCrawlerDataJson: text("proposed_crawler_data_json"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const maintenanceApplyLog = sqliteTable("maintenance_apply_log", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id").notNull(),
+  previewId: text("preview_id").notNull(),
+  rootId: text("root_id").notNull(),
+  relativePath: text("relative_path").notNull(),
+  presetId: text("preset_id").notNull(),
+  status: text("status").notNull(),
+  errorMessage: text("error_message"),
+  appliedAt: integer("applied_at", { mode: "timestamp_ms" }).notNull(),
 });
 
 export const libraryEntries = sqliteTable(
@@ -90,6 +119,49 @@ export const libraryEntries = sqliteTable(
   (table) => ({ rootPathKey: uniqueIndex("library_entries_root_path_idx").on(table.rootId, table.rootRelativePath) }),
 );
 
+export const libraryItems = sqliteTable("library_items", {
+  id: text("id").primaryKey(),
+  mediaIdentity: text("media_identity"),
+  crawlerDataJson: text("crawler_data_json"),
+  sourceTaskId: text("source_task_id"),
+  scrapeOutputId: text("scrape_output_id"),
+  title: text("title"),
+  number: text("number"),
+  actorsJson: text("actors_json").notNull().default("[]"),
+  indexedAt: integer("indexed_at", { mode: "timestamp_ms" }).notNull(),
+  lastRefreshedAt: integer("last_refreshed_at", { mode: "timestamp_ms" }),
+});
+
+export const libraryItemFiles = sqliteTable(
+  "library_item_files",
+  {
+    id: text("id").primaryKey(),
+    itemId: text("item_id").notNull(),
+    rootId: text("root_id").notNull(),
+    rootRelativePath: text("root_relative_path").notNull(),
+    fileName: text("file_name").notNull(),
+    directory: text("directory").notNull(),
+    size: integer("size").notNull().default(0),
+    modifiedAt: integer("modified_at", { mode: "timestamp_ms" }),
+    lastKnownPath: text("last_known_path"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => ({
+    itemFileKey: uniqueIndex("library_item_files_item_path_idx").on(table.itemId, table.rootId, table.rootRelativePath),
+  }),
+);
+
+export const libraryItemAssets = sqliteTable("library_item_assets", {
+  id: text("id").primaryKey(),
+  itemId: text("item_id").notNull(),
+  kind: text("kind").notNull(),
+  uri: text("uri").notNull(),
+  rootId: text("root_id"),
+  relativePath: text("relative_path"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const schema = {
   mediaRoots,
   taskRecords,
@@ -97,7 +169,12 @@ export const schema = {
   scanResults,
   scrapeOutputs,
   scrapeResults,
+  maintenancePreviews,
+  maintenanceApplyLog,
   libraryEntries,
+  libraryItems,
+  libraryItemFiles,
+  libraryItemAssets,
 };
 
 export type MediaRootRow = typeof mediaRoots.$inferSelect;
@@ -112,5 +189,15 @@ export type ScrapeOutputRow = typeof scrapeOutputs.$inferSelect;
 export type InsertScrapeOutputRow = typeof scrapeOutputs.$inferInsert;
 export type ScrapeResultRow = typeof scrapeResults.$inferSelect;
 export type InsertScrapeResultRow = typeof scrapeResults.$inferInsert;
+export type MaintenancePreviewRow = typeof maintenancePreviews.$inferSelect;
+export type InsertMaintenancePreviewRow = typeof maintenancePreviews.$inferInsert;
+export type MaintenanceApplyLogRow = typeof maintenanceApplyLog.$inferSelect;
+export type InsertMaintenanceApplyLogRow = typeof maintenanceApplyLog.$inferInsert;
 export type LibraryEntryRow = typeof libraryEntries.$inferSelect;
 export type InsertLibraryEntryRow = typeof libraryEntries.$inferInsert;
+export type LibraryItemRow = typeof libraryItems.$inferSelect;
+export type InsertLibraryItemRow = typeof libraryItems.$inferInsert;
+export type LibraryItemFileRow = typeof libraryItemFiles.$inferSelect;
+export type InsertLibraryItemFileRow = typeof libraryItemFiles.$inferInsert;
+export type LibraryItemAssetRow = typeof libraryItemAssets.$inferSelect;
+export type InsertLibraryItemAssetRow = typeof libraryItemAssets.$inferInsert;

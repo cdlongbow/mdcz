@@ -8,21 +8,37 @@ asarUnpack:
   - node_modules/sharp/**
   - node_modules/@img/sharp-*/**
 
+# Disable electron-builder's automatic native rebuild — we ship a prebuilt
+# Electron-ABI better_sqlite3.node via extraResources (see scripts/install-electron-sqlite.cjs).
+# Letting electron-builder rebuild would clobber the hoisted Node-ABI copy used by server/test.
+npmRebuild: false
+buildDependenciesFromSource: false
+
 directories:
   buildResources: build
   output: ../../release/${version}
 
 files:
   - out/**
+  - persistence/**
   - resources/**
   - package.json
   - "!**/*.map"
   - "!node_modules/mediainfo.js/dist/MediaInfoModule.wasm"
   - "!node_modules/openai/src/**"
+  # Strip the hoisted better-sqlite3 native artifacts; the Electron-ABI .node
+  # is shipped via extraResources/native and loaded explicitly through
+  # PersistenceDatabaseConfig.nativeBinding.
+  - "!**/node_modules/better-sqlite3/build/**"
+  - "!**/node_modules/better-sqlite3/deps/**"
+  - "!**/node_modules/better-sqlite3/src/**"
+  - "!**/node_modules/better-sqlite3/binding.gyp"
 
 extraResources:
   - from: node_modules/mediainfo.js/dist/MediaInfoModule.wasm
     to: MediaInfoModule.wasm
+  - from: native/better_sqlite3.node
+    to: native/better_sqlite3.node
 
 win:
   executableName: MDCz

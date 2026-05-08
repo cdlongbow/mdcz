@@ -15,6 +15,7 @@
     "email": "123543875+ShotHeadman@users.noreply.github.com"
   },
   "scripts": {
+    "postinstall": "node postinstall.cjs",
     "dev": "electron-vite dev --config electron.vite.config.ts",
     "build": "electron-vite build --config electron.vite.config.ts",
     "build:win": "pnpm build && electron-builder --config electron-builder.yml --win",
@@ -23,10 +24,15 @@
   },
   "dependencies": {
     "@egoist/tipc": "^0.3.2",
+    "@mdcz/persistence": "workspace:*",
     "@mdcz/runtime": "workspace:*",
     "@mdcz/shared": "workspace:*",
+    "@mdcz/media-store": "workspace:*",
     "@mdcz/ui": "workspace:*",
+    "@mdcz/views": "workspace:*",
+    "better-sqlite3": "^12.9.0",
     "cheerio": "^1.2.0",
+    "drizzle-orm": "^0.45.2",
     "electron-window-state": "^5.0.3",
     "fast-xml-parser": "^5.3.0",
     "impit": "^0.13.0",
