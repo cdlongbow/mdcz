@@ -1,34 +1,36 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import type { LibraryAvailabilityFilter } from "@mdcz/views/library";
 import { LibraryIndexView } from "@mdcz/views/library";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { api } from "../client";
+import { api, getLibraryAssetSrc } from "../client";
 import { AppLink } from "../routeCommon";
 
 export function LibraryPage() {
   const [query, setQuery] = useState("");
-  const [rootId, setRootId] = useState("");
-  const rootsQ = useQuery({ queryKey: ["mediaRoots"], queryFn: () => api.mediaRoots.list(), retry: false });
+  const [availabilityFilter, setAvailabilityFilter] = useState<LibraryAvailabilityFilter>("all");
   const libraryQ = useQuery({
-    queryKey: ["library", "search", query, rootId],
-    queryFn: () => api.library.search({ query, rootId: rootId || undefined, limit: 300 }),
+    queryKey: ["library", "search", query],
+    queryFn: () => api.library.search({ query, limit: 300 }),
     retry: false,
   });
 
   return (
     <LibraryIndexView
+      availabilityFilter={availabilityFilter}
       entries={libraryQ.data?.entries ?? []}
       errorMessage={libraryQ.error ? toErrorMessage(libraryQ.error) : null}
-      isLoading={libraryQ.isLoading || rootsQ.isLoading}
+      getImageSrc={(path, entry) => getLibraryAssetSrc({ path, rootId: entry.rootId })}
+      isLoading={libraryQ.isLoading}
       linkComponent={LibraryEntryLink}
+      onAvailabilityFilterChange={setAvailabilityFilter}
       onQueryChange={setQuery}
-      onRefresh={() => void libraryQ.refetch()}
-      onRootChange={setRootId}
+      onRefresh={() => {
+        void libraryQ.refetch();
+      }}
       query={query}
-      rootId={rootId}
-      roots={rootsQ.data?.roots ?? []}
       total={libraryQ.data?.total ?? 0}
     />
   );

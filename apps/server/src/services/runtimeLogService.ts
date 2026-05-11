@@ -55,9 +55,9 @@ export class RuntimeLogService {
       level: toRuntimeLevel(level),
       source: "runtime",
     };
-    this.entries.unshift(entry);
+    this.entries.push(entry);
     if (this.entries.length > this.maxEntries) {
-      this.entries.length = this.maxEntries;
+      this.entries.splice(0, this.entries.length - this.maxEntries);
     }
     this.taskEvents?.publishRealtime({
       id: entry.id,

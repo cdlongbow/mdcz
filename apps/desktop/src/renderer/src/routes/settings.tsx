@@ -107,6 +107,7 @@ function SettingsComponent() {
         },
         resetConfig: ipc.config.reset,
         saveConfig: ipc.config.save,
+        settingsTarget: "desktop",
         subscribeInFlightSaves: useSettingsSavingStore.subscribe,
         testLLM: ipc.translate.testLlm,
         updateCurrentConfigCache: (flatPayload: Record<string, unknown>) => {

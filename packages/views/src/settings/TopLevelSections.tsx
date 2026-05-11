@@ -167,6 +167,11 @@ export function FileBehaviorTopLevelSection({ forceOpen = false }: { forceOpen?:
 
 export function SystemTopLevelSection({ initialUseCustomTitleBar, forceOpen = false }: SystemSectionProps) {
   const services = useSettingsServices();
+  const target = services.settingsTarget ?? (services.isServer ? "server" : "desktop");
+
+  if (target === "server") {
+    return null;
+  }
 
   return (
     <SectionAnchor

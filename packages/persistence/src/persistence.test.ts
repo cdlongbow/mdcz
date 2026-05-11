@@ -154,13 +154,13 @@ describe("LibraryRepository", () => {
       number: "ABC-123",
       actors: ["Actor"],
       crawlerDataJson: JSON.stringify({ title: "Title", number: "ABC-123", poster_url: "poster.jpg" }),
-      indexedAt: completedAt,
+      createdAt: completedAt,
     });
     await repository.upsertEntry({
       rootId: "root-1",
       rootRelativePath: "ABC-123/ABC-123.mp4",
       size: 11,
-      indexedAt: new Date("2026-04-30T00:01:00.000Z"),
+      createdAt: new Date("2026-04-30T00:01:00.000Z"),
     });
 
     await expect(repository.latestScrapeOutput()).resolves.toMatchObject({ id: "output-1", fileCount: 1 });
@@ -170,6 +170,31 @@ describe("LibraryRepository", () => {
         size: 11,
         actors: [],
         crawlerDataJson: null,
+      }),
+    ]);
+  });
+
+  it("prefers poster assets for library row artwork", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new LibraryRepository(database);
+
+    await repository.upsertEntry({
+      rootId: "root-1",
+      rootRelativePath: "ABC-123/ABC-123.mp4",
+      crawlerDataJson: JSON.stringify({
+        thumb_url: "ABC-123/thumb.jpg",
+        poster_url: "ABC-123/poster.jpg",
+      }),
+      thumbnailPath: "ABC-123/thumb.jpg",
+      assets: [
+        { kind: "thumb", uri: "ABC-123/thumb.jpg", rootId: "root-1", relativePath: "ABC-123/thumb.jpg" },
+        { kind: "poster", uri: "ABC-123/poster.jpg", rootId: "root-1", relativePath: "ABC-123/poster.jpg" },
+      ],
+    });
+
+    await expect(repository.listEntries()).resolves.toEqual([
+      expect.objectContaining({
+        thumbnailPath: "ABC-123/poster.jpg",
       }),
     ]);
   });

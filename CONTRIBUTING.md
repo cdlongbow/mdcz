@@ -11,7 +11,7 @@
 git clone https://github.com/ShotHeadman/mdcz.git
 cd mdcz
 pnpm install
-pnpm dev
+pnpm dev:webui
 ```
 
 ## 测试

@@ -70,6 +70,39 @@ describe("web workbench route contracts", () => {
     ]);
   });
 
+  it("treats a running scrape without an active task id as uncontrollable", () => {
+    expect(__workbenchTestHooks.canControlScrapeTask({ isScraping: true, activeTaskId: "" })).toBe(false);
+    expect(__workbenchTestHooks.canControlScrapeTask({ isScraping: true, activeTaskId: "task-1" })).toBe(true);
+    expect(__workbenchTestHooks.canControlScrapeTask({ isScraping: false, activeTaskId: "" })).toBe(true);
+  });
+
+  it("shows setup immediately when scrape state has no controllable task", () => {
+    expect(
+      __workbenchTestHooks.shouldShowWorkbenchSetup({
+        baseShowSetup: false,
+        workbenchMode: "scrape",
+        isScraping: true,
+        activeTaskId: "",
+      }),
+    ).toBe(true);
+    expect(
+      __workbenchTestHooks.shouldShowWorkbenchSetup({
+        baseShowSetup: false,
+        workbenchMode: "scrape",
+        isScraping: true,
+        activeTaskId: "task-1",
+      }),
+    ).toBe(false);
+    expect(
+      __workbenchTestHooks.shouldShowWorkbenchSetup({
+        baseShowSetup: false,
+        workbenchMode: "maintenance",
+        isScraping: true,
+        activeTaskId: "",
+      }),
+    ).toBe(false);
+  });
+
   it("accepts completed task events carrying ambiguous uncensored items", () => {
     const payload: WebTaskUpdateDto = {
       kind: "event",

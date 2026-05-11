@@ -72,7 +72,7 @@ export class DesktopLibraryService {
       id: entry.id,
       mediaIdentity: entry.mediaIdentity,
       rootId: entry.rootId,
-      rootDisplayName: root?.displayName ?? fallbackRootDisplayName(entry.rootId),
+      rootDisplayName: resolveRootDisplayName(root, entry.rootId),
       relativePath: entry.rootRelativePath,
       fileName: entry.fileName,
       directory: entry.directory,
@@ -84,9 +84,9 @@ export class DesktopLibraryService {
       number: entry.number,
       actors: entry.actors,
       crawlerData: parseCrawlerData(entry.crawlerDataJson),
-      thumbnailPath: entry.thumbnailPath,
-      lastKnownPath: entry.lastKnownPath,
-      indexedAt: entry.indexedAt.toISOString(),
+      thumbnailPath: resolveAssetDisplayPath(rootMap, entry.rootId, entry.thumbnailPath),
+      lastKnownPath: resolveAssetDisplayPath(rootMap, entry.rootId, entry.lastKnownPath),
+      createdAt: entry.createdAt.toISOString(),
       lastRefreshedAt: toIso(entry.lastRefreshedAt),
       available,
       fileRefs,
@@ -118,6 +118,35 @@ export class DesktopLibraryService {
 
 const fallbackRootDisplayName = (rootId: string): string =>
   rootId === DESKTOP_OUTPUT_ROOT_ID ? DESKTOP_OUTPUT_ROOT_DISPLAY_NAME : "输出目录";
+
+const resolveRootDisplayName = (root: MediaRoot | undefined, rootId: string): string => {
+  if (rootId === DESKTOP_OUTPUT_ROOT_ID) {
+    return root?.hostPath ?? fallbackRootDisplayName(rootId);
+  }
+  return root?.displayName ?? fallbackRootDisplayName(rootId);
+};
+
+const isRemotePath = (value: string): boolean => /^https?:\/\//iu.test(value.trim());
+
+const isAbsoluteLocalPath = (value: string): boolean =>
+  /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("/") || value.startsWith("\\\\") || value.startsWith("//");
+
+const resolveAssetDisplayPath = (
+  rootMap: ReadonlyMap<string, MediaRoot>,
+  rootId: string,
+  value: string | null | undefined,
+): string | null => {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (isRemotePath(trimmed) || isAbsoluteLocalPath(trimmed)) {
+    return trimmed;
+  }
+
+  const root = rootMap.get(rootId);
+  return root ? resolveRootRelativePath(root, trimmed) : trimmed;
+};
 
 const parseCrawlerData = (value: string | null): CrawlerDataDto | null => {
   if (!value) {

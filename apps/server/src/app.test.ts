@@ -86,6 +86,31 @@ const createTestServer = async (options: TestServerOptions = {}): Promise<Server
   return serverApp;
 };
 
+const syncMediaRootFromConfig = async (
+  fastify: ServerApp["fastify"],
+  token: string,
+  hostPath: string,
+): Promise<string> => {
+  await fastify.inject({
+    method: "POST",
+    url: "/trpc/config.update",
+    headers: { authorization: `Bearer ${token}` },
+    payload: { paths: { mediaPath: hostPath } },
+  });
+  const rootsResponse = await fastify.inject({
+    method: "GET",
+    url: "/trpc/mediaRoots.list",
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const rootId = rootsResponse
+    .json()
+    .result.data.roots.find((rootDto: { hostPath: string }) => rootDto.hostPath === hostPath)?.id;
+  if (!rootId) {
+    throw new Error("Expected paths.mediaPath to create an enabled media root");
+  }
+  return rootId;
+};
+
 const startWebhookServer = async (): Promise<{
   close: () => Promise<void>;
   deliveries: Array<{ body: unknown; secret?: string }>;
@@ -413,6 +438,7 @@ describe("buildServer", () => {
       payload: { password: "another-password", mediaRoot: { displayName: "Media 2", hostPath: root, enabled: true } },
     });
     const state = JSON.parse(await readFile(join(services.config.runtimePaths.configDir, "auth-state.json"), "utf8"));
+    const config = await services.config.get();
 
     expect(completeResponse.statusCode).toBe(200);
     expect(completeResponse.json().result.data).toMatchObject({ authenticated: true });
@@ -424,6 +450,7 @@ describe("buildServer", () => {
       mediaRootCount: 1,
       usingDefaultPassword: false,
     });
+    expect(config.paths.mediaPath).toBe(root);
     expect(state).toEqual({ setupCompleted: true, adminPassword: "changed-password" });
     expect(repeatResponse.statusCode).toBe(403);
   });
@@ -504,6 +531,7 @@ describe("buildServer", () => {
     });
     const token = loginResponse.json().result.data.token;
     services.runtimeLogs.append("test-runtime", "warn", "runtime warning");
+    services.runtimeLogs.append("test-runtime", "info", "runtime info");
 
     const logsResponse = await fastify.inject({
       method: "POST",
@@ -520,6 +548,11 @@ describe("buildServer", () => {
     expect(logsResponse.json().result.data.logs[0]).toMatchObject({
       level: "WARN",
       message: "runtime warning",
+      source: "runtime",
+    });
+    expect(logsResponse.json().result.data.logs[1]).toMatchObject({
+      level: "INFO",
+      message: "runtime info",
       source: "runtime",
     });
     expect(catalogResponse.statusCode).toBe(200);
@@ -569,6 +602,43 @@ describe("buildServer", () => {
     expect(resetResponse.json().result.data.network.timeout).toBe(defaultsResponse.json().result.data.network.timeout);
     expect(importResponse.statusCode).toBe(200);
     expect(importResponse.json().result.data.network.timeout).toBe(33);
+  });
+
+  it("syncs the single enabled media root from paths.mediaPath", async () => {
+    const firstRoot = await mkdtemp(join(tmpdir(), "mdcz-config-media-root-a-"));
+    const secondRoot = await mkdtemp(join(tmpdir(), "mdcz-config-media-root-b-"));
+    const { fastify } = await createTestServer();
+    const loginResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/auth.login",
+      payload: { password: "admin" },
+    });
+    const token = loginResponse.json().result.data.token;
+
+    const firstResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { paths: { mediaPath: firstRoot } },
+    });
+    const secondResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { paths: { mediaPath: secondRoot } },
+    });
+    const rootsResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/mediaRoots.list",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    const roots = rootsResponse.json().result.data.roots;
+    expect(firstResponse.statusCode).toBe(200);
+    expect(secondResponse.statusCode).toBe(200);
+    expect(roots.filter((root: { enabled: boolean }) => root.enabled)).toEqual([
+      expect.objectContaining({ hostPath: secondRoot }),
+    ]);
   });
 
   it("exposes protected settings parity runtime actions through dedicated tRPC routers", async () => {
@@ -640,7 +710,7 @@ describe("buildServer", () => {
     expect(unauthorizedResponse.json().error.message).toContain("Authentication required");
   });
 
-  it("manages media roots and rejects native remote URLs through tRPC", async () => {
+  it("exposes synced media roots as read-only tRPC state", async () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-media-root-"));
     const { fastify } = await createTestServer();
     const loginResponse = await fastify.inject({
@@ -650,52 +720,42 @@ describe("buildServer", () => {
     });
     const token = loginResponse.json().result.data.token;
 
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const listResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/mediaRoots.list",
+      headers: { authorization: `Bearer ${token}` },
+    });
     const createResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/mediaRoots.create",
       headers: { authorization: `Bearer ${token}` },
       payload: { displayName: "Media", hostPath: root, enabled: true },
     });
-    const created = createResponse.json().result.data;
     const availabilityResponse = await fastify.inject({
       method: "GET",
-      url: `/trpc/mediaRoots.availability?input=${encodeURIComponent(JSON.stringify({ id: created.id }))}`,
+      url: `/trpc/mediaRoots.availability?input=${encodeURIComponent(JSON.stringify({ id: rootId }))}`,
       headers: { authorization: `Bearer ${token}` },
     });
-    const diagnosticsResponse = await fastify.inject({
-      method: "GET",
-      url: "/trpc/diagnostics.summary",
-      headers: { authorization: `Bearer ${token}` },
-    });
-    const renamedRoot = await mkdtemp(join(tmpdir(), "mdcz-media-root-renamed-"));
     const updateResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/mediaRoots.update",
       headers: { authorization: `Bearer ${token}` },
-      payload: { id: created.id, displayName: "Renamed", hostPath: renamedRoot },
-    });
-    const remoteResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/mediaRoots.create",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Remote", hostPath: "webdav://nas/media", enabled: true },
+      payload: { id: rootId, displayName: "Renamed", hostPath: root },
     });
 
-    expect(createResponse.statusCode).toBe(200);
-    expect(created.hostPath).toBe(root);
-    expect(created.displayName).toBe("Media");
-    expect(created.rootType).toBe("mounted-filesystem");
-    expect(availabilityResponse.statusCode).toBe(200);
-    expect(availabilityResponse.json().result.data.availability.available).toBe(true);
-    expect(diagnosticsResponse.statusCode).toBe(200);
-    expect(diagnosticsResponse.json().result.data.checks).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: `media-root:${created.id}`, ok: true })]),
-    );
-    expect(updateResponse.statusCode).toBe(200);
-    expect(updateResponse.json().result.data.displayName).toBe("Renamed");
-    expect(updateResponse.json().result.data.hostPath).toBe(renamedRoot);
-    expect(remoteResponse.statusCode).toBe(500);
-    expect(remoteResponse.json().error.message).toContain("暂不支持原生远程协议 URL");
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json().result.data.roots).toEqual([
+      expect.objectContaining({
+        id: rootId,
+        hostPath: root,
+        enabled: true,
+        rootType: "mounted-filesystem",
+      }),
+    ]);
+    expect(createResponse.statusCode).toBe(404);
+    expect(availabilityResponse.statusCode).toBe(404);
+    expect(updateResponse.statusCode).toBe(404);
   });
 
   it("rejects root browser escape attempts", async () => {
@@ -707,13 +767,23 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    const createResponse = await fastify.inject({
+    await fastify.inject({
       method: "POST",
-      url: "/trpc/mediaRoots.create",
+      url: "/trpc/config.update",
       headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
+      payload: { paths: { mediaPath: root } },
     });
-    const rootId = createResponse.json().result.data.id;
+    const rootsResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/mediaRoots.list",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const rootId = rootsResponse
+      .json()
+      .result.data.roots.find((rootDto: { hostPath: string }) => rootDto.hostPath === root)?.id;
+    if (!rootId) {
+      throw new Error("Expected paths.mediaPath to create an enabled media root");
+    }
 
     const response = await fastify.inject({
       method: "GET",
@@ -737,12 +807,7 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    await fastify.inject({
-      method: "POST",
-      url: "/trpc/mediaRoots.create",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
-    });
+    await syncMediaRootFromConfig(fastify, token, root);
 
     const typedResponse = await fastify.inject({
       method: "POST",
@@ -778,13 +843,23 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    const createResponse = await fastify.inject({
+    await fastify.inject({
       method: "POST",
-      url: "/trpc/mediaRoots.create",
+      url: "/trpc/config.update",
       headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
+      payload: { paths: { mediaPath: root } },
     });
-    const rootId = createResponse.json().result.data.id;
+    const rootsResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/mediaRoots.list",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const rootId = rootsResponse
+      .json()
+      .result.data.roots.find((rootDto: { hostPath: string }) => rootDto.hostPath === root)?.id;
+    if (!rootId) {
+      throw new Error("Expected paths.mediaPath to create an enabled media root");
+    }
 
     const startResponse = await fastify.inject({
       method: "POST",
@@ -842,14 +917,15 @@ describe("buildServer", () => {
 
     expect(detailResponse.statusCode).toBe(200);
     expect(listResponse.statusCode).toBe(200);
+    const rootDisplayName = root.split(/[\\/]+/u).at(-1);
     expect(listResponse.json().result.data.tasks[0]).toMatchObject({
       id: taskId,
       kind: "scan",
-      rootDisplayName: "Media",
+      rootDisplayName,
     });
     expect(detailResponse.json().result.data.task.videoCount).toBe(1);
     expect(detailResponse.json().result.data.task.kind).toBe("scan");
-    expect(detailResponse.json().result.data.task.rootDisplayName).toBe("Media");
+    expect(detailResponse.json().result.data.task.rootDisplayName).toBe(rootDisplayName);
     expect(detailResponse.json().result.data.task.videos).toEqual(["nested/movie.mp4"]);
     expect(libraryResponse.statusCode).toBe(200);
     expect(libraryResponse.json().result.data).toEqual({ entries: [], total: 0 });
@@ -860,7 +936,9 @@ describe("buildServer", () => {
       "completed",
     );
     expect(logsResponse.statusCode).toBe(200);
-    expect(logsResponse.json().result.data.logs[0]).toMatchObject({ source: "task", type: "completed" });
+    expect(logsResponse.json().result.data.logs).toContainEqual(
+      expect.objectContaining({ source: "task", type: "completed" }),
+    );
     expect(retryResponse.statusCode).toBe(200);
     expect(retryResponse.json().result.data.status).toBe("queued");
 
@@ -896,13 +974,7 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    const createRootResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/mediaRoots.create",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
-    });
-    const rootId = createRootResponse.json().result.data.id;
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
     const response = await fastify.inject({
       method: "GET",
@@ -959,13 +1031,23 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    const createResponse = await fastify.inject({
+    await fastify.inject({
       method: "POST",
-      url: "/trpc/mediaRoots.create",
+      url: "/trpc/config.update",
       headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
+      payload: { paths: { mediaPath: root } },
     });
-    const rootId = createResponse.json().result.data.id;
+    const rootsResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/mediaRoots.list",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const rootId = rootsResponse
+      .json()
+      .result.data.roots.find((rootDto: { hostPath: string }) => rootDto.hostPath === root)?.id;
+    if (!rootId) {
+      throw new Error("Expected paths.mediaPath to create an enabled media root");
+    }
 
     const startResponse = await fastify.inject({
       method: "POST",
@@ -1001,7 +1083,7 @@ describe("buildServer", () => {
       status: "queued",
       startedAt: null,
       completedAt: null,
-      summary: "扫描 Media: queued",
+      summary: `扫描 ${root.split(/[\\/]+/u).at(-1)}: queued`,
       errors: [],
     });
     expect(recentResponse.statusCode).toBe(200);
@@ -1009,7 +1091,7 @@ describe("buildServer", () => {
       taskId,
       kind: "scan",
       status: "completed",
-      summary: "扫描 Media: completed",
+      summary: `扫描 ${root.split(/[\\/]+/u).at(-1)}: completed`,
       errors: [],
     });
     expect(recentResponse.json().tasks[0].completedAt).toEqual(expect.any(String));
@@ -1031,13 +1113,23 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    const createResponse = await fastify.inject({
+    await fastify.inject({
       method: "POST",
-      url: "/trpc/mediaRoots.create",
+      url: "/trpc/config.update",
       headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
+      payload: { paths: { mediaPath: root } },
     });
-    const rootId = createResponse.json().result.data.id;
+    const rootsResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/mediaRoots.list",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const rootId = rootsResponse
+      .json()
+      .result.data.roots.find((rootDto: { hostPath: string }) => rootDto.hostPath === root)?.id;
+    if (!rootId) {
+      throw new Error("Expected paths.mediaPath to create an enabled media root");
+    }
 
     const startResponse = await fastify.inject({
       method: "POST",
@@ -1058,7 +1150,14 @@ describe("buildServer", () => {
       })
       .toBe("completed");
 
-    await expect.poll(() => webhook.deliveries.length).toBeGreaterThanOrEqual(2);
+    await expect
+      .poll(() =>
+        webhook.deliveries.some(
+          (delivery) =>
+            delivery.body.taskId === taskId && delivery.body.kind === "scan" && delivery.body.status === "completed",
+        ),
+      )
+      .toBe(true);
     const statusResponse = await fastify.inject({
       method: "GET",
       url: "/api/automation/webhooks/status",
@@ -1103,13 +1202,23 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    const createResponse = await fastify.inject({
+    await fastify.inject({
       method: "POST",
-      url: "/trpc/mediaRoots.create",
+      url: "/trpc/config.update",
       headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
+      payload: { paths: { mediaPath: root } },
     });
-    const rootId = createResponse.json().result.data.id;
+    const rootsResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/mediaRoots.list",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const rootId = rootsResponse
+      .json()
+      .result.data.roots.find((rootDto: { hostPath: string }) => rootDto.hostPath === root)?.id;
+    if (!rootId) {
+      throw new Error("Expected paths.mediaPath to create an enabled media root");
+    }
     await fastify.inject({
       method: "POST",
       url: "/trpc/config.update",
@@ -1156,11 +1265,23 @@ describe("buildServer", () => {
       url: "/trpc/overview.summary",
       headers: { authorization: `Bearer ${token}` },
     });
+    const assetResponse = await fastify.inject({
+      method: "GET",
+      url: `/api/library/assets/${encodeURIComponent(rootId)}/${encodeURI("JAV_output/Actor A/ABC-123/poster.png")}?token=${encodeURIComponent(token)}`,
+    });
+    const unauthorizedAssetResponse = await fastify.inject({
+      method: "GET",
+      url: `/api/library/assets/${encodeURIComponent(rootId)}/${encodeURI("JAV_output/Actor A/ABC-123/poster.png")}`,
+    });
+    const escapingAssetResponse = await fastify.inject({
+      method: "GET",
+      url: `/api/library/assets/${encodeURIComponent(rootId)}/..%2Fconfig%2Fdefault.png?token=${encodeURIComponent(token)}`,
+    });
     const outputRelativePath = "JAV_output/Actor A/ABC-123/ABC-123.mp4";
     const nfoRelativePath = "JAV_output/Actor A/ABC-123/ABC-123.nfo";
     const nfoContent = await readFile(join(root, nfoRelativePath), "utf8");
     const actorPhotoContent = await readFile(join(root, "JAV_output/Actor A/ABC-123/.actors/Actor A.jpg"));
-    const thumbContent = await readFile(join(root, "JAV_output/Actor A/ABC-123/thumb.png"));
+    const posterContent = await readFile(join(root, "JAV_output/Actor A/ABC-123/poster.png"));
 
     expect(libraryResponse.statusCode).toBe(200);
     expect(libraryResponse.json().result.data.total).toBe(1);
@@ -1170,10 +1291,11 @@ describe("buildServer", () => {
       fileName: "ABC-123.mp4",
       mediaIdentity: "ABC-123",
       number: "ABC-123",
-      rootDisplayName: "Media",
+      rootId,
+      rootDisplayName: root.split(/[\\/]+/u).at(-1),
     });
     expect(entry.relativePath).toBe(outputRelativePath);
-    expect(entry.thumbnailPath).toBe("JAV_output/Actor A/ABC-123/thumb.png");
+    expect(entry.thumbnailPath).toBe("JAV_output/Actor A/ABC-123/poster.png");
     expect(detailResponse.statusCode).toBe(200);
     expect(detailResponse.json().result.data.entry.crawlerData).toMatchObject({
       number: "ABC-123",
@@ -1194,9 +1316,15 @@ describe("buildServer", () => {
     expect(nfoContent).toContain("Runtime Title ABC-123");
     expect(nfoContent).toContain(".actors/Actor A.jpg");
     expect(actorPhotoContent.length).toBeGreaterThan(8000);
-    expect(thumbContent.length).toBeGreaterThan(8000);
+    expect(posterContent.length).toBeGreaterThan(8000);
+    expect(assetResponse.statusCode).toBe(200);
+    expect(assetResponse.headers["content-type"]).toContain("image/png");
+    expect(Buffer.from(assetResponse.rawPayload).length).toBe(posterContent.length);
+    expect(unauthorizedAssetResponse.statusCode).toBe(401);
+    expect(escapingAssetResponse.statusCode).toBe(400);
     expect(overviewResponse.json().result.data.recentAcquisitions[0]).toMatchObject({
       id: entry.id,
+      rootId,
       number: "ABC-123",
       available: true,
     });
@@ -1215,13 +1343,23 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    const createResponse = await fastify.inject({
+    await fastify.inject({
       method: "POST",
-      url: "/trpc/mediaRoots.create",
+      url: "/trpc/config.update",
       headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
+      payload: { paths: { mediaPath: root } },
     });
-    const rootId = createResponse.json().result.data.id;
+    const rootsResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/mediaRoots.list",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const rootId = rootsResponse
+      .json()
+      .result.data.roots.find((rootDto: { hostPath: string }) => rootDto.hostPath === root)?.id;
+    if (!rootId) {
+      throw new Error("Expected paths.mediaPath to create an enabled media root");
+    }
 
     const startResponse = await fastify.inject({
       method: "POST",
@@ -1270,13 +1408,7 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    const createResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/mediaRoots.create",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
-    });
-    const rootId = createResponse.json().result.data.id;
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
     const startResponse = await fastify.inject({
       method: "POST",
@@ -1353,13 +1485,7 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    const createResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/mediaRoots.create",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
-    });
-    const rootId = createResponse.json().result.data.id;
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const state = await services.persistence.getState();
     const task = await state.repositories.tasks.createTask({ kind: "scrape", rootId });
     for (const relativePath of ["UMR-001.mp4", "LEAK-001.mp4", "UNC-001.mp4"]) {
@@ -1416,13 +1542,7 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    const createResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/mediaRoots.create",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
-    });
-    const rootId = createResponse.json().result.data.id;
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
     const scanResponse = await fastify.inject({
       method: "GET",
@@ -1449,13 +1569,7 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    const createResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/mediaRoots.create",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
-    });
-    const rootId = createResponse.json().result.data.id;
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const startResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.start",
@@ -1483,12 +1597,7 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    const createResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/mediaRoots.create",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
-    });
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
     const confirmResponse = await fastify.inject({
       method: "POST",
@@ -1496,7 +1605,7 @@ describe("buildServer", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: {
         taskId: "missing-task",
-        refs: [{ rootId: createResponse.json().result.data.id, relativePath: "ABC-001.mp4" }],
+        refs: [{ rootId, relativePath: "ABC-001.mp4" }],
       },
     });
 
@@ -1518,9 +1627,9 @@ describe("buildServer", () => {
     const token = loginResponse.json().result.data.token;
     await fastify.inject({
       method: "POST",
-      url: "/trpc/mediaRoots.create",
+      url: "/trpc/config.update",
       headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: otherRoot, enabled: true },
+      payload: { paths: { mediaPath: otherRoot } },
     });
 
     const startResponse = await fastify.inject({
@@ -1534,8 +1643,9 @@ describe("buildServer", () => {
     expect(startResponse.json().error.message).toContain("文件不在扫描目录内");
   });
 
-  it("rejects selected scrape files outside enabled registered media roots", async () => {
+  it("rejects selected scrape files outside configured media path", async () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-selected-unregistered-root-"));
+    const configuredRoot = await mkdtemp(join(tmpdir(), "mdcz-configured-media-root-"));
     const selectedPath = join(root, "ABC-130.mp4");
     await writeFile(selectedPath, "video");
     const { fastify } = await createTestServer();
@@ -1545,6 +1655,12 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { paths: { mediaPath: configuredRoot } },
+    });
 
     const startResponse = await fastify.inject({
       method: "POST",
@@ -1568,13 +1684,7 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    const createResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/mediaRoots.create",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
-    });
-    const rootId = createResponse.json().result.data.id;
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
     const startResponse = await fastify.inject({
       method: "POST",
@@ -1627,13 +1737,7 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    const createResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/mediaRoots.create",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
-    });
-    const rootId = createResponse.json().result.data.id;
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const state = await services.persistence.getState();
     const recoverTask = await state.repositories.tasks.createTask({
       kind: "scrape",
@@ -1737,13 +1841,7 @@ describe("buildServer", () => {
       payload: { password: "admin" },
     });
     const token = loginResponse.json().result.data.token;
-    const createResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/mediaRoots.create",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Media", hostPath: root, enabled: true },
-    });
-    const rootId = createResponse.json().result.data.id;
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
     const startResponse = await fastify.inject({
       method: "POST",

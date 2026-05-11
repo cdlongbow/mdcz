@@ -40,14 +40,14 @@ export const LogsPage = () => {
         queryClient.setQueryData(["logs", "all"], (previous: typeof logsQ.data | undefined) => {
           if (!previous) return { logs: [event.log] };
           if (previous.logs.some((log) => log.id === event.log.id)) return previous;
-          return { logs: [event.log, ...previous.logs] };
+          return { logs: [...previous.logs, event.log] };
         });
       }),
     [queryClient],
   );
   const filteredLogs = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    const logs = logsQ.data?.logs ?? [];
+    const logs = [...(logsQ.data?.logs ?? [])].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
     return logs.filter((log) => {
       const projectedLevel = log.level ?? logLevelLabels[log.type] ?? "INFO";
       if (!normalized) return true;

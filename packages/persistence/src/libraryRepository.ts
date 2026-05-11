@@ -45,7 +45,7 @@ export interface LibraryEntryRecord {
   crawlerDataJson: string | null;
   thumbnailPath: string | null;
   lastKnownPath: string | null;
-  indexedAt: Date;
+  createdAt: Date;
   lastRefreshedAt: Date | null;
   files: LibraryItemFileRecord[];
   assets: LibraryItemAssetRecord[];
@@ -94,7 +94,7 @@ export interface UpsertLibraryEntryInput {
   thumbnailPath?: string | null;
   assets?: Array<{ kind: string; uri: string; rootId?: string | null; relativePath?: string | null }>;
   lastKnownPath?: string | null;
-  indexedAt?: Date;
+  createdAt?: Date;
   lastRefreshedAt?: Date | null;
 }
 
@@ -192,9 +192,9 @@ const toLibraryEntryRecord = (
     throw new Error(`Library item has no file refs: ${item.id}`);
   }
   const thumbnail =
-    assets.find((asset) => asset.kind === "thumb" && !isRemoteAssetUri(asset.uri)) ??
     assets.find((asset) => asset.kind === "poster" && !isRemoteAssetUri(asset.uri)) ??
-    assets.find((asset) => asset.kind === "thumb" || asset.kind === "poster");
+    assets.find((asset) => asset.kind === "thumb" && !isRemoteAssetUri(asset.uri)) ??
+    assets.find((asset) => asset.kind === "poster" || asset.kind === "thumb");
 
   return {
     id: item.id,
@@ -213,7 +213,7 @@ const toLibraryEntryRecord = (
     crawlerDataJson: item.crawlerDataJson,
     thumbnailPath: thumbnail?.uri ?? null,
     lastKnownPath: primaryFile.lastKnownPath,
-    indexedAt: item.indexedAt,
+    createdAt: item.createdAt,
     lastRefreshedAt: item.lastRefreshedAt,
     files,
     assets,
@@ -287,7 +287,7 @@ export class LibraryRepository {
   async upsertEntry(input: UpsertLibraryEntryInput): Promise<LibraryEntryRecord> {
     const id = input.id ?? `${input.rootId}:${input.rootRelativePath}`;
     const directory = path.posix.dirname(input.rootRelativePath);
-    const indexedAt = input.indexedAt ?? new Date();
+    const createdAt = input.createdAt ?? new Date();
     const now = new Date();
     const actorsJson = JSON.stringify(input.actors ?? []);
     const mediaIdentity = input.mediaIdentity ?? input.number ?? id;
@@ -305,7 +305,7 @@ export class LibraryRepository {
           title: input.title ?? null,
           number: input.number ?? null,
           actorsJson,
-          indexedAt,
+          createdAt,
           lastRefreshedAt: input.lastRefreshedAt ?? null,
         })
         .onConflictDoUpdate({
@@ -318,7 +318,7 @@ export class LibraryRepository {
             title: input.title ?? null,
             number: input.number ?? null,
             actorsJson,
-            indexedAt,
+            createdAt,
             lastRefreshedAt: input.lastRefreshedAt ?? null,
           },
         })
@@ -512,7 +512,7 @@ export class LibraryRepository {
   }
 
   async listEntries(): Promise<LibraryEntryRecord[]> {
-    const items = this.database.db.select().from(libraryItems).orderBy(desc(libraryItems.indexedAt)).all();
+    const items = this.database.db.select().from(libraryItems).orderBy(desc(libraryItems.createdAt)).all();
     const ids = items.map((item) => item.id);
     const [filesByItem, assetsByItem] = await Promise.all([this.listFilesForItems(ids), this.listAssetsForItems(ids)]);
     return items.map((item) =>

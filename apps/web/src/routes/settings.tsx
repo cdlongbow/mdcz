@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import { clearImportedFile, promptForImportFile, readImportedFile, triggerDownload } from "../browserFile";
 import { api } from "../client";
 import { useConfigProfiles, useCurrentConfig, useDefaultConfig } from "../hooks/configQueries";
-import { MediaDirectoriesSection } from "./MediaDirectoriesSection";
 import {
   createSettingsNotifier,
   createSettingsServices,
@@ -228,7 +227,6 @@ export const SettingsPage = () => {
               onResetConfig={handleOpenResetDialog}
               onExportProfile={handleExportProfile}
               onImportProfile={handleOpenImportDialog}
-              extraContent={<MediaDirectoriesSection />}
             />
           ) : (
             <SettingsLayout

@@ -12,6 +12,7 @@ import {
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
 import { focusSettingFieldElement, focusSettingFieldInDom } from "./focusSettingField";
+import { useSettingsServices } from "./SettingsServices";
 import { buildSettingsBrowseState } from "./settingsBrowseState";
 import type { SettingsDeepLinkSectionId } from "./settingsDeepLink";
 import { getSettingsSuggestions, replaceLastToken, type SettingsSuggestion, valuesEqual } from "./settingsFilter";
@@ -55,6 +56,8 @@ export function SettingsSearchProvider({
   deepLinkSettingKey = null,
 }: SettingsSearchProviderProps) {
   const form = useFormContext<FieldValues>();
+  const services = useSettingsServices();
+  const target = services.settingsTarget ?? (services.isServer ? "server" : "desktop");
   const [query, setQuery] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const deferredQuery = useDeferredValue(query);
@@ -89,8 +92,9 @@ export function SettingsSearchProvider({
         showAdvanced,
         modifiedKeys,
         deepLinkSettingKey,
+        target,
       }),
-    [deepLinkSettingKey, deferredQuery, modifiedKeys, showAdvanced],
+    [deepLinkSettingKey, deferredQuery, modifiedKeys, showAdvanced, target],
   );
   const {
     parsedQuery,

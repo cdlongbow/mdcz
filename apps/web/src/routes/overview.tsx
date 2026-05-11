@@ -2,7 +2,7 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import { OverviewHeroStartCard, OverviewMaintenanceCard, RecentAcquisitionsGrid } from "@mdcz/views/overview";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { api } from "../client";
+import { api, getLibraryAssetSrc } from "../client";
 import { AppLink, ErrorBanner } from "../routeCommon";
 import { buildHref } from "../routeHelpers";
 
@@ -52,6 +52,7 @@ export function OverviewPage() {
             </AppLink>
           </div>
           <RecentAcquisitionsGrid
+            getImageSrc={(path, item) => getLibraryAssetSrc({ path, rootId: item.rootId })}
             isError={overviewQ.isError}
             isLoading={overviewQ.isLoading}
             items={recent}

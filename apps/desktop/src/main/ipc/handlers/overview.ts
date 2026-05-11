@@ -78,7 +78,7 @@ const readPersistedRecentAcquisitions = async (context: ServiceContainer): Promi
           actors: entry.actors,
           thumbnailPath: entry.thumbnailPath,
           lastKnownPath: entry.lastKnownPath,
-          indexedAt: entry.indexedAt,
+          createdAt: entry.createdAt,
         }),
       )
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null),

@@ -65,6 +65,7 @@ export const createSettingsServices = (queryClient: QueryClient): SettingsServic
     };
   },
   isServer: true,
+  settingsTarget: "server",
   subscribeInFlightSaves: useSettingsSavingStore.subscribe,
   watermarkDirectoryActionLabel: "复制服务器路径",
   testLLM: async (input) => await api.translate.testLlm(input),

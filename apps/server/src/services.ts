@@ -2,7 +2,6 @@ import type { AuthService } from "./services/authService";
 import type { AutomationService, AutomationWebhookOptions } from "./services/automationService";
 import type { BrowserService } from "./services/browserService";
 import type { ServerConfigService } from "./services/configService";
-import type { DiagnosticsService } from "./services/diagnosticsService";
 import type { LibraryService } from "./services/libraryService";
 import type { MaintenanceService } from "./services/maintenanceService";
 import type { MediaRootService } from "./services/mediaRootService";
@@ -21,7 +20,6 @@ export interface ServerServices {
   auth: AuthService;
   browser: BrowserService;
   config: ServerConfigService;
-  diagnostics: DiagnosticsService;
   library: LibraryService;
   maintenance: MaintenanceService;
   mediaRoots: MediaRootService;

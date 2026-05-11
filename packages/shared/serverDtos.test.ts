@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { taskRealtimeEventSchema } from "./serverDtos";
+import { logListInputSchema, taskRealtimeEventSchema } from "./serverDtos";
 
 const createdAt = "2026-05-06T00:00:00.000Z";
 
@@ -160,5 +160,11 @@ describe("taskRealtimeEventSchema", () => {
         status: "success",
       }),
     ).toThrow();
+  });
+});
+
+describe("logListInputSchema", () => {
+  it("treats null input as omitted for browser tRPC clients", () => {
+    expect(logListInputSchema.parse(null)).toBeUndefined();
   });
 });

@@ -4,7 +4,6 @@ import {
   Info,
   LayoutDashboard,
   Library,
-  LogOut,
   type LucideIcon,
   Monitor,
   Moon,
@@ -41,7 +40,6 @@ export interface AppShellProps {
   linkComponent: (props: ShellLinkProps) => ReactNode;
   titlebar?: ReactNode;
   systemNav?: ShellNavItem[];
-  footerAction?: ReactNode;
 }
 
 export const PRIMARY_SHELL_NAV: ShellNavItem[] = [
@@ -63,7 +61,6 @@ export function AppShell({
   linkComponent: LinkComponent,
   titlebar,
   systemNav = SYSTEM_SHELL_NAV,
-  footerAction,
 }: AppShellProps) {
   const { theme, setTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
@@ -90,7 +87,6 @@ export function AppShell({
           <NavContent
             collapsed={collapsed}
             currentPath={currentPath}
-            footerAction={footerAction}
             linkComponent={LinkComponent}
             onCollapse={setCollapsed}
             onThemeToggle={cycleTheme}
@@ -110,7 +106,6 @@ export function AppShell({
 function NavContent({
   collapsed,
   currentPath,
-  footerAction,
   linkComponent,
   onCollapse,
   onThemeToggle,
@@ -120,7 +115,6 @@ function NavContent({
 }: {
   collapsed: boolean;
   currentPath: string;
-  footerAction?: ReactNode;
   linkComponent: (props: ShellLinkProps) => ReactNode;
   onCollapse: (collapsed: boolean) => void;
   onThemeToggle: () => void;
@@ -194,7 +188,6 @@ function NavContent({
           </TooltipTrigger>
           <TooltipContent side={collapsed ? "right" : "top"}>{collapsed ? "展开侧栏" : "收起侧栏"}</TooltipContent>
         </Tooltip>
-        {footerAction}
       </div>
     </div>
   );
@@ -243,24 +236,6 @@ function NavLink({
       <TooltipContent side="right" sideOffset={8}>
         {item.label}
       </TooltipContent>
-    </Tooltip>
-  );
-}
-
-export function LogoutShellAction({ onLogout }: { onLogout: () => void }) {
-  return (
-    <Tooltip delayDuration={0}>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
-          onClick={onLogout}
-        >
-          <LogOut />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="top">退出登录</TooltipContent>
     </Tooltip>
   );
 }

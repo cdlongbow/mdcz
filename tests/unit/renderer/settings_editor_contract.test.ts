@@ -747,7 +747,6 @@ describe("settings editor render contracts", () => {
     expect(html).not.toContain("<button");
     expect(html).not.toContain("<datalist");
     expect(html).toContain('aria-autocomplete="list"');
-    expect(html).toContain("运行 MDCz 服务的主机路径");
   });
 
   it("renders the PRD split sections and keeps advanced-only content out of public rows", () => {

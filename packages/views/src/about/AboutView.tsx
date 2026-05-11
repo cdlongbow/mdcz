@@ -7,6 +7,7 @@ export interface AboutViewProps {
   about?: SystemAboutResponse;
   loading?: boolean;
   updateCheck?: boolean | null;
+  showUpdateCheck?: boolean;
   showDebugAction?: boolean;
   debugActionLabel?: string;
   logoSrc?: string;
@@ -55,6 +56,7 @@ export const AboutView = ({
   about = fallbackAbout,
   loading = false,
   updateCheck = null,
+  showUpdateCheck = true,
   showDebugAction = false,
   debugActionLabel = "开启调试",
   logoSrc,
@@ -91,12 +93,10 @@ export const AboutView = ({
               <h1 className="flex items-center gap-3 text-3xl font-bold tracking-tight">
                 {about.productName}
                 <span className="mt-1 rounded-full bg-surface-low px-2.5 py-1 text-xs font-semibold text-muted-foreground">
-                  v{compactValue(about.version)}
+                  {compactValue(about.version)}
                 </span>
               </h1>
-              <p className="text-xs text-muted-foreground">
-                {loading ? "读取运行信息中" : "WebUI / Server 运行信息与支持入口"}
-              </p>
+              <p className="text-xs text-muted-foreground">{loading ? "读取信息中" : ""}</p>
             </div>
           </section>
 
@@ -132,46 +132,23 @@ export const AboutView = ({
             </div>
           </section>
 
-          <section
-            className={`flex items-center justify-between border border-border/30 bg-surface-low/30 p-5 transition-all hover:border-border/60 hover:bg-surface-low/60 ${quietPanelRadiusClass}`}
-          >
-            <div className="space-y-0.5 px-1">
-              <h2 className="text-sm font-semibold">自动检查更新</h2>
-              <p className="text-xs text-muted-foreground">桌面端保留完整更新偏好；WebUI 显示 server/Web 构建状态。</p>
-            </div>
-            <input
-              aria-label="自动检查更新"
-              checked={Boolean(updateCheck)}
-              className="h-5 w-5 accent-primary disabled:opacity-50"
-              disabled={!onUpdateCheckChange || updateCheck === null || updateCheckDisabled}
-              type="checkbox"
-              onChange={(event) => onUpdateCheckChange?.(event.currentTarget.checked)}
-            />
-          </section>
-
-          <section className={`border border-border/30 bg-surface-low/20 p-5 ${quietPanelRadiusClass}`}>
-            <div className="px-1 text-xs font-bold uppercase tracking-widest text-muted-foreground opacity-50">
-              运行构建
-            </div>
-            <dl className="mt-4 grid gap-2 text-xs text-muted-foreground">
-              <div className="flex justify-between gap-4">
-                <dt>Server</dt>
-                <dd className="font-mono">{compactValue(about.build.server)}</dd>
+          {showUpdateCheck && (
+            <section
+              className={`flex items-center justify-between border border-border/30 bg-surface-low/30 p-5 transition-all hover:border-border/60 hover:bg-surface-low/60 ${quietPanelRadiusClass}`}
+            >
+              <div className="space-y-0.5 px-1">
+                <h2 className="text-sm font-semibold">自动检查更新</h2>
               </div>
-              <div className="flex justify-between gap-4">
-                <dt>Web</dt>
-                <dd className="font-mono">{compactValue(about.build.web)}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt>Node</dt>
-                <dd className="font-mono">{about.build.node}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt>Platform</dt>
-                <dd className="font-mono">{`${about.build.platform}/${about.build.arch}`}</dd>
-              </div>
-            </dl>
-          </section>
+              <input
+                aria-label="自动检查更新"
+                checked={Boolean(updateCheck)}
+                className="h-5 w-5 accent-primary disabled:opacity-50"
+                disabled={!onUpdateCheckChange || updateCheck === null || updateCheckDisabled}
+                type="checkbox"
+                onChange={(event) => onUpdateCheckChange?.(event.currentTarget.checked)}
+              />
+            </section>
+          )}
 
           <section className="space-y-2">
             <div className="px-1 text-xs font-bold uppercase tracking-widest text-muted-foreground opacity-50">

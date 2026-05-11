@@ -1,6 +1,5 @@
-import type { DiagnosticCheckDto } from "@mdcz/shared/serverDtos";
 import type { ToolDefinition } from "@mdcz/shared/toolCatalog";
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Label } from "@mdcz/ui";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, Label } from "@mdcz/ui";
 import {
   Bug,
   FileSearch,
@@ -71,44 +70,4 @@ export const ToolField = ({ label, children }: { label: string; children: ReactN
     <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</Label>
     {children}
   </div>
-);
-
-export interface DiagnosticsPanelViewProps {
-  checks: DiagnosticCheckDto[];
-  error?: ReactNode;
-  formatDate: (value: string) => string;
-  onRefresh: () => void;
-}
-
-export const DiagnosticsPanelView = ({ checks, error, formatDate, onRefresh }: DiagnosticsPanelViewProps) => (
-  <Card>
-    <CardHeader>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <CardTitle>诊断</CardTitle>
-          <CardDescription>检查持久化、媒体目录、爬虫、网络、翻译与媒体服务器运行条件。</CardDescription>
-        </div>
-        <Button variant="secondary" onClick={onRefresh}>
-          刷新诊断
-        </Button>
-      </div>
-    </CardHeader>
-    <CardContent className="grid gap-3">
-      {error}
-      {checks.map((check) => (
-        <div
-          key={check.id}
-          className="grid gap-2 rounded-quiet border border-border/50 bg-surface-low/50 p-4 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center"
-        >
-          <Badge variant={check.ok ? "default" : "destructive"}>{check.ok ? "OK" : "ERR"}</Badge>
-          <div className="min-w-0">
-            <p className="font-medium text-foreground">{check.label}</p>
-            <p className="break-all text-sm text-muted-foreground">{check.message}</p>
-          </div>
-          <span className="font-mono text-xs text-muted-foreground">{formatDate(check.checkedAt)}</span>
-        </div>
-      ))}
-      {checks.length === 0 && <p className="text-sm text-muted-foreground">暂无诊断结果。</p>}
-    </CardContent>
-  </Card>
 );

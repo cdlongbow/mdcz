@@ -7,6 +7,7 @@ export interface SettingsBrowseStateInput {
   showAdvanced: boolean;
   modifiedKeys: ReadonlySet<string>;
   deepLinkSettingKey?: string | null;
+  target?: "desktop" | "server";
 }
 
 export interface SettingsBrowseState {
@@ -27,6 +28,7 @@ export function buildSettingsBrowseState({
   showAdvanced,
   modifiedKeys,
   deepLinkSettingKey = null,
+  target,
 }: SettingsBrowseStateInput): SettingsBrowseState {
   const parsedQuery = parseSettingsQuery(query);
   const deepLink = resolveSettingsDeepLink(deepLinkSettingKey);
@@ -34,6 +36,7 @@ export function buildSettingsBrowseState({
     parsedQuery,
     showAdvanced,
     modifiedKeys,
+    target,
   });
   const visibleKeySet = new Set(visibleEntries.map((entry) => entry.key));
   const visiblePublicAnchorSet = new Set(

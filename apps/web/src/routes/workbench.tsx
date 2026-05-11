@@ -18,6 +18,7 @@ import {
   buildUncensoredConfirmationItems,
   getFailedScrapeTargets,
   MaintenanceWorkbenchAdapter,
+  resetScrapeWorkbenchToSetup,
   ScrapeWorkbenchAdapter,
   type SharedWorkbenchPorts,
   startMaintenanceFlow,
@@ -83,13 +84,28 @@ const scrapeResultsToRetryTargets = (results: ScrapeResult[]) =>
       };
     });
 
+const canControlScrapeTask = (input: { isScraping: boolean; activeTaskId: string }): boolean =>
+  !input.isScraping || input.activeTaskId.trim().length > 0;
+
+const shouldShowWorkbenchSetup = (input: {
+  baseShowSetup: boolean;
+  workbenchMode: "scrape" | "maintenance";
+  isScraping: boolean;
+  activeTaskId: string;
+}): boolean =>
+  input.baseShowSetup ||
+  (input.workbenchMode === "scrape" &&
+    !canControlScrapeTask({ isScraping: input.isScraping, activeTaskId: input.activeTaskId }));
+
+let persistedHydrationState = createTaskHydrationState();
+
 function WorkbenchPage() {
   const search = Route.useSearch();
   const queryClient = useQueryClient();
   const ports = useMemo<SharedWorkbenchPorts>(() => createWebWorkbenchPorts(), []);
   const setupPort = useMemo(() => createWebSetupPort(), []);
   const [uncensoredDialogOpen, setUncensoredDialogOpen] = useState(false);
-  const [hydrationState, setHydrationState] = useState<TaskHydrationState>(createTaskHydrationState);
+  const [hydrationState, setHydrationState] = useState<TaskHydrationState>(() => persistedHydrationState);
   const hydrationStateRef = useRef(hydrationState);
   const configQ = useQuery({ queryFn: () => api.config.read(), queryKey: ["config"], retry: false });
   const scrapeResultsQ = useQuery({
@@ -113,6 +129,12 @@ function WorkbenchPage() {
   );
 
   const sessionSnapshot = useWorkbenchSessionSnapshot(workbenchMode, search.intent);
+  const showSetup = shouldShowWorkbenchSetup({
+    baseShowSetup: sessionSnapshot.showSetup,
+    workbenchMode,
+    isScraping,
+    activeTaskId: hydrationState.activeScrapeTaskId,
+  });
   const failedTargets = useMemo(() => scrapeResultsToRetryTargets(results), [results]);
 
   useEffect(() => {
@@ -129,7 +151,14 @@ function WorkbenchPage() {
 
   useEffect(() => {
     hydrationStateRef.current = hydrationState;
+    persistedHydrationState = hydrationState;
   }, [hydrationState]);
+
+  useEffect(() => {
+    if (!canControlScrapeTask({ isScraping, activeTaskId: hydrationState.activeScrapeTaskId })) {
+      resetScrapeWorkbenchToSetup();
+    }
+  }, [hydrationState.activeScrapeTaskId, isScraping]);
 
   useEffect(
     () =>
@@ -171,6 +200,7 @@ function WorkbenchPage() {
       applyScrapeTaskStatus(task.status);
       toast.success("刮削任务已提交");
     } catch (error) {
+      resetScrapeWorkbenchToSetup();
       toast.error(`启动失败: ${toErrorMessage(error)}`);
     }
   };
@@ -277,7 +307,7 @@ function WorkbenchPage() {
 
   return (
     <div className="h-full min-h-0 overflow-hidden">
-      {sessionSnapshot.showSetup ? (
+      {showSetup ? (
         <WorkbenchSetupAdapter
           mode={workbenchMode}
           config={configQ.data}
@@ -309,6 +339,8 @@ function WorkbenchPage() {
 }
 
 export const __workbenchTestHooks = {
+  canControlScrapeTask,
   dtoToScrapeResult: (result: ScrapeResultDto) => scrapeResultDtoToScrapeResult(result),
+  shouldShowWorkbenchSetup,
   scrapeResultsToRetryTargets,
 };

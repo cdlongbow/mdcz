@@ -7,6 +7,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { getBearerToken } from "./http/auth";
 import { applyCorsHeaders } from "./http/cors";
 import { createHealthPayload } from "./http/health";
+import { registerLibraryAssets } from "./http/libraryAssets";
 import { writeTaskEventsStream } from "./http/sse";
 import { defaultWebStaticDir, registerStaticWeb } from "./http/staticWeb";
 import { appRouter } from "./router";
@@ -15,7 +16,6 @@ import { AuthService } from "./services/authService";
 import { AutomationService } from "./services/automationService";
 import { BrowserService } from "./services/browserService";
 import { ServerConfigService } from "./services/configService";
-import { DiagnosticsService } from "./services/diagnosticsService";
 import { LibraryService } from "./services/libraryService";
 import { MaintenanceService } from "./services/maintenanceService";
 import { MediaRootService } from "./services/mediaRootService";
@@ -47,7 +47,6 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const mediaRoots = options.services?.mediaRoots ?? new MediaRootService(persistence);
   const runtimeLogs = options.services?.runtimeLogs ?? new RuntimeLogService(1000, taskEvents);
   runtimeLoggerService.setFactory((name) => runtimeLogs.getLogger(name));
-  const diagnostics = options.services?.diagnostics ?? new DiagnosticsService(persistence, mediaRoots, config);
   const scrape = options.services?.scrape ?? new ScrapeService(persistence, mediaRoots, config, taskEvents);
   const library = options.services?.library ?? new LibraryService(persistence, mediaRoots);
   const maintenance =
@@ -61,7 +60,6 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     auth: options.services?.auth ?? new AuthService(config.runtimePaths),
     browser: options.services?.browser ?? new BrowserService(mediaRoots),
     config,
-    diagnostics,
     library,
     maintenance,
     mediaRoots,
@@ -73,7 +71,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     serverPaths: options.services?.serverPaths ?? new ServerPathService(mediaRoots, config),
     system,
     taskEvents,
-    tools: options.services?.tools ?? new ToolsService(config, mediaRoots, scrape, diagnostics, library),
+    tools: options.services?.tools ?? new ToolsService(config, mediaRoots, scrape, library),
   };
   const fastify = Fastify({
     logger: false,
@@ -137,6 +135,8 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     reply.hijack();
     await writeTaskEventsStream(services, reply.raw);
   });
+
+  registerLibraryAssets(fastify, services);
 
   if (hasStaticWeb && webStaticDir) {
     registerStaticWeb(fastify, webStaticDir);

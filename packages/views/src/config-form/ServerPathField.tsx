@@ -54,7 +54,6 @@ export function ServerPathField({ field, placeholder, isDirectory = true }: Serv
           </Button>
         ) : null}
       </div>
-      {!supportsBrowse ? <p className="text-[11px] leading-4 text-muted-foreground">运行 MDCz 服务的主机路径</p> : null}
     </div>
   );
 }

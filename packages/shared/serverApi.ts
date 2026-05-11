@@ -14,7 +14,6 @@ import type {
   ConfigUpdateInput,
   CrawlerListSitesResponse,
   CrawlerProbeSiteConnectivityInput,
-  DiagnosticsSummaryResponse,
   FileActionInput,
   FileActionResponse,
   HealthResponse,
@@ -32,12 +31,7 @@ import type {
   MaintenanceScanSelectedFilesResponse,
   MaintenanceStartInput,
   MaintenanceTaskInput,
-  MediaRootAvailabilityResponse,
-  MediaRootCreateInput,
-  MediaRootDto,
-  MediaRootIdInput,
   MediaRootListResponse,
-  MediaRootUpdateInput,
   NetworkCheckCookiesResponse,
   NfoReadInput,
   NfoReadResponse,
@@ -151,9 +145,6 @@ export interface ServerApiContract {
   overview: {
     summary(): Promise<OverviewSummaryResponse>;
   };
-  diagnostics: {
-    summary(): Promise<DiagnosticsSummaryResponse>;
-  };
   tools: {
     catalog(): Promise<ToolCatalogResponse>;
     execute(input: ToolExecuteInput): Promise<ToolExecuteResponse>;
@@ -164,12 +155,6 @@ export interface ServerApiContract {
   };
   mediaRoots: {
     list(): Promise<MediaRootListResponse>;
-    create(input: MediaRootCreateInput): Promise<MediaRootDto>;
-    update(input: MediaRootUpdateInput): Promise<MediaRootDto>;
-    availability(input: MediaRootIdInput): Promise<MediaRootAvailabilityResponse>;
-    enable(input: MediaRootIdInput): Promise<MediaRootDto>;
-    disable(input: MediaRootIdInput): Promise<MediaRootDto>;
-    delete(input: MediaRootIdInput): Promise<MediaRootDto>;
   };
   browser: {
     list(input: RootBrowserInput): Promise<RootBrowserResponse>;
@@ -257,16 +242,9 @@ export type ServerApiProcedure =
   | "library.rescan"
   | "library.relink"
   | "overview.summary"
-  | "diagnostics.summary"
   | "setup.status"
   | "setup.complete"
   | "mediaRoots.list"
-  | "mediaRoots.create"
-  | "mediaRoots.update"
-  | "mediaRoots.availability"
-  | "mediaRoots.enable"
-  | "mediaRoots.disable"
-  | "mediaRoots.delete"
   | "browser.list"
   | "serverPaths.suggest"
   | "scans.start"

@@ -1,7 +1,12 @@
 import { resolveRootRelativePath } from "@mdcz/media-store";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { LocalScanService, writePreparedNfo } from "@mdcz/runtime/maintenance";
-import { type MediaServerKey, syncMediaServerPersonInfo, syncMediaServerPersonPhotos } from "@mdcz/runtime/mediaserver";
+import {
+  type MediaServerKey,
+  probeMediaServer,
+  syncMediaServerPersonInfo,
+  syncMediaServerPersonPhotos,
+} from "@mdcz/runtime/mediaserver";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { AggregationService, LlmApiClient, NfoGenerator, TranslateService, toTarget } from "@mdcz/runtime/scrape";
 import {
@@ -18,7 +23,6 @@ import type { ToolCatalogResponse, ToolExecuteInput, ToolExecuteResponse } from 
 import { TOOL_DEFINITIONS } from "@mdcz/shared/toolCatalog";
 import type { ActorProfile } from "@mdcz/shared/types";
 import type { ServerConfigService } from "./configService";
-import type { DiagnosticsService } from "./diagnosticsService";
 import type { LibraryService } from "./libraryService";
 import type { MediaRootService } from "./mediaRootService";
 import type { ScrapeService } from "./scrapeService";
@@ -37,7 +41,6 @@ export class ToolsService {
     private readonly config: ServerConfigService,
     private readonly mediaRoots: MediaRootService,
     private readonly scrape: ScrapeService,
-    private readonly diagnostics: DiagnosticsService,
     private readonly library?: LibraryService,
   ) {}
 
@@ -119,7 +122,8 @@ export class ToolsService {
             data: result,
           };
         }
-        const check = await this.diagnostics.probeMediaServer(input.server);
+        const config = await this.config.get();
+        const check = await probeMediaServer(this.networkClient, config, input.server);
         return { toolId: input.toolId, ok: check.ok, message: check.message, data: check };
       }
       case "symlink-manager": {

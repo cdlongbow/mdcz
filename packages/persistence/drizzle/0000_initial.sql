@@ -110,7 +110,7 @@ CREATE TABLE `library_entries` (
   `actors_json` text NOT NULL DEFAULT '[]',
   `thumbnail_path` text,
   `last_known_path` text,
-  `indexed_at` integer NOT NULL,
+  `created_at` integer NOT NULL,
   UNIQUE(`root_id`, `root_relative_path`)
 );
 --> statement-breakpoint
@@ -123,7 +123,7 @@ CREATE TABLE `library_items` (
   `title` text,
   `number` text,
   `actors_json` text NOT NULL DEFAULT '[]',
-  `indexed_at` integer NOT NULL,
+  `created_at` integer NOT NULL,
   `last_refreshed_at` integer
 );
 --> statement-breakpoint

@@ -127,8 +127,18 @@ export class ScrapeService {
       throw new Error("scanDir is required when starting selected host files");
     }
     const normalizedScanDir = path.resolve(input.scanDir);
-    const roots = (await this.mediaRoots.list()).roots.filter((root) => root.enabled);
-    const refs = input.filePaths.map((filePath) => {
+    const configuredMediaPath = (await this.config.get()).paths.mediaPath.trim();
+    if (!configuredMediaPath) {
+      throw new Error("媒体目录未配置");
+    }
+    const configuredRoot = await this.mediaRoots.syncSingleEnabledRoot({
+      displayName: path.basename(path.resolve(configuredMediaPath)) || path.resolve(configuredMediaPath),
+      hostPath: configuredMediaPath,
+      enabled: true,
+    });
+    const roots = [configuredRoot];
+    const refs = [];
+    for (const filePath of input.filePaths) {
       const resolvedPath = path.resolve(filePath);
       const relativeToScan = path.relative(normalizedScanDir, resolvedPath);
       if (!relativeToScan || relativeToScan.startsWith("..") || path.isAbsolute(relativeToScan)) {
@@ -141,12 +151,12 @@ export class ScrapeService {
       if (!root) {
         throw new Error(`文件不在已注册媒体目录内：${filePath}`);
       }
-      const relative = path.relative(root.hostPath, resolvedPath);
-      return {
+      const relativeToRoot = path.relative(root.hostPath, resolvedPath);
+      refs.push({
         rootId: root.id,
-        relativePath: relative.replace(/\\/gu, "/"),
-      };
-    });
+        relativePath: relativeToRoot.replace(/\\/gu, "/"),
+      });
+    }
 
     return await this.start({
       refs,
@@ -607,7 +617,7 @@ export class ScrapeService {
 
     const thumbnailPath = toRootRelativeAssetPath(
       root,
-      runtimeResult.result.assets?.thumb ?? runtimeResult.result.assets?.poster,
+      runtimeResult.result.assets?.poster ?? runtimeResult.result.assets?.thumb,
     );
     const libraryAssets = toLibraryAssets(root, runtimeResult.result.assets);
     const stored = await state.repositories.library.upsertScrapeResult({

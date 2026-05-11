@@ -1,3 +1,4 @@
+import type { Configuration } from "@mdcz/shared/config";
 import {
   authLoginInputSchema,
   configImportInputSchema,
@@ -16,9 +17,6 @@ import {
   maintenanceScanSelectedFilesInputSchema,
   maintenanceStartInputSchema,
   maintenanceTaskInputSchema,
-  mediaRootCreateInputSchema,
-  mediaRootIdInputSchema,
-  mediaRootUpdateInputSchema,
   nfoReadInputSchema,
   nfoWriteInputSchema,
   rootBrowserInputSchema,
@@ -38,8 +36,26 @@ import {
 } from "@mdcz/shared/serverDtos";
 import { TRPCError } from "@trpc/server";
 import { createHealthPayload } from "../http/health";
+import type { ServerServices } from "../services";
 import { decorateTaskLog } from "../services/runtimeLogService";
 import { mapConfigError, protectedProcedure, setupProcedure, t } from "./context";
+
+const syncMediaRootFromConfig = async (services: ServerServices, config: Configuration) => {
+  const mediaPath = config.paths.mediaPath.trim();
+  if (!mediaPath) {
+    return;
+  }
+  await services.mediaRoots.syncSingleEnabledRoot({
+    displayName: pathDisplayName(mediaPath),
+    hostPath: mediaPath,
+    enabled: true,
+  });
+};
+
+const pathDisplayName = (hostPath: string): string => {
+  const normalized = hostPath.replace(/[\\/]+$/u, "");
+  return normalized.split(/[\\/]+/u).at(-1) || normalized || "媒体库";
+};
 
 export const appRouter = t.router({
   auth: t.router({
@@ -113,14 +129,18 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.config.reset(input?.path)),
     update: protectedProcedure.input(configUpdateInputSchema).mutation(async ({ ctx, input }) => {
       try {
-        return await ctx.services.config.update(input);
+        const config = await ctx.services.config.update(input);
+        await syncMediaRootFromConfig(ctx.services, config);
+        return config;
       } catch (error) {
         mapConfigError(error);
       }
     }),
     save: protectedProcedure.input(configUpdateInputSchema).mutation(async ({ ctx, input }) => {
       try {
-        return await ctx.services.config.update(input);
+        const config = await ctx.services.config.update(input);
+        await syncMediaRootFromConfig(ctx.services, config);
+        return config;
       } catch (error) {
         mapConfigError(error);
       }
@@ -168,7 +188,7 @@ export const appRouter = t.router({
       const taskLogs = [...scanLogs.logs, ...scrapeLogs.logs, ...maintenanceLogs.logs].map(decorateTaskLog);
       const runtimeLogs = kind === "task" ? [] : ctx.services.runtimeLogs.list(input).logs;
       return {
-        logs: [...taskLogs, ...runtimeLogs].sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+        logs: [...taskLogs, ...runtimeLogs].sort((left, right) => left.createdAt.localeCompare(right.createdAt)),
       };
     }),
     clearRuntime: protectedProcedure.mutation(({ ctx }) => ({
@@ -200,9 +220,6 @@ export const appRouter = t.router({
   overview: t.router({
     summary: protectedProcedure.query(async ({ ctx }) => await ctx.services.library.overview()),
   }),
-  diagnostics: t.router({
-    summary: protectedProcedure.query(async ({ ctx }) => await ctx.services.diagnostics.summary()),
-  }),
   tools: t.router({
     catalog: protectedProcedure.query(({ ctx }) => ctx.services.tools.catalog()),
     execute: protectedProcedure
@@ -210,25 +227,7 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.tools.execute(input)),
   }),
   mediaRoots: t.router({
-    availability: protectedProcedure
-      .input(mediaRootIdInputSchema)
-      .query(async ({ ctx, input }) => await ctx.services.mediaRoots.availability(input.id)),
-    create: protectedProcedure
-      .input(mediaRootCreateInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.mediaRoots.create(input)),
-    delete: protectedProcedure
-      .input(mediaRootIdInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.mediaRoots.softDelete(input.id)),
-    disable: protectedProcedure
-      .input(mediaRootIdInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.mediaRoots.disable(input.id)),
-    enable: protectedProcedure
-      .input(mediaRootIdInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.mediaRoots.enable(input.id)),
     list: protectedProcedure.query(async ({ ctx }) => await ctx.services.mediaRoots.list()),
-    update: protectedProcedure
-      .input(mediaRootUpdateInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.mediaRoots.update(input)),
   }),
   maintenance: t.router({
     execute: protectedProcedure
@@ -370,7 +369,8 @@ export const appRouter = t.router({
   }),
   setup: t.router({
     complete: setupProcedure.input(setupCompleteInputSchema).mutation(async ({ ctx, input }) => {
-      await ctx.services.mediaRoots.create(input.mediaRoot);
+      const config = await ctx.services.config.update({ paths: { mediaPath: input.mediaRoot.hostPath } });
+      await syncMediaRootFromConfig(ctx.services, config);
       return await ctx.services.auth.completeSetup(input.password);
     }),
     status: t.procedure.query(async ({ ctx }) => {

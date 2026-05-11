@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { SystemAboutResponse } from "@mdcz/shared/serverDtos";
 
 interface PackageJson {
+  name?: string;
   homepage?: string;
   repository?: string | { url?: string };
   version?: string;
@@ -66,8 +67,11 @@ export class SystemService {
       fileURLToPath(new URL("../../../package.json", import.meta.url)),
       fileURLToPath(new URL("../../package.json", import.meta.url)),
     ];
-    const packagePath = candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
-    const content = await readFile(packagePath, "utf8");
-    return JSON.parse(content) as PackageJson;
+    const packageJsons = await Promise.all(
+      candidates
+        .filter((candidate, index) => candidates.indexOf(candidate) === index && existsSync(candidate))
+        .map(async (candidate) => JSON.parse(await readFile(candidate, "utf8")) as PackageJson),
+    );
+    return packageJsons.find((packageJson) => packageJson.name === "mdcz") ?? packageJsons[0] ?? {};
   }
 }

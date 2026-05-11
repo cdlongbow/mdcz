@@ -357,11 +357,11 @@ export class ScraperService {
           crawlerDataJson: item.crawlerData ? JSON.stringify(item.crawlerData) : null,
           thumbnailPath: this.toOutputRootRelativePath(
             outputRoot,
-            item.assets?.thumb ?? item.assets?.poster ?? item.posterPath ?? undefined,
+            item.assets?.poster ?? item.posterPath ?? item.assets?.thumb ?? undefined,
           ),
           assets: toLibraryAssets(outputRoot, item.assets),
           lastKnownPath: rootRelativePath,
-          indexedAt: completedAt,
+          createdAt: completedAt,
         });
       }
     } catch (error) {

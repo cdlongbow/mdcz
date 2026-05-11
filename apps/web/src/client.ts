@@ -25,6 +25,38 @@ export const setAdminToken = (token: string | undefined): void => {
   localStorage.removeItem(TOKEN_KEY);
 };
 
+const isRemoteImageUrl = (value: string): boolean => /^https?:\/\//iu.test(value.trim());
+
+const encodePathSegments = (value: string): string =>
+  value
+    .split(/[\\/]+/u)
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+
+export const getLibraryAssetSrc = (input: { rootId?: string | null; path: string | null | undefined }): string => {
+  const assetPath = input.path?.trim();
+  if (!assetPath) {
+    return "";
+  }
+  if (isRemoteImageUrl(assetPath)) {
+    return assetPath;
+  }
+  const rootId = input.rootId?.trim();
+  if (!rootId) {
+    return "";
+  }
+  const url = new URL(
+    `/api/library/assets/${encodeURIComponent(rootId)}/${encodePathSegments(assetPath)}`,
+    getApiBase(),
+  );
+  const token = getAdminToken();
+  if (token) {
+    url.searchParams.set("token", token);
+  }
+  return url.toString();
+};
+
 const procedurePath = (procedure: ServerApiProcedure): string => procedure.replace(".", ".");
 
 const request = async <T>(procedure: ServerApiProcedure, input?: unknown): Promise<T> => {
@@ -102,9 +134,6 @@ export const api: ServerApiContract = {
   system: {
     about: () => request("system.about"),
   },
-  diagnostics: {
-    summary: () => request("diagnostics.summary"),
-  },
   logs: {
     list: (input) => request("logs.list", input),
     clearRuntime: () => request("logs.clearRuntime"),
@@ -131,13 +160,7 @@ export const api: ServerApiContract = {
     summary: () => request("overview.summary"),
   },
   mediaRoots: {
-    availability: (input) => request("mediaRoots.availability", input),
-    create: (input) => request("mediaRoots.create", input),
-    delete: (input) => request("mediaRoots.delete", input),
-    disable: (input) => request("mediaRoots.disable", input),
-    enable: (input) => request("mediaRoots.enable", input),
     list: () => request("mediaRoots.list"),
-    update: (input) => request("mediaRoots.update", input),
   },
   persistence: {
     status: () => request("persistence.status"),

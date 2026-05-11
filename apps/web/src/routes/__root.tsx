@@ -1,5 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { AppShell, LogoutShellAction, type ShellLinkProps, ThemeProvider } from "@mdcz/views/shell";
+import { AppShell, type ShellLinkProps, ThemeProvider } from "@mdcz/views/shell";
 import { useQuery } from "@tanstack/react-query";
 import { createRootRoute, Outlet } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
@@ -108,19 +108,7 @@ export const RootLayout = ({ children }: { children: ReactNode }) => {
 
   return (
     <ThemeProvider>
-      <AppShell
-        currentPath={pathname}
-        linkComponent={ShellLink}
-        footerAction={
-          <LogoutShellAction
-            onLogout={() => {
-              void api.auth.logout().finally(() => {
-                window.location.href = "/login";
-              });
-            }}
-          />
-        }
-      >
+      <AppShell currentPath={pathname} linkComponent={ShellLink}>
         {children}
       </AppShell>
     </ThemeProvider>

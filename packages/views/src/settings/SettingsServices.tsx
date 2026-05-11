@@ -59,6 +59,7 @@ export interface SettingsServices {
   browsePath: (kind: "file" | "directory", filters?: SettingsBrowseFilter[]) => Promise<SettingsBrowseResult>;
   getPathSuggestions?: (kind: "file" | "directory") => SettingsPathSuggestion[];
   isServer?: boolean;
+  settingsTarget?: "desktop" | "server";
   suggestDirectoryPath?: (path: string) => Promise<PathAutocompleteResult>;
   watermarkDirectoryActionLabel?: string;
   checkCookies: () => Promise<SettingsCookieCheckResult>;

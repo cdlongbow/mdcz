@@ -1,8 +1,6 @@
 export * from "./details";
 export { ToolCatalogView, type ToolCatalogViewProps } from "./ToolCatalogView";
 export {
-  DiagnosticsPanelView,
-  type DiagnosticsPanelViewProps,
   ToolCardIcon,
   ToolField,
   ToolShell,

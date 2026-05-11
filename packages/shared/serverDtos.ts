@@ -42,28 +42,6 @@ export const mediaRootCreateInputSchema = z.object({
 
 export type MediaRootCreateInput = z.infer<typeof mediaRootCreateInputSchema>;
 
-export const mediaRootUpdateInputSchema = z.object({
-  id: z.string().trim().min(1),
-  displayName: z.string().trim().min(1).optional(),
-  hostPath: z.string().trim().min(1).optional(),
-  enabled: z.boolean().optional(),
-});
-
-export type MediaRootUpdateInput = z.infer<typeof mediaRootUpdateInputSchema>;
-
-export const mediaRootIdInputSchema = z.object({
-  id: z.string().trim().min(1),
-});
-
-export type MediaRootIdInput = z.infer<typeof mediaRootIdInputSchema>;
-
-export const mediaRootAvailabilityResponseSchema = z.object({
-  root: mediaRootSchema,
-  availability: mediaRootAvailabilitySchema,
-});
-
-export type MediaRootAvailabilityResponse = z.infer<typeof mediaRootAvailabilityResponseSchema>;
-
 export const rootBrowserInputSchema = z.object({
   rootId: z.string().trim().min(1),
   relativePath: z.string().optional().default(""),
@@ -538,11 +516,14 @@ export const logEntrySchema = taskEventSchema.extend({
 
 export type LogEntryDto = z.infer<typeof logEntrySchema>;
 
-export const logListInputSchema = z
-  .object({
-    kind: z.enum(["all", "task", "runtime"]).optional().default("all"),
-  })
-  .optional();
+export const logListInputSchema = z.preprocess(
+  (input) => (input === null ? undefined : input),
+  z
+    .object({
+      kind: z.enum(["all", "task", "runtime"]).optional().default("all"),
+    })
+    .optional(),
+);
 
 export type LogListInput = z.infer<typeof logListInputSchema>;
 
@@ -615,7 +596,7 @@ export const libraryEntrySchema = z.object({
   crawlerData: crawlerDataSchema.nullable(),
   thumbnailPath: z.string().nullable(),
   lastKnownPath: z.string().nullable(),
-  indexedAt: z.string(),
+  createdAt: z.string(),
   lastRefreshedAt: z.string().nullable(),
   available: z.boolean().nullable(),
   fileRefs: z.array(
@@ -683,6 +664,7 @@ export type LibraryDetailResponse = z.infer<typeof libraryDetailResponseSchema>;
 
 export const overviewRecentAcquisitionSchema = z.object({
   id: z.string(),
+  rootId: z.string(),
   number: z.string(),
   title: z.string().nullable(),
   actors: z.array(z.string()),
@@ -986,23 +968,6 @@ export const configProfileNameResponseSchema = z.object({
 });
 
 export type ConfigProfileNameResponse = z.infer<typeof configProfileNameResponseSchema>;
-
-export const diagnosticCheckSchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  ok: z.boolean(),
-  message: z.string(),
-  checkedAt: z.string(),
-  detail: z.record(z.string(), z.unknown()).optional(),
-});
-
-export type DiagnosticCheckDto = z.infer<typeof diagnosticCheckSchema>;
-
-export const diagnosticsSummaryResponseSchema = z.object({
-  checks: z.array(diagnosticCheckSchema),
-});
-
-export type DiagnosticsSummaryResponse = z.infer<typeof diagnosticsSummaryResponseSchema>;
 
 export const toolCatalogResponseSchema = z.object({
   tools: z.array(

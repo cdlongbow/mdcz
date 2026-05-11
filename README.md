@@ -21,7 +21,7 @@
 
 ```bash
 pnpm install
-pnpm dev
+pnpm dev:webui
 ```
 
 ### 构建

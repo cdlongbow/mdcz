@@ -12,6 +12,7 @@ export interface SettingsFilterState {
   parsedQuery: ParsedSettingsQuery;
   showAdvanced: boolean;
   modifiedKeys: ReadonlySet<string>;
+  target?: "desktop" | "server";
 }
 
 export interface SettingsSuggestion {
@@ -102,6 +103,9 @@ export function isFieldVisible(entry: FieldEntry, state: SettingsFilterState): b
   const isModified = modifiedKeys.has(entry.key);
 
   if (entry.surface !== "settings" || entry.visibility === "hidden") {
+    return false;
+  }
+  if (state.target === "server" && (entry.key.startsWith("shortcuts.") || entry.key.startsWith("ui."))) {
     return false;
   }
 

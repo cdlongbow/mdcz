@@ -1,6 +1,6 @@
 import { Button, cn } from "@mdcz/ui";
 import { AlertCircle, FolderOpen, ImageOff, Library, Loader2 } from "lucide-react";
-import type { ComponentType, ReactNode } from "react";
+import { type ComponentType, type ReactNode, useState } from "react";
 
 const SKELETON_KEYS = ["slot-1", "slot-2", "slot-3", "slot-4", "slot-5", "slot-6", "slot-7", "slot-8"];
 
@@ -8,12 +8,13 @@ export interface RecentAcquisitionViewItem {
   actors: string[];
   id?: string;
   number: string;
+  rootId?: string;
   title: string | null;
   thumbnailPath: string | null;
 }
 
 export interface RecentAcquisitionsGridProps<TItem extends RecentAcquisitionViewItem = RecentAcquisitionViewItem> {
-  getImageSrc?: (path: string) => string;
+  getImageSrc?: (path: string, item: TItem) => string;
   isError?: boolean;
   isLoading?: boolean;
   items: TItem[];
@@ -83,7 +84,7 @@ export function RecentAcquisitionsGrid<TItem extends RecentAcquisitionViewItem =
 }
 
 interface AcquisitionCardProps<TItem extends RecentAcquisitionViewItem> {
-  getImageSrc: (path: string) => string;
+  getImageSrc: (path: string, item: TItem) => string;
   item: TItem;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; item: TItem }>;
   onOpen?: (item: TItem) => void;
@@ -95,7 +96,8 @@ function AcquisitionCard<TItem extends RecentAcquisitionViewItem>({
   linkComponent: LinkComponent,
   onOpen,
 }: AcquisitionCardProps<TItem>) {
-  const imageSrc = item.thumbnailPath ? getImageSrc(item.thumbnailPath) : "";
+  const [imageLoadFailed, setImageLoadFailed] = useState(false);
+  const imageSrc = !imageLoadFailed && item.thumbnailPath ? getImageSrc(item.thumbnailPath, item) : "";
   const title = item.title?.trim() || item.number;
   const actorText = item.actors.filter(Boolean).join(" / ") || "未知演员";
   const className = cn(
@@ -110,6 +112,7 @@ function AcquisitionCard<TItem extends RecentAcquisitionViewItem>({
             src={imageSrc}
             alt={title}
             className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+            onError={() => setImageLoadFailed(true)}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-muted-foreground">

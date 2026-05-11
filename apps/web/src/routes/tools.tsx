@@ -1,26 +1,10 @@
-import { toErrorMessage } from "@mdcz/shared/error";
 import { TOOL_DEFINITIONS, type ToolId } from "@mdcz/shared/toolCatalog";
-import { DiagnosticsPanelView, ToolCardIcon, ToolCatalogView } from "@mdcz/views/tools";
-import { useQuery } from "@tanstack/react-query";
+import { ToolCardIcon, ToolCatalogView } from "@mdcz/views/tools";
 import { createFileRoute } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useRef, useState } from "react";
-import { api } from "../client";
-import { ErrorBanner, formatDate } from "../routeCommon";
 import { Button } from "../ui";
 import { ToolDetail } from "./tools/ToolDetail";
-
-const DiagnosticsPanel = () => {
-  const diagnosticsQ = useQuery({ queryKey: ["diagnostics"], queryFn: () => api.diagnostics.summary(), retry: false });
-  return (
-    <DiagnosticsPanelView
-      checks={diagnosticsQ.data?.checks ?? []}
-      error={diagnosticsQ.error ? <ErrorBanner>{toErrorMessage(diagnosticsQ.error)}</ErrorBanner> : undefined}
-      formatDate={formatDate}
-      onRefresh={() => void diagnosticsQ.refetch()}
-    />
-  );
-};
 
 export const ToolsPage = () => {
   const pageScrollRef = useRef<HTMLDivElement>(null);
@@ -54,7 +38,6 @@ export const ToolsPage = () => {
             </Button>
           </div>
           <ToolDetail toolId={selectedToolId} />
-          <DiagnosticsPanel />
         </main>
       ) : (
         <main className="mx-auto grid w-full max-w-[1120px] gap-6 px-6 py-8 md:px-8 lg:px-10 lg:py-10">
@@ -63,7 +46,6 @@ export const ToolsPage = () => {
             tools={TOOL_DEFINITIONS}
             onSelect={handleSelectTool}
           />
-          <DiagnosticsPanel />
         </main>
       )}
     </div>

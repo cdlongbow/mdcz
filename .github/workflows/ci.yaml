@@ -30,6 +30,6 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm ci:check
+      - run: pnpm check
 
-      - run: pnpm ci:build
+      - run: pnpm build:desktop && pnpm build:webui

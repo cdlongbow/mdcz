@@ -44,7 +44,7 @@ export interface RuntimeLibraryEntrySummaryInput {
   actors: string[];
   thumbnailPath?: string | null;
   lastKnownPath: string | null;
-  indexedAt: Date | number | string;
+  createdAt: Date | number | string;
   size?: number;
   available?: boolean | null;
 }
@@ -179,7 +179,7 @@ export const toRuntimeRecentAcquisition = (entry: RuntimeLibraryEntrySummaryInpu
     actors: entry.actors,
     thumbnailPath: entry.thumbnailPath ?? null,
     lastKnownPath: entry.lastKnownPath,
-    completedAt: toTimestampMs(entry.indexedAt),
+    completedAt: toTimestampMs(entry.createdAt),
     available: entry.available,
   };
 };

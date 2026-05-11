@@ -67,7 +67,7 @@ describe("createOverviewHandlers", () => {
             actors: ["Actor A"],
             thumbnailPath: "thumbs/ABC-123.webp",
             lastKnownPath: "movies/ABC-123.mp4",
-            indexedAt: new Date(1_700_000_000_000),
+            createdAt: new Date(1_700_000_000_000),
           },
           {
             id: "entry-2",
@@ -78,7 +78,7 @@ describe("createOverviewHandlers", () => {
             actors: [],
             thumbnailPath: null,
             lastKnownPath: null,
-            indexedAt: new Date(1_700_000_000_001),
+            createdAt: new Date(1_700_000_000_001),
           },
         ]),
       }),
@@ -141,7 +141,7 @@ describe("createOverviewHandlers", () => {
         actors: ["Actor P"],
         thumbnailPath: `thumb-${displayIndex}.png`,
         lastKnownPath: `ABC-${displayIndex}.mp4`,
-        indexedAt: new Date(1_700_000_000_000 + index),
+        createdAt: new Date(1_700_000_000_000 + index),
       };
     });
     const handlers = createOverviewHandlers(

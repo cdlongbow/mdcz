@@ -3,12 +3,9 @@ import path from "node:path";
 import { createMediaRoot, type MediaRoot, normalizeHostPath } from "@mdcz/media-store";
 import {
   type MediaRootAvailabilityDto,
-  type MediaRootAvailabilityResponse,
   type MediaRootCreateInput,
   type MediaRootDto,
-  type MediaRootUpdateInput,
   mediaRootCreateInputSchema,
-  mediaRootUpdateInputSchema,
 } from "@mdcz/shared/serverDtos";
 import type { ServerPersistenceService } from "./persistenceService";
 
@@ -38,76 +35,50 @@ export class MediaRootService {
     return { roots: roots.map(toMediaRootDto) };
   }
 
-  async setupStatus(): Promise<{ configured: boolean; mediaRootCount: number }> {
-    const roots = (await this.list()).roots;
-    return { configured: roots.some((root) => root.enabled), mediaRootCount: roots.length };
-  }
-
-  async availability(id: string): Promise<MediaRootAvailabilityResponse> {
-    const state = await this.persistence.getState();
-    const root = await state.repositories.mediaRoots.get(id);
-    const availability = await this.checkAvailability(root.hostPath);
-    return { root: toMediaRootDto({ ...root, availability }), availability };
-  }
-
-  async create(input: MediaRootCreateInput): Promise<MediaRootDto> {
+  async syncSingleEnabledRoot(input: MediaRootCreateInput): Promise<MediaRootDto> {
     const parsed = mediaRootCreateInputSchema.parse(input);
     const normalizedPath = await this.validateMountedFilesystemPath(parsed.hostPath);
     const state = await this.persistence.getState();
-    const existing = await state.repositories.mediaRoots.list();
-    if (existing.some((root) => root.hostPath === normalizedPath)) {
-      throw new Error(`媒体目录已存在：${parsed.hostPath}`);
-    }
-
-    const root = createMediaRoot({
-      displayName: parsed.displayName,
-      hostPath: normalizedPath,
-      enabled: parsed.enabled ?? true,
-    });
-    return toMediaRootDto(await state.repositories.mediaRoots.upsert(root));
-  }
-
-  async update(input: MediaRootUpdateInput): Promise<MediaRootDto> {
-    const parsed = mediaRootUpdateInputSchema.parse(input);
-    const state = await this.persistence.getState();
-    const existing = await state.repositories.mediaRoots.get(parsed.id);
-    const nextHostPath = parsed.hostPath
-      ? await this.validateMountedFilesystemPath(parsed.hostPath)
-      : existing.hostPath;
     const roots = await state.repositories.mediaRoots.list();
-    if (roots.some((root) => root.id !== existing.id && root.hostPath === nextHostPath)) {
-      throw new Error(`媒体目录已存在：${parsed.hostPath ?? nextHostPath}`);
+    const existing = roots.find((root) => root.hostPath === normalizedPath);
+    const now = new Date();
+    const activeRoot =
+      existing ??
+      createMediaRoot({
+        displayName: parsed.displayName,
+        hostPath: normalizedPath,
+        enabled: true,
+        now,
+      });
+
+    for (const root of roots) {
+      if (root.id === activeRoot.id) {
+        continue;
+      }
+      if (root.enabled) {
+        await state.repositories.mediaRoots.upsert({
+          ...root,
+          enabled: false,
+          updatedAt: now,
+        });
+      }
     }
 
-    const updated = await state.repositories.mediaRoots.upsert({
-      ...existing,
-      displayName: parsed.displayName ?? existing.displayName,
-      hostPath: nextHostPath,
-      enabled: parsed.enabled ?? existing.enabled,
-      updatedAt: new Date(),
-    });
-    return toMediaRootDto(updated);
-  }
-
-  async enable(id: string): Promise<MediaRootDto> {
-    return await this.setEnabled(id, true);
-  }
-
-  async disable(id: string): Promise<MediaRootDto> {
-    return await this.setEnabled(id, false);
-  }
-
-  async softDelete(id: string): Promise<MediaRootDto> {
-    const state = await this.persistence.getState();
-    const root = await state.repositories.mediaRoots.get(id);
     return toMediaRootDto(
       await state.repositories.mediaRoots.upsert({
-        ...root,
-        enabled: false,
-        deleted: true,
-        updatedAt: new Date(),
+        ...activeRoot,
+        displayName: parsed.displayName,
+        hostPath: normalizedPath,
+        enabled: true,
+        deleted: false,
+        updatedAt: now,
       }),
     );
+  }
+
+  async setupStatus(): Promise<{ configured: boolean; mediaRootCount: number }> {
+    const roots = (await this.list()).roots;
+    return { configured: roots.some((root) => root.enabled), mediaRootCount: roots.length };
   }
 
   async getActiveRoot(id: string): Promise<MediaRoot> {
@@ -118,21 +89,6 @@ export class MediaRootService {
     }
     await this.validateMountedFilesystemPath(root.hostPath);
     return root;
-  }
-
-  private async setEnabled(id: string, enabled: boolean): Promise<MediaRootDto> {
-    const state = await this.persistence.getState();
-    const root = await state.repositories.mediaRoots.get(id);
-    if (enabled) {
-      await this.validateMountedFilesystemPath(root.hostPath);
-    }
-    return toMediaRootDto(
-      await state.repositories.mediaRoots.upsert({
-        ...root,
-        enabled,
-        updatedAt: new Date(),
-      }),
-    );
   }
 
   private async checkAvailability(hostPath: string): Promise<MediaRootAvailabilityDto> {

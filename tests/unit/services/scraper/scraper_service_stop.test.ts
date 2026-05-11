@@ -232,7 +232,7 @@ describe("ScraperService stop flow", () => {
         actors: ["Actor A"],
         thumbnailPath: "ABP-789/poster.jpg",
         lastKnownPath: "ABP-789.mp4",
-        indexedAt: expect.any(Date),
+        createdAt: expect.any(Date),
       }),
     );
     expect(upsertRoot).toHaveBeenCalledWith(expect.objectContaining({ id: "desktop-output", hostPath: outputRoot }));

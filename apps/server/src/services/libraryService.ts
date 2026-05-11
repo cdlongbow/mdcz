@@ -60,7 +60,7 @@ export class LibraryService {
       (summary, entry) => ({
         fileCount: summary.fileCount + 1,
         totalBytes: summary.totalBytes + entry.size,
-        outputAt: summary.outputAt && summary.outputAt > entry.indexedAt ? summary.outputAt : entry.indexedAt,
+        outputAt: summary.outputAt && summary.outputAt > entry.createdAt ? summary.outputAt : entry.createdAt,
         rootPath: null,
       }),
       { fileCount: 0, totalBytes: 0, outputAt: null as string | null, rootPath: null as string | null },
@@ -77,12 +77,13 @@ export class LibraryService {
         : fallbackOutput,
       recentAcquisitions: entries.map((entry) => ({
         id: entry.id,
+        rootId: entry.rootId,
         number: entry.number ?? entry.fileName,
         title: entry.title ?? entry.fileName,
         actors: entry.actors,
         thumbnailPath: entry.thumbnailPath,
         lastKnownPath: entry.lastKnownPath,
-        completedAt: entry.indexedAt,
+        completedAt: entry.createdAt,
         available: entry.available,
       })),
     };
@@ -171,7 +172,7 @@ export class LibraryService {
       crawlerData: parseCrawlerData(entry.crawlerDataJson),
       thumbnailPath: entry.thumbnailPath,
       lastKnownPath: entry.lastKnownPath,
-      indexedAt: entry.indexedAt.toISOString(),
+      createdAt: entry.createdAt.toISOString(),
       lastRefreshedAt: toIso(entry.lastRefreshedAt),
       available,
       fileRefs,

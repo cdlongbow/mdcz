@@ -114,7 +114,7 @@ export const libraryEntries = sqliteTable(
     actorsJson: text("actors_json").notNull().default("[]"),
     thumbnailPath: text("thumbnail_path"),
     lastKnownPath: text("last_known_path"),
-    indexedAt: integer("indexed_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => ({ rootPathKey: uniqueIndex("library_entries_root_path_idx").on(table.rootId, table.rootRelativePath) }),
 );
@@ -128,7 +128,7 @@ export const libraryItems = sqliteTable("library_items", {
   title: text("title"),
   number: text("number"),
   actorsJson: text("actors_json").notNull().default("[]"),
-  indexedAt: integer("indexed_at", { mode: "timestamp_ms" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   lastRefreshedAt: integer("last_refreshed_at", { mode: "timestamp_ms" }),
 });
 
