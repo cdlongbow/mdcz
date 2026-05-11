@@ -2,6 +2,9 @@ appId: com.shotheadman.mdcz
 productName: MDCz
 
 asar: true
+electronLanguages:
+  - zh-CN
+  - en-US
 asarUnpack:
   - resources/**
   - "**/*.node"
@@ -46,6 +49,12 @@ win:
     - target: portable
       arch:
         - x64
+  files:
+    - "!**/node_modules/@img/sharp-{darwin,linux,linuxmusl}-*/**"
+    - "!**/node_modules/@img/sharp-libvips-*/**"
+    - "!**/node_modules/@img/sharp-win32-arm64/**"
+    - "!**/node_modules/impit-{darwin,linux}-*/**"
+    - "!**/node_modules/impit-win32-arm64-*/**"
 
 mac:
   target:
@@ -53,6 +62,10 @@ mac:
       arch:
         - x64
         - arm64
+  files:
+    - "!**/node_modules/@img/sharp-{win32,linux,linuxmusl}-*/**"
+    - "!**/node_modules/@img/sharp-libvips-{linux,linuxmusl,win32}-*/**"
+    - "!**/node_modules/impit-{win32,linux}-*/**"
 
 linux:
   category: Utility
@@ -60,3 +73,9 @@ linux:
   executableName: mdcz
   target:
     - AppImage
+  files:
+    - "!**/node_modules/@img/sharp-{win32,darwin,linuxmusl}-*/**"
+    - "!**/node_modules/@img/sharp-libvips-{win32,darwin,linuxmusl}-*/**"
+    - "!**/node_modules/impit-{win32,darwin}-*/**"
+    - "!**/node_modules/impit-linux-arm64-*/**"
+    - "!**/node_modules/impit-linux-x64-musl/**"
