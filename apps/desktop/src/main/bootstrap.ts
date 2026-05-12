@@ -2,6 +2,8 @@ import { mkdir } from "node:fs/promises";
 
 import { app } from "electron";
 
+import { applyDesktopAppIdentity, getDesktopUserDataPath } from "./appIdentity";
+
 let initialized = false;
 
 const applyCommandLineSwitches = (): void => {
@@ -15,7 +17,7 @@ const applyPlatformDefaults = (): void => {
 };
 
 const ensureUserDataDirectory = async (): Promise<void> => {
-  const userDataPath = app.getPath("userData");
+  const userDataPath = getDesktopUserDataPath();
   await mkdir(userDataPath, { recursive: true });
 };
 
@@ -24,6 +26,7 @@ export const bootstrap = async (): Promise<void> => {
     return;
   }
 
+  applyDesktopAppIdentity();
   applyCommandLineSwitches();
   applyPlatformDefaults();
   await ensureUserDataDirectory();

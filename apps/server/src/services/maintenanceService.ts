@@ -100,8 +100,8 @@ export class MaintenanceService {
       }
     }
     this.#pendingPresets.set(task.id, input.presetId);
-    await this.addEvent(task.id, "queued", `维护任务已排队：${input.presetId}`);
-    await this.addEvent(task.id, "preset", `维护预设：${input.presetId}`);
+    await this.addEvent(task.id, "queued", `Maintenance task queued. Preset: ${input.presetId}`);
+    await this.addEvent(task.id, "preset", `Maintenance preset: ${input.presetId}`);
     this.taskEvents.publish({ kind: "task", task: await this.toDto(task.id) });
     this.drain(input.presetId);
     return await this.toDto(task.id);
@@ -122,11 +122,12 @@ export class MaintenanceService {
   }
 
   async logs(): Promise<LogListResponse> {
-    const tasks = (await this.list()).tasks;
-    const events = await Promise.all(tasks.map((task) => this.events(task.id)));
+    const state = await this.persistence.getState();
+    const tasks = await state.repositories.tasks.list("maintenance");
+    const events = await Promise.all(tasks.map((task) => state.repositories.tasks.listEvents(task.id)));
     const logs = events
-      .flatMap((eventList) => eventList.events)
-      .map((event) => ({ ...event, source: "task" as const }))
+      .flat()
+      .map((event) => ({ ...toTaskEventDto(event), source: "task" as const }))
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
     return { logs };
   }
@@ -223,7 +224,12 @@ export class MaintenanceService {
       completedAt: null,
       error: null,
     });
-    await this.addEvent(input.taskId, "running", "开始应用维护预览");
+    const presetId = (previews[0]?.presetId as MaintenancePresetId | undefined) ?? "read_local";
+    await this.addEvent(
+      input.taskId,
+      "running",
+      `Starting maintenance run for preset ${presetId}. Items: ${previews.length}`,
+    );
     this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
 
     const applied: MaintenanceApplyLogDto[] = [];
@@ -234,7 +240,7 @@ export class MaintenanceService {
         state: "executing",
         items: previews,
         concurrency: 1,
-        runItem: async (preview, _index, signal) => {
+        runItem: async (preview, index, signal) => {
           if (this.#stopRequested.has(input.taskId)) {
             return {
               status: "skipped",
@@ -257,6 +263,8 @@ export class MaintenanceService {
           await this.runtime.apply({
             presetId: preview.presetId as MaintenancePresetId,
             root,
+            progress: { fileIndex: index + 1, totalFiles: previews.length },
+            signalService: this.createTaskSignalService(input.taskId, preview.relativePath),
             signal,
             preview: {
               relativePath: preview.relativePath,
@@ -297,7 +305,7 @@ export class MaintenanceService {
             status: "success",
           });
           const item = toMaintenanceApplyLogDto(log);
-          await this.addEvent(input.taskId, "item-success", `已应用维护项：${preview.relativePath}`);
+          await this.addEvent(input.taskId, "item-success", `Applied maintenance item: ${preview.relativePath}`);
           this.taskEvents.publishRealtime({
             id: `${log.id}:maintenance-apply-item`,
             taskId: input.taskId,
@@ -356,7 +364,11 @@ export class MaintenanceService {
         videoCount: successCount,
         error: failedCount > 0 && successCount === 0 ? "维护应用失败" : null,
       });
-      await this.addEvent(input.taskId, "completed", `维护应用完成：${successCount} 成功，${failedCount} 失败`);
+      await this.addEvent(
+        input.taskId,
+        "completed",
+        `Maintenance completed. Succeeded: ${successCount}, Failed: ${failedCount}`,
+      );
       this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
       return { task: await this.toDto(input.taskId), items: await this.listPreviewDtos(input.taskId), applied };
     } catch (error) {
@@ -374,7 +386,7 @@ export class MaintenanceService {
     this.#paused.add(input.taskId);
     this.#executors.get(input.taskId)?.pause();
     await this.transitionTask(input.taskId, "pause");
-    await this.addEvent(input.taskId, "paused", "维护任务已暂停");
+    await this.addEvent(input.taskId, "paused", "Maintenance task paused");
     this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
     return await this.toDto(input.taskId);
   }
@@ -384,7 +396,7 @@ export class MaintenanceService {
     this.#executors.get(input.taskId)?.stop();
     this.#paused.delete(input.taskId);
     await this.transitionTask(input.taskId, "stop", "维护已停止");
-    await this.addEvent(input.taskId, "stopping", "正在停止维护任务");
+    await this.addEvent(input.taskId, "stopping", "Stopping maintenance task");
     this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
     return await this.toDto(input.taskId);
   }
@@ -393,7 +405,7 @@ export class MaintenanceService {
     this.#paused.delete(input.taskId);
     this.#executors.get(input.taskId)?.resume();
     await this.transitionTask(input.taskId, "resume");
-    await this.addEvent(input.taskId, "queued", "维护任务已恢复排队");
+    await this.addEvent(input.taskId, "queued", "Maintenance task resumed and requeued");
     this.taskEvents.publish({ kind: "task", task: await this.toDto(input.taskId) });
     this.drain(await this.resolveTaskPreset(input.taskId, "read_local"));
     return await this.toDto(input.taskId);
@@ -412,20 +424,25 @@ export class MaintenanceService {
   private async runTask(taskId: string, presetId: MaintenancePresetId): Promise<void> {
     const state = await this.persistence.getState();
     const task = await state.repositories.tasks.get(taskId);
+    const persistedPreviews = await state.repositories.maintenance.listPreviews(taskId);
+    const refs =
+      this.#pendingRefs.get(taskId) ??
+      (persistedPreviews.length > 0
+        ? persistedPreviews.map((preview) => ({ relativePath: preview.relativePath }))
+        : undefined);
     await this.transitionTask(taskId, "start");
-    await this.addEvent(taskId, "running", "开始生成维护预览");
+    await this.addEvent(
+      taskId,
+      "running",
+      refs?.length ? "Scanning selected maintenance files" : "Scanning maintenance directories",
+    );
     this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
 
     try {
       const root = await this.mediaRoots.getActiveRoot(task.rootId);
-      const persistedPreviews = await state.repositories.maintenance.listPreviews(taskId);
-      const refs =
-        this.#pendingRefs.get(taskId) ??
-        (persistedPreviews.length > 0
-          ? persistedPreviews.map((preview) => ({ relativePath: preview.relativePath }))
-          : undefined);
       await state.repositories.maintenance.deletePreviewsForTask(taskId);
       const entries = await (refs?.length ? this.runtime.scanRefs({ root, refs }) : this.runtime.scan({ root }));
+      await this.addEvent(taskId, "log", `Maintenance scan completed. Found ${entries.length} item(s).`);
       const executor = new MaintenanceExecutor();
       this.#executors.set(taskId, executor);
       type PreviewEntry = (typeof entries)[number];
@@ -440,7 +457,7 @@ export class MaintenanceService {
           }
           if (this.#paused.has(taskId)) {
             await this.transitionTask(taskId, "pause");
-            await this.addEvent(taskId, "paused", "维护任务已暂停");
+            await this.addEvent(taskId, "paused", "Maintenance task paused");
             this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
             return { status: "skipped", error: "维护已暂停" };
           }
@@ -506,7 +523,11 @@ export class MaintenanceService {
         directoryCount: new Set(items.map((item) => path.posix.dirname(item.relativePath))).size,
         error: blockedCount > 0 && readyCount === 0 ? "维护预览全部失败" : null,
       });
-      await this.addEvent(taskId, "completed", `维护预览完成：${readyCount} 可应用，${blockedCount} 阻塞`);
+      await this.addEvent(
+        taskId,
+        "completed",
+        `Maintenance preview completed. Ready: ${readyCount}, Blocked: ${blockedCount}`,
+      );
       this.taskEvents.publish({ kind: "task", task: await this.toDto(taskId) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -525,7 +546,7 @@ export class MaintenanceService {
     const previews = await (await this.persistence.getState()).repositories.maintenance.listPreviews(taskId);
     const eventPreset = (await this.events(taskId)).events
       .find((event) => event.type === "preset")
-      ?.message.replace(/^维护预设：/u, "") as MaintenancePresetId | undefined;
+      ?.message.replace(/^(Maintenance preset: |维护预设：)/u, "") as MaintenancePresetId | undefined;
     return (
       (previews[0]?.presetId as MaintenancePresetId | undefined) ??
       this.#pendingPresets.get(taskId) ??
@@ -619,6 +640,34 @@ export class MaintenanceService {
       });
     }
     return dto;
+  }
+
+  private createTaskSignalService(
+    taskId: string,
+    message?: string,
+  ): {
+    setProgress(value: number, current: number, total: number): void;
+    showLogText(message: string): void;
+  } {
+    return {
+      setProgress: (value, current, total) => {
+        const createdAt = new Date().toISOString();
+        this.taskEvents.publishRealtime({
+          id: `${taskId}:maintenance-runtime-progress:${current}:${value}:${createdAt}`,
+          taskId,
+          createdAt,
+          kind: "task-progress",
+          taskKind: "maintenance",
+          value,
+          current,
+          total,
+          ...(message ? { message } : {}),
+        });
+      },
+      showLogText: (logMessage) => {
+        void this.addEvent(taskId, "log", logMessage);
+      },
+    };
   }
 }
 

@@ -24,7 +24,7 @@ import {
 } from "@mdcz/runtime/scrape";
 import { ScrapeSession, type ScrapeSuccessItem } from "@mdcz/runtime/tasks";
 import type { ScraperStatus } from "@mdcz/shared/types";
-import { app } from "electron";
+import { getDesktopUserDataPath } from "../../appIdentity";
 import { AggregationService } from "./aggregation";
 import { DownloadManager } from "./DownloadManager";
 import { createFileScraper, type ScrapeExecutionMode } from "./FileScraper";
@@ -57,7 +57,7 @@ export class ScraperService {
 
   private readonly session = new ScrapeSession({
     logger: loggerService.getLogger("ScrapeSession"),
-    statePath: join(app.getPath("userData"), "session-state.json"),
+    statePath: join(getDesktopUserDataPath(), "session-state.json"),
   });
 
   private restGate: ScrapeRestGate | null = null;

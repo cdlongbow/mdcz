@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { app } from "electron";
 import { createLogger, format, type Logger, type transport, transports } from "winston";
 import DailyRotateFile from "winston-daily-rotate-file";
+import { getDesktopUserDataPath } from "../appIdentity";
 
 export interface LoggerEventPayload {
   level: string;
@@ -12,7 +13,7 @@ export interface LoggerEventPayload {
 }
 
 const getLogDir = (): string => {
-  return join(app.getPath("userData"), "logs");
+  return join(getDesktopUserDataPath(), "logs");
 };
 
 const formatLogLine = (input: {

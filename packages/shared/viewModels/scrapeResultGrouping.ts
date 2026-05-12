@@ -2,14 +2,20 @@ import type {
   CrawlerData,
   DownloadedAssets,
   ScrapeResult,
+  ScrapeResultStatus,
   UncensoredConfirmItem,
   UncensoredConfirmResultItem,
 } from "@mdcz/shared/types";
 import type { ScrapeFileRefDto } from "../serverDtos";
 import { deriveGroupingDirectoryFromPath } from "./multipartDisplay";
-import { buildRendererGroups, findRendererGroup, type RendererGroup } from "./rendererGroupModel";
+import {
+  buildRendererGroups,
+  findRendererGroup,
+  type RendererGroup,
+  type RendererGroupStatus,
+} from "./rendererGroupModel";
 
-export type ScrapeResultGroup = RendererGroup<ScrapeResult, ScrapeResult>;
+export type ScrapeResultGroup = RendererGroup<ScrapeResult, ScrapeResult, RendererGroupStatus>;
 
 export interface ScrapeResultGroupActionContext {
   selectedItem: ScrapeResult;
@@ -84,7 +90,7 @@ const mergeDownloadedAssets = (
 const mergeGroupedScrapeResult = (existing: ScrapeResult, incoming: ScrapeResult): ScrapeResult => {
   return {
     ...existing,
-    status: existing.status === "failed" || incoming.status === "failed" ? "failed" : "success",
+    status: mergeScrapeResultStatus(existing.status, incoming.status),
     crawlerData: mergeCrawlerData(existing.crawlerData, incoming.crawlerData),
     videoMeta: incoming.videoMeta ?? existing.videoMeta,
     error: incoming.error ?? existing.error,
@@ -96,8 +102,20 @@ const mergeGroupedScrapeResult = (existing: ScrapeResult, incoming: ScrapeResult
   };
 };
 
-const getScrapeGroupStatus = (group: ScrapeResultGroup["items"]): "success" | "failed" =>
-  group.some((item) => item.status === "failed") ? "failed" : "success";
+const mergeScrapeResultStatus = (existing: ScrapeResultStatus, incoming: ScrapeResultStatus): ScrapeResultStatus => {
+  if (existing === "failed" || incoming === "failed") return "failed";
+  if (existing === "processing" || incoming === "processing") return "processing";
+  if (existing === "pending" || incoming === "pending") return "processing";
+  if (existing === "success" || incoming === "success") return "success";
+  return "skipped";
+};
+
+const getScrapeGroupStatus = (group: ScrapeResultGroup["items"]): RendererGroupStatus => {
+  if (group.some((item) => item.status === "failed")) return "failed";
+  if (group.some((item) => item.status === "processing" || item.status === "pending")) return "processing";
+  if (group.some((item) => item.status === "success")) return "success";
+  return "idle";
+};
 
 const getScrapeGroupErrorText = (group: ScrapeResultGroup["items"]): string | undefined =>
   group.find((item) => item.status === "failed" && item.error)?.error;

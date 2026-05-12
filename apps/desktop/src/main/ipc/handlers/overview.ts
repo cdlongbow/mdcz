@@ -35,7 +35,9 @@ export const createOverviewHandlers = (
   context: ServiceContainer,
 ): Pick<
   IpcRouterContract,
-  typeof IpcChannel.Overview_GetRecentAcquisitions | typeof IpcChannel.Overview_GetOutputSummary
+  | typeof IpcChannel.Overview_GetRecentAcquisitions
+  | typeof IpcChannel.Overview_RemoveRecentAcquisition
+  | typeof IpcChannel.Overview_GetOutputSummary
 > => {
   const { outputLibraryScanner } = context;
 
@@ -45,6 +47,14 @@ export const createOverviewHandlers = (
         return { items: await readPersistedRecentAcquisitions(context) };
       } catch (error) {
         logger.error(`Overview recent acquisitions failed: ${toErrorMessage(error)}`);
+        throw asSerializableIpcError(error);
+      }
+    }),
+    [IpcChannel.Overview_RemoveRecentAcquisition]: t.procedure.input<{ id?: string }>().action(async ({ input }) => {
+      try {
+        return await context.desktopLibraryService.removeRecentAcquisition(input?.id ?? "");
+      } catch (error) {
+        logger.error(`Overview remove recent acquisition failed: ${toErrorMessage(error)}`);
         throw asSerializableIpcError(error);
       }
     }),
@@ -69,6 +79,7 @@ const readPersistedRecentAcquisitions = async (context: ServiceContainer): Promi
   const entryById = new Map(entries.map((entry) => [entry.id, entry]));
   const recent = sortAndLimitRecentAcquisitions(
     entries
+      .filter((entry) => !entry.hiddenFromRecentAt)
       .map((entry) =>
         toRuntimeRecentAcquisition({
           id: entry.id,
@@ -85,6 +96,7 @@ const readPersistedRecentAcquisitions = async (context: ServiceContainer): Promi
   );
 
   return recent.map((record) => ({
+    id: record.id ?? "",
     number: record.number,
     title: record.title,
     actors: record.actors,

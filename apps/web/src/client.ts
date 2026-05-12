@@ -155,9 +155,11 @@ export const api: ServerApiContract = {
     refresh: (input) => request("library.refresh", input),
     rescan: (input) => request("library.rescan", input),
     relink: (input) => request("library.relink", input),
+    delete: (input) => request("library.delete", input),
   },
   overview: {
     summary: () => request("overview.summary"),
+    removeRecentAcquisition: (input) => request("overview.removeRecentAcquisition", input),
   },
   mediaRoots: {
     list: () => request("mediaRoots.list"),

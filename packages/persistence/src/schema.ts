@@ -130,6 +130,7 @@ export const libraryItems = sqliteTable("library_items", {
   actorsJson: text("actors_json").notNull().default("[]"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   lastRefreshedAt: integer("last_refreshed_at", { mode: "timestamp_ms" }),
+  hiddenFromRecentAt: integer("hidden_from_recent_at", { mode: "timestamp_ms" }),
 });
 
 export const libraryItemFiles = sqliteTable(

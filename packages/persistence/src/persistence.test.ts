@@ -198,4 +198,53 @@ describe("LibraryRepository", () => {
       }),
     ]);
   });
+
+  it("hides entries from recent acquisitions without deleting the library item", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new LibraryRepository(database);
+
+    await repository.upsertEntry({
+      id: "entry-1",
+      rootId: "root-1",
+      rootRelativePath: "ABC-123/ABC-123.mp4",
+      title: "Title",
+    });
+
+    await repository.hideFromRecent("entry-1", new Date("2026-05-12T00:00:00.000Z"));
+
+    await expect(repository.getEntryById("entry-1")).resolves.toEqual(
+      expect.objectContaining({
+        id: "entry-1",
+        hiddenFromRecentAt: new Date("2026-05-12T00:00:00.000Z"),
+      }),
+    );
+    await expect(repository.listEntries()).resolves.toHaveLength(1);
+  });
+
+  it("deletes a library item with file and asset rows without touching unrelated entries", async () => {
+    database = createTestPersistenceDatabase();
+    const repository = new LibraryRepository(database);
+
+    await repository.upsertEntry({
+      id: "entry-1",
+      rootId: "root-1",
+      rootRelativePath: "ABC-123/ABC-123.mp4",
+      assets: [{ kind: "poster", uri: "ABC-123/poster.jpg", rootId: "root-1", relativePath: "ABC-123/poster.jpg" }],
+    });
+    await repository.upsertEntry({
+      id: "entry-2",
+      rootId: "root-1",
+      rootRelativePath: "DEF-456/DEF-456.mp4",
+    });
+
+    await repository.deleteEntry("entry-1");
+
+    await expect(repository.getEntryById("entry-1")).rejects.toThrow("Library entry not found");
+    await expect(repository.listEntries()).resolves.toEqual([
+      expect.objectContaining({
+        id: "entry-2",
+        rootRelativePath: "DEF-456/DEF-456.mp4",
+      }),
+    ]);
+  });
 });

@@ -71,11 +71,12 @@ export class ScanQueueService {
   }
 
   async logs(): Promise<LogListResponse> {
-    const tasks = (await this.list()).tasks;
-    const events = await Promise.all(tasks.map((task) => this.events(task.id)));
+    const state = await this.persistence.getState();
+    const tasks = await state.repositories.tasks.list("scan");
+    const events = await Promise.all(tasks.map((task) => state.repositories.tasks.listEvents(task.id)));
     const logs = events
-      .flatMap((eventList) => eventList.events)
-      .map((event) => ({ ...event, source: "task" as const }))
+      .flat()
+      .map((event) => ({ ...toTaskEventDto(event), source: "task" as const }))
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
     return { logs };
   }

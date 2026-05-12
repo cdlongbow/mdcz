@@ -4,13 +4,8 @@ import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
 import type { ScrapeResultDto } from "@mdcz/shared/serverDtos";
 import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
 import { useUIStore } from "@mdcz/shared/stores/uiStore";
-import {
-  applyTaskRealtimeEvent,
-  applyWebTaskUpdate,
-  createTaskHydrationState,
-  hydrateScrapeResults,
-  type TaskHydrationState,
-} from "@mdcz/shared/taskHydration";
+import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
+import { applyTaskRealtimeEvent, applyWebTaskUpdate, hydrateWorkbenchScrapeResults } from "@mdcz/shared/taskHydration";
 import type { MaintenancePresetId, ScrapeResult } from "@mdcz/shared/types";
 import {
   activateNewScrapeTask,
@@ -29,11 +24,12 @@ import {
 import { UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { createWebWorkbenchPorts } from "../adapters/ports";
 import { api, subscribeTaskRealtime } from "../client";
+import { persistWebWorkbenchTaskIds, readWebWorkbenchTaskIds } from "../workbenchTaskSession";
 
 export const Route = createFileRoute("/workbench")({
   validateSearch: (search): { intent?: "maintenance" } => ({
@@ -92,12 +88,18 @@ const shouldShowWorkbenchSetup = (input: {
   workbenchMode: "scrape" | "maintenance";
   isScraping: boolean;
   activeTaskId: string;
-}): boolean =>
-  input.baseShowSetup ||
-  (input.workbenchMode === "scrape" &&
-    !canControlScrapeTask({ isScraping: input.isScraping, activeTaskId: input.activeTaskId }));
+  scrapeStartPending?: boolean;
+}): boolean => {
+  if (input.workbenchMode === "scrape" && (input.scrapeStartPending || input.activeTaskId.trim())) {
+    return false;
+  }
 
-let persistedHydrationState = createTaskHydrationState();
+  return (
+    input.baseShowSetup ||
+    (input.workbenchMode === "scrape" &&
+      !canControlScrapeTask({ isScraping: input.isScraping, activeTaskId: input.activeTaskId }))
+  );
+};
 
 function WorkbenchPage() {
   const search = Route.useSearch();
@@ -105,12 +107,33 @@ function WorkbenchPage() {
   const ports = useMemo<SharedWorkbenchPorts>(() => createWebWorkbenchPorts(), []);
   const setupPort = useMemo(() => createWebSetupPort(), []);
   const [uncensoredDialogOpen, setUncensoredDialogOpen] = useState(false);
-  const [hydrationState, setHydrationState] = useState<TaskHydrationState>(() => persistedHydrationState);
-  const hydrationStateRef = useRef(hydrationState);
+  const [persistedTaskIds, setPersistedTaskIds] = useState(readWebWorkbenchTaskIds);
+  const {
+    hydrationState,
+    scrapeStartPending,
+    resolveUncensoredTask,
+    setActiveMaintenanceTaskId,
+    setActiveScrapeTaskId,
+    setHydrationState,
+    setScrapeStartPending,
+  } = useWorkbenchTaskStore(
+    useShallow((state) => ({
+      hydrationState: state.hydrationState,
+      scrapeStartPending: state.scrapeStartPending,
+      resolveUncensoredTask: state.resolveUncensoredTask,
+      setActiveMaintenanceTaskId: state.setActiveMaintenanceTaskId,
+      setActiveScrapeTaskId: state.setActiveScrapeTaskId,
+      setHydrationState: state.setHydrationState,
+      setScrapeStartPending: state.setScrapeStartPending,
+    })),
+  );
+  const activeScrapeTaskId = hydrationState.activeScrapeTaskId || persistedTaskIds.activeScrapeTaskId;
   const configQ = useQuery({ queryFn: () => api.config.read(), queryKey: ["config"], retry: false });
+  const tasksQ = useQuery({ queryFn: () => api.tasks.list(), queryKey: ["tasks"], retry: false });
   const scrapeResultsQ = useQuery({
-    queryFn: () => api.scrape.listResults(),
-    queryKey: ["scrapeResults"],
+    enabled: activeScrapeTaskId.trim().length > 0,
+    queryFn: () => api.scrape.listResults({ taskId: activeScrapeTaskId }),
+    queryKey: ["scrapeResults", activeScrapeTaskId || "none"],
     retry: false,
   });
 
@@ -133,9 +156,35 @@ function WorkbenchPage() {
     baseShowSetup: sessionSnapshot.showSetup,
     workbenchMode,
     isScraping,
-    activeTaskId: hydrationState.activeScrapeTaskId,
+    activeTaskId: activeScrapeTaskId,
+    scrapeStartPending,
   });
   const failedTargets = useMemo(() => scrapeResultsToRetryTargets(results), [results]);
+
+  useEffect(
+    () =>
+      useWorkbenchTaskStore.subscribe((state) => {
+        const nextIds = {
+          activeScrapeTaskId: state.hydrationState.activeScrapeTaskId,
+          activeMaintenanceTaskId: state.hydrationState.activeMaintenanceTaskId,
+        };
+        persistWebWorkbenchTaskIds(nextIds);
+        setPersistedTaskIds(nextIds);
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    if (persistedTaskIds.activeScrapeTaskId && !useWorkbenchTaskStore.getState().hydrationState.activeScrapeTaskId) {
+      setActiveScrapeTaskId(persistedTaskIds.activeScrapeTaskId);
+    }
+    if (
+      persistedTaskIds.activeMaintenanceTaskId &&
+      !useWorkbenchTaskStore.getState().hydrationState.activeMaintenanceTaskId
+    ) {
+      setActiveMaintenanceTaskId(persistedTaskIds.activeMaintenanceTaskId);
+    }
+  }, [persistedTaskIds, setActiveMaintenanceTaskId, setActiveScrapeTaskId]);
 
   useEffect(() => {
     if (sessionSnapshot.workbenchMode !== workbenchMode) {
@@ -145,42 +194,49 @@ function WorkbenchPage() {
 
   useEffect(() => {
     if (scrapeResultsQ.data) {
-      hydrateScrapeResults(scrapeResultsQ.data);
+      const previous = useWorkbenchTaskStore.getState().hydrationState;
+      const nextState = hydrateWorkbenchScrapeResults(
+        scrapeResultsQ.data,
+        activeScrapeTaskId ? { ...previous, activeScrapeTaskId } : previous,
+      );
+      setHydrationState(nextState);
     }
-  }, [scrapeResultsQ.data]);
+  }, [activeScrapeTaskId, scrapeResultsQ.data, setHydrationState]);
 
   useEffect(() => {
-    hydrationStateRef.current = hydrationState;
-    persistedHydrationState = hydrationState;
-  }, [hydrationState]);
-
-  useEffect(() => {
-    if (!canControlScrapeTask({ isScraping, activeTaskId: hydrationState.activeScrapeTaskId })) {
-      resetScrapeWorkbenchToSetup();
-    }
-  }, [hydrationState.activeScrapeTaskId, isScraping]);
+    if (!tasksQ.data) return;
+    const nextState = applyWebTaskUpdate(
+      {
+        kind: "snapshot",
+        tasks: tasksQ.data.tasks,
+      },
+      useWorkbenchTaskStore.getState().hydrationState,
+    );
+    setHydrationState(nextState);
+  }, [setHydrationState, tasksQ.data]);
 
   useEffect(
     () =>
       subscribeTaskRealtime({
         onEvent: (payload) => {
-          const nextState = applyTaskRealtimeEvent(payload, hydrationStateRef.current);
-          hydrationStateRef.current = nextState;
+          const nextState = applyTaskRealtimeEvent(payload, useWorkbenchTaskStore.getState().hydrationState);
           setHydrationState(nextState);
           if (payload.kind === "scrape-result") {
-            queryClient.setQueryData(["scrapeResults"], (previous: typeof scrapeResultsQ.data | undefined) => {
-              if (!previous) return { results: [payload.result] };
-              const existingIndex = previous.results.findIndex((result) => result.id === payload.result.id);
-              if (existingIndex === -1) return { results: [...previous.results, payload.result] };
-              const nextResults = [...previous.results];
-              nextResults[existingIndex] = payload.result;
-              return { results: nextResults };
-            });
+            queryClient.setQueriesData(
+              { queryKey: ["scrapeResults"] },
+              (previous: typeof scrapeResultsQ.data | undefined) => {
+                if (!previous) return { results: [payload.result] };
+                const existingIndex = previous.results.findIndex((result) => result.id === payload.result.id);
+                if (existingIndex === -1) return { results: [...previous.results, payload.result] };
+                const nextResults = [...previous.results];
+                nextResults[existingIndex] = payload.result;
+                return { results: nextResults };
+              },
+            );
           }
         },
         onUpdate: (payload) => {
-          const nextState = applyWebTaskUpdate(payload, hydrationStateRef.current);
-          hydrationStateRef.current = nextState;
+          const nextState = applyWebTaskUpdate(payload, useWorkbenchTaskStore.getState().hydrationState);
           setHydrationState(nextState);
           if (nextState.shouldOpenUncensoredDialog) {
             setUncensoredDialogOpen(true);
@@ -189,19 +245,22 @@ function WorkbenchPage() {
           void queryClient.invalidateQueries({ queryKey: ["tasks"] });
         },
       }),
-    [queryClient],
+    [queryClient, setHydrationState],
   );
 
   const handleStartSelectedScrape = async (filePaths: string[], scanDir: string, targetDir: string) => {
+    setScrapeStartPending(true);
     try {
       activateNewScrapeTask();
       const task = await api.scrape.startSelectedFiles({ filePaths, scanDir, targetDir });
-      setHydrationState((state) => ({ ...state, activeScrapeTaskId: task.id }));
+      setActiveScrapeTaskId(task.id);
       applyScrapeTaskStatus(task.status);
-      toast.success("刮削任务已提交");
+      toast.success("已启动选中文件刮削");
     } catch (error) {
       resetScrapeWorkbenchToSetup();
       toast.error(`启动失败: ${toErrorMessage(error)}`);
+    } finally {
+      setScrapeStartPending(false);
     }
   };
 
@@ -227,11 +286,11 @@ function WorkbenchPage() {
   };
 
   const requireActiveScrapeTaskId = () => {
-    if (!hydrationState.activeScrapeTaskId) {
+    if (!activeScrapeTaskId) {
       toast.info("当前没有可控制的刮削任务");
       return null;
     }
-    return hydrationState.activeScrapeTaskId;
+    return activeScrapeTaskId;
   };
 
   const handlePauseScrape = async () => {
@@ -295,12 +354,7 @@ function WorkbenchPage() {
       taskId: hydrationState.uncensoredTaskId,
       items: buildUncensoredConfirmationItems(hydrationState.ambiguousUncensoredItems, selections),
     });
-    setHydrationState((state) => ({
-      ...state,
-      ambiguousUncensoredItems: [],
-      uncensoredTaskId: "",
-      activeScrapeTaskId: task.id,
-    }));
+    resolveUncensoredTask(task.id);
     applyScrapeTaskStatus(task.status);
     toast.success("已提交无码确认重刮任务");
   };

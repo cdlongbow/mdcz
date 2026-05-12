@@ -30,7 +30,10 @@ import type { ScrapeService } from "./scrapeService";
 export class ToolsService {
   private readonly networkClient = new NetworkClient();
   private readonly aggregation = new AggregationService(
-    new CrawlerProvider({ fetchGateway: new FetchGateway(this.networkClient) }),
+    new CrawlerProvider({
+      fetchGateway: new FetchGateway(this.networkClient),
+      siteRequestConfigRegistrar: this.networkClient,
+    }),
   );
   private readonly translate = new TranslateService(this.networkClient);
   private readonly localScanService = new LocalScanService();

@@ -144,6 +144,19 @@ const startWebhookServer = async (): Promise<{
   };
 };
 
+const isWebhookTaskBody = (
+  body: unknown,
+  expected: { taskId: string; kind: string; status: string },
+): body is { taskId: string; kind: string; status: string } =>
+  typeof body === "object" &&
+  body !== null &&
+  "taskId" in body &&
+  "kind" in body &&
+  "status" in body &&
+  body.taskId === expected.taskId &&
+  body.kind === expected.kind &&
+  body.status === expected.status;
+
 const createFakeRuntimeActions = (): RuntimeActionService =>
   ({
     ensureWatermarkDirectory: async () => ({ path: "/server-data/watermark" }),
@@ -908,13 +921,6 @@ describe("buildServer", () => {
       headers: { authorization: `Bearer ${token}` },
     });
 
-    const retryResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/tasks.retry",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { taskId },
-    });
-
     expect(detailResponse.statusCode).toBe(200);
     expect(listResponse.statusCode).toBe(200);
     const rootDisplayName = root.split(/[\\/]+/u).at(-1);
@@ -939,6 +945,27 @@ describe("buildServer", () => {
     expect(logsResponse.json().result.data.logs).toContainEqual(
       expect.objectContaining({ source: "task", type: "completed" }),
     );
+    const clearLogsResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/logs.clearRuntime",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {},
+    });
+    const clearedLogsResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/logs.list",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(clearLogsResponse.statusCode).toBe(200);
+    expect(clearedLogsResponse.json().result.data.logs).not.toContainEqual(
+      expect.objectContaining({ source: "task", type: "completed" }),
+    );
+    const retryResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/tasks.retry",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { taskId },
+    });
     expect(retryResponse.statusCode).toBe(200);
     expect(retryResponse.json().result.data.status).toBe("queued");
 
@@ -1152,9 +1179,8 @@ describe("buildServer", () => {
 
     await expect
       .poll(() =>
-        webhook.deliveries.some(
-          (delivery) =>
-            delivery.body.taskId === taskId && delivery.body.kind === "scan" && delivery.body.status === "completed",
+        webhook.deliveries.some((delivery) =>
+          isWebhookTaskBody(delivery.body, { taskId, kind: "scan", status: "completed" }),
         ),
       )
       .toBe(true);
@@ -1193,8 +1219,12 @@ describe("buildServer", () => {
     await writeFile(join(root, "ABC-123.mp4"), "video");
     await writeFile(actorPhotoPath, createPngBytes());
     const imageServer = await startImageServer();
-    const { fastify } = await createTestServer({
+    const { fastify, services } = await createTestServer({
       scrapeAggregation: createFakeAggregation(imageServer.url, actorPhotoPath),
+    });
+    const taskEvents: unknown[] = [];
+    const unsubscribeTaskEvents = services.taskEvents.subscribe((event) => {
+      taskEvents.push(event.data);
     });
     const loginResponse = await fastify.inject({
       method: "POST",
@@ -1236,6 +1266,7 @@ describe("buildServer", () => {
       payload: { refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
     });
     const taskId = startResponse.json().result.data.id;
+    expect(startResponse.json().result.data.videoCount).toBe(0);
 
     await expect
       .poll(async () => {
@@ -1263,6 +1294,11 @@ describe("buildServer", () => {
     const overviewResponse = await fastify.inject({
       method: "GET",
       url: "/trpc/overview.summary",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const logsResponse = await fastify.inject({
+      method: "GET",
+      url: "/trpc/logs.list",
       headers: { authorization: `Bearer ${token}` },
     });
     const assetResponse = await fastify.inject({
@@ -1328,6 +1364,36 @@ describe("buildServer", () => {
       number: "ABC-123",
       available: true,
     });
+    const logMessages = logsResponse.json().result.data.logs.map((log: { message: string }) => log.message);
+    expect(logMessages).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^Starting scrape task .+ for ABC-123$/u)]),
+    );
+    expect(logMessages.some((message: string) => message.includes("刮削进度"))).toBe(false);
+    expect(taskEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "task-progress",
+          taskKind: "scrape",
+          value: expect.any(Number),
+        }),
+      ]),
+    );
+    expect(
+      taskEvents.some(
+        (event) =>
+          typeof event === "object" &&
+          event !== null &&
+          "kind" in event &&
+          event.kind === "log" &&
+          "log" in event &&
+          typeof event.log === "object" &&
+          event.log !== null &&
+          "message" in event.log &&
+          typeof event.log.message === "string" &&
+          event.log.message.includes("刮削进度"),
+      ),
+    ).toBe(false);
+    unsubscribeTaskEvents();
     await imageServer.close();
   });
 
@@ -1912,7 +1978,9 @@ describe("buildServer", () => {
       title: "Local Title ABC-125",
     });
     expect(logsResponse.json().result.data.logs).toEqual(
-      expect.arrayContaining([expect.objectContaining({ source: "task", message: expect.stringContaining("维护") })]),
+      expect.arrayContaining([
+        expect.objectContaining({ source: "task", message: expect.stringContaining("Maintenance") }),
+      ]),
     );
   });
 

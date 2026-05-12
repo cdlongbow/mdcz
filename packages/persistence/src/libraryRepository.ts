@@ -47,6 +47,7 @@ export interface LibraryEntryRecord {
   lastKnownPath: string | null;
   createdAt: Date;
   lastRefreshedAt: Date | null;
+  hiddenFromRecentAt: Date | null;
   files: LibraryItemFileRecord[];
   assets: LibraryItemAssetRecord[];
 }
@@ -215,6 +216,7 @@ const toLibraryEntryRecord = (
     lastKnownPath: primaryFile.lastKnownPath,
     createdAt: item.createdAt,
     lastRefreshedAt: item.lastRefreshedAt,
+    hiddenFromRecentAt: item.hiddenFromRecentAt,
     files,
     assets,
   };
@@ -307,6 +309,7 @@ export class LibraryRepository {
           actorsJson,
           createdAt,
           lastRefreshedAt: input.lastRefreshedAt ?? null,
+          hiddenFromRecentAt: null,
         })
         .onConflictDoUpdate({
           target: libraryItems.id,
@@ -320,6 +323,7 @@ export class LibraryRepository {
             actorsJson,
             createdAt,
             lastRefreshedAt: input.lastRefreshedAt ?? null,
+            hiddenFromRecentAt: null,
           },
         })
         .run();
@@ -366,6 +370,12 @@ export class LibraryRepository {
 
   async touchEntry(id: string, refreshedAt = new Date()): Promise<LibraryEntryRecord> {
     this.database.db.update(libraryItems).set({ lastRefreshedAt: refreshedAt }).where(eq(libraryItems.id, id)).run();
+    return await this.getEntryById(id);
+  }
+
+  async hideFromRecent(id: string, hiddenAt = new Date()): Promise<LibraryEntryRecord> {
+    await this.getLibraryItem(id);
+    this.database.db.update(libraryItems).set({ hiddenFromRecentAt: hiddenAt }).where(eq(libraryItems.id, id)).run();
     return await this.getEntryById(id);
   }
 
@@ -425,6 +435,16 @@ export class LibraryRepository {
       this.database.db.delete(libraryItemAssets).where(inArray(libraryItemAssets.itemId, ids)).run();
       this.database.db.delete(libraryItemFiles).where(inArray(libraryItemFiles.itemId, ids)).run();
       this.database.db.delete(libraryItems).where(inArray(libraryItems.id, ids)).run();
+    });
+    transaction();
+  }
+
+  async deleteEntry(id: string): Promise<void> {
+    await this.getLibraryItem(id);
+    const transaction = this.database.sqlite.transaction(() => {
+      this.database.db.delete(libraryItemAssets).where(eq(libraryItemAssets.itemId, id)).run();
+      this.database.db.delete(libraryItemFiles).where(eq(libraryItemFiles.itemId, id)).run();
+      this.database.db.delete(libraryItems).where(eq(libraryItems.id, id)).run();
     });
     transaction();
   }

@@ -1,6 +1,6 @@
 import type { LibraryEntryDto } from "@mdcz/shared";
 import { Badge, Button, cn, Input, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@mdcz/ui";
-import { AlertCircle, Database, FolderOpen, RefreshCw, Search } from "lucide-react";
+import { AlertCircle, Database, FolderOpen, RefreshCw, Search, Trash2 } from "lucide-react";
 import { type ComponentType, type ReactNode, useState } from "react";
 
 export type LibraryAvailabilityFilter = "all" | "available" | "unavailable";
@@ -16,6 +16,7 @@ export interface LibraryIndexViewProps {
   availabilityFilter: LibraryAvailabilityFilter;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
   onAvailabilityFilterChange: (value: LibraryAvailabilityFilter) => void;
+  onDeleteEntry?: (entry: LibraryEntryDto) => void;
   onOpenFolder?: (entry: LibraryEntryDto) => void;
   onQueryChange: (value: string) => void;
   onRefresh: () => void;
@@ -38,6 +39,7 @@ export function LibraryIndexView({
   availabilityFilter,
   linkComponent: LinkComponent,
   onAvailabilityFilterChange,
+  onDeleteEntry,
   onOpenFolder,
   onQueryChange,
   onRefresh,
@@ -117,6 +119,7 @@ export function LibraryIndexView({
                 getImageSrc={getImageSrc}
                 key={entry.id}
                 linkComponent={LinkComponent}
+                onDeleteEntry={onDeleteEntry}
                 onOpenFolder={onOpenFolder}
               />
             ))}
@@ -146,11 +149,13 @@ function LibraryEntryRow({
   entry,
   getImageSrc,
   linkComponent: LinkComponent,
+  onDeleteEntry,
   onOpenFolder,
 }: {
   entry: LibraryEntryDto;
   getImageSrc: (path: string, entry: LibraryEntryDto) => string;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
+  onDeleteEntry?: (entry: LibraryEntryDto) => void;
   onOpenFolder?: (entry: LibraryEntryDto) => void;
 }) {
   const id = entry.number || entry.crawlerData?.number || entry.mediaIdentity || entry.fileName;
@@ -200,7 +205,7 @@ function LibraryEntryRow({
         </div>
       </div>
       <div className="flex items-center gap-4 pl-4 lg:gap-6">
-        <StatusDot available={entry.available} />
+        <StatusActionSlot available={entry.available} entry={entry} onDeleteEntry={onDeleteEntry} />
         <div className="flex items-center gap-1.5">
           {LinkComponent ? (
             <LinkComponent className={detailClass} entry={entry}>
@@ -228,6 +233,43 @@ function LibraryEntryRow({
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+function StatusActionSlot({
+  available,
+  entry,
+  onDeleteEntry,
+}: {
+  available: boolean | null;
+  entry: LibraryEntryDto;
+  onDeleteEntry?: (entry: LibraryEntryDto) => void;
+}) {
+  if (!onDeleteEntry) {
+    return <StatusDot available={available} />;
+  }
+
+  return (
+    <div className="relative flex h-8 w-8 shrink-0 items-center justify-center">
+      <div className="transition-opacity group-hover:opacity-0 group-focus-within:opacity-0">
+        <StatusDot available={available} />
+      </div>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            aria-label="从媒体库移除"
+            className="absolute inset-0 h-8 w-8 text-muted-foreground opacity-0 transition-all hover:bg-surface-raised hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
+            onClick={() => onDeleteEntry(entry)}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>从媒体库移除</TooltipContent>
+      </Tooltip>
     </div>
   );
 }

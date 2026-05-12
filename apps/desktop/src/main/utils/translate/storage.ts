@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { app } from "electron";
+import { getDesktopUserDataPath } from "../../appIdentity";
 import { normalizeKeyword } from "./normalization";
 import { toActorEntry, toInfoEntry, toJsonRows } from "./parsing";
 import type { JsonMappingDocument, MappingCandidateCategory, MappingCandidateRecord, MappingEntry } from "./types";
@@ -29,7 +30,7 @@ export const resolveMappingDirectory = (): string => {
 
 export const resolveCandidateDirectory = (): string => {
   try {
-    return join(app.getPath("userData"), "mapping_table");
+    return join(getDesktopUserDataPath(), "mapping_table");
   } catch {
     return join(process.cwd(), "tmp", "mapping_table");
   }

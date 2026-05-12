@@ -1,4 +1,5 @@
 import { maintenancePreviewDtoToPreviewItem } from "@mdcz/shared/dtoAdapters";
+import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
 import type { CrawlerData, LocalScanEntry, MaintenanceCommitItem, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
@@ -61,11 +62,12 @@ export const createWebScrapeActionPort = (): ScrapeActionPort => ({
     if (refs.some((ref) => !ref)) {
       throw new Error("Web 重试需要媒体目录引用，请从工作台重新扫描后启动。");
     }
-    await api.scrape.start({
+    const task = await api.scrape.start({
       refs: refs as NonNullable<(typeof refs)[number]>[],
       manualUrl: options.manualUrl,
     });
-    return { message: "刮削任务已提交", strategy: "new-task" };
+    useWorkbenchTaskStore.getState().setActiveScrapeTaskId(task.id);
+    return { message: `重试任务已启动，共 ${refs.length} 个文件`, strategy: "new-task" };
   },
   getDeleteFileAvailability: (targets) =>
     targets.length > 0 && targets.every((target) => target.ref) ? "enabled" : "hidden",
@@ -90,8 +92,8 @@ export const createWebScrapeActionPort = (): ScrapeActionPort => ({
 });
 
 export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
-  let activeTaskId = "";
   const requireTaskId = () => {
+    const activeTaskId = useWorkbenchTaskStore.getState().hydrationState.activeMaintenanceTaskId;
     if (!activeTaskId) {
       throw new Error("当前没有可控制的维护任务");
     }
@@ -122,7 +124,7 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
       }));
       const rootId = refs[0]?.rootId ?? "";
       const task = await api.maintenance.start({ rootId, presetId, refs });
-      activeTaskId = task.id;
+      useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId(task.id);
       const preview = await api.maintenance.preview({ taskId: task.id });
       return {
         items: preview.items.map(maintenancePreviewDtoToPreviewItem),
@@ -144,7 +146,7 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
         throw new Error("维护预览缺少任务 ID");
       }
       const taskId = [...taskIds][0];
-      activeTaskId = taskId;
+      useWorkbenchTaskStore.getState().setActiveMaintenanceTaskId(taskId);
       await api.maintenance.apply({
         taskId,
         confirmationToken: `maintenance:${taskId}`,

@@ -37,17 +37,18 @@ export class AggregateStage implements ScrapeStage {
     this.runtime.setProgress(context.progress, 100);
     context.fileInfo = await this.runtime.handleFailedFileMove(context.fileInfo, context.requireConfiguration());
 
+    const error = this.runtime.getAggregationFailureMessage?.(context.fileInfo) ?? "No crawler returned metadata";
     const failedResult: ScrapeResult = {
       fileId: context.fileId,
       fileInfo: context.fileInfo,
       status: "failed",
-      error: "No crawler returned metadata",
+      error,
     };
 
     this.runtime.signalService.showScrapeResult(failedResult);
     this.runtime.signalService.showFailedInfo({
       fileInfo: context.fileInfo,
-      error: "No crawler returned metadata",
+      error,
     });
     context.result = failedResult;
   }

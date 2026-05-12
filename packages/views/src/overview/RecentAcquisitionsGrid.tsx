@@ -1,5 +1,5 @@
 import { Button, cn } from "@mdcz/ui";
-import { AlertCircle, FolderOpen, ImageOff, Library, Loader2 } from "lucide-react";
+import { AlertCircle, FolderOpen, ImageOff, Library, Loader2, Trash2 } from "lucide-react";
 import { type ComponentType, type ReactNode, useState } from "react";
 
 const SKELETON_KEYS = ["slot-1", "slot-2", "slot-3", "slot-4", "slot-5", "slot-6", "slot-7", "slot-8"];
@@ -20,6 +20,7 @@ export interface RecentAcquisitionsGridProps<TItem extends RecentAcquisitionView
   items: TItem[];
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; item: TItem }>;
   onItemOpen?: (item: TItem) => void;
+  onItemRemove?: (item: TItem) => void;
   onRetry?: () => void;
 }
 
@@ -30,6 +31,7 @@ export function RecentAcquisitionsGrid<TItem extends RecentAcquisitionViewItem =
   items,
   linkComponent: LinkComponent,
   onItemOpen,
+  onItemRemove,
   onRetry,
 }: RecentAcquisitionsGridProps<TItem>) {
   if (isLoading) {
@@ -77,6 +79,7 @@ export function RecentAcquisitionsGrid<TItem extends RecentAcquisitionViewItem =
           key={item.id ?? item.number}
           linkComponent={LinkComponent}
           onOpen={onItemOpen}
+          onRemove={onItemRemove}
         />
       ))}
     </div>
@@ -88,6 +91,7 @@ interface AcquisitionCardProps<TItem extends RecentAcquisitionViewItem> {
   item: TItem;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; item: TItem }>;
   onOpen?: (item: TItem) => void;
+  onRemove?: (item: TItem) => void;
 }
 
 function AcquisitionCard<TItem extends RecentAcquisitionViewItem>({
@@ -95,6 +99,7 @@ function AcquisitionCard<TItem extends RecentAcquisitionViewItem>({
   item,
   linkComponent: LinkComponent,
   onOpen,
+  onRemove,
 }: AcquisitionCardProps<TItem>) {
   const [imageLoadFailed, setImageLoadFailed] = useState(false);
   const imageSrc = !imageLoadFailed && item.thumbnailPath ? getImageSrc(item.thumbnailPath, item) : "";
@@ -127,23 +132,69 @@ function AcquisitionCard<TItem extends RecentAcquisitionViewItem>({
         <div className="line-clamp-1 text-base font-bold leading-tight">{title}</div>
         <div className="mt-1 line-clamp-1 text-sm text-muted-foreground">{actorText}</div>
       </div>
-      <div className="absolute right-3 top-3 rounded-quiet-capsule bg-surface-floating/76 p-2 text-foreground opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100">
-        <FolderOpen className="h-4 w-4" />
-      </div>
     </>
+  );
+
+  const actions = (
+    <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+      {onRemove ? (
+        <Button
+          aria-label={`从最近入库移除 ${title}`}
+          className="h-8 w-8 rounded-quiet-capsule bg-surface-floating/76 p-0 text-foreground backdrop-blur-md hover:bg-surface-floating"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onRemove(item);
+          }}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      ) : null}
+      <Button
+        aria-label={`打开 ${title} 所在目录`}
+        className="h-8 w-8 rounded-quiet-capsule bg-surface-floating/76 p-0 text-foreground backdrop-blur-md hover:bg-surface-floating"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onOpen?.(item);
+        }}
+        size="icon"
+        type="button"
+        variant="ghost"
+      >
+        <FolderOpen className="h-4 w-4" />
+      </Button>
+    </div>
   );
 
   if (LinkComponent) {
     return (
-      <LinkComponent className={className} item={item}>
-        {content}
-      </LinkComponent>
+      <div className={className}>
+        <LinkComponent
+          className="absolute inset-0 rounded-quiet-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          item={item}
+        >
+          {content}
+        </LinkComponent>
+        {actions}
+      </div>
     );
   }
 
   return (
-    <button type="button" className={className} onClick={() => onOpen?.(item)}>
-      {content}
-    </button>
+    <div className={className}>
+      <Button
+        type="button"
+        className="absolute inset-0 h-full w-full items-stretch justify-start rounded-quiet-lg p-0 text-left whitespace-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => onOpen?.(item)}
+        variant="ghost"
+      >
+        {content}
+      </Button>
+      {actions}
+    </div>
   );
 }

@@ -87,6 +87,7 @@ describe("createOverviewHandlers", () => {
     await expect(handlers[IpcChannel.Overview_GetRecentAcquisitions].action(actionArgs)).resolves.toEqual({
       items: [
         {
+          id: "entry-2",
           number: "MISSING-1",
           title: null,
           actors: [],
@@ -95,6 +96,7 @@ describe("createOverviewHandlers", () => {
           completedAt: 1_700_000_000_001,
         },
         {
+          id: "entry-1",
           number: "ABC-123",
           title: "First",
           actors: ["Actor A"],
@@ -155,6 +157,7 @@ describe("createOverviewHandlers", () => {
 
     expect(result.items).toHaveLength(50);
     expect(result.items[0]).toEqual({
+      id: "entry-54",
       number: "ABC-54",
       title: "Persisted 54",
       actors: ["Actor P"],
@@ -163,6 +166,31 @@ describe("createOverviewHandlers", () => {
       completedAt: 1_700_000_000_054,
     });
     expect(result.items.at(-1)?.number).toBe("ABC-05");
+  });
+
+  it("omits entries hidden from recent acquisitions", async () => {
+    const handlers = createOverviewHandlers(
+      createContext({
+        listEntries: vi.fn(async () => [
+          {
+            id: "entry-1",
+            rootId: "root-1",
+            number: "ABC-123",
+            fileName: "ABC-123.mp4",
+            title: "Hidden",
+            actors: [],
+            thumbnailPath: null,
+            lastKnownPath: null,
+            createdAt: new Date(1_700_000_000_000),
+            hiddenFromRecentAt: new Date(1_700_000_000_001),
+          },
+        ]),
+      }),
+    );
+
+    await expect(handlers[IpcChannel.Overview_GetRecentAcquisitions].action(actionArgs)).resolves.toEqual({
+      items: [],
+    });
   });
 
   it("wraps overview handler failures as serializable IPC errors", async () => {

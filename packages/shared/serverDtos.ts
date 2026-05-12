@@ -521,6 +521,7 @@ export const logListInputSchema = z.preprocess(
   z
     .object({
       kind: z.enum(["all", "task", "runtime"]).optional().default("all"),
+      taskIds: z.array(z.string().trim().min(1)).optional(),
     })
     .optional(),
 );
@@ -547,6 +548,7 @@ export const taskRealtimeEventSchema = z.discriminatedUnion("kind", [
   taskRealtimeEventBaseSchema.extend({
     kind: z.literal("task-progress"),
     taskKind: taskKindSchema,
+    value: z.number().min(0).max(100).optional(),
     current: z.number().int().nonnegative(),
     total: z.number().int().nonnegative(),
     message: z.string().optional(),
@@ -598,6 +600,7 @@ export const libraryEntrySchema = z.object({
   lastKnownPath: z.string().nullable(),
   createdAt: z.string(),
   lastRefreshedAt: z.string().nullable(),
+  hiddenFromRecentAt: z.string().nullable(),
   available: z.boolean().nullable(),
   fileRefs: z.array(
     z.object({

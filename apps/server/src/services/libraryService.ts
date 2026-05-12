@@ -52,10 +52,31 @@ export class LibraryService {
     return { entry: await this.toDto(entry, true) };
   }
 
+  async removeRecentAcquisition(id: string): Promise<{ success: true }> {
+    const normalizedId = id.trim();
+    if (!normalizedId) {
+      throw new Error("Library entry id is required");
+    }
+    const state = await this.persistence.getState();
+    await state.repositories.library.hideFromRecent(normalizedId);
+    return { success: true };
+  }
+
+  async deleteEntry(id: string): Promise<{ success: true }> {
+    const normalizedId = id.trim();
+    if (!normalizedId) {
+      throw new Error("Library entry id is required");
+    }
+    const state = await this.persistence.getState();
+    await state.repositories.library.deleteEntry(normalizedId);
+    return { success: true };
+  }
+
   async overview(): Promise<OverviewSummaryResponse> {
     const state = await this.persistence.getState();
     const latestOutput = await state.repositories.library.latestScrapeOutput();
-    const { entries } = await this.listDtos({ limit: 8 }, true);
+    const listed = await this.listDtos({ limit: 200 }, true);
+    const entries = listed.entries.filter((entry) => !entry.hiddenFromRecentAt).slice(0, 8);
     const fallbackOutput = entries.reduce(
       (summary, entry) => ({
         fileCount: summary.fileCount + 1,
@@ -174,6 +195,7 @@ export class LibraryService {
       lastKnownPath: entry.lastKnownPath,
       createdAt: entry.createdAt.toISOString(),
       lastRefreshedAt: toIso(entry.lastRefreshedAt),
+      hiddenFromRecentAt: toIso(entry.hiddenFromRecentAt),
       available,
       fileRefs,
       assets: entry.assets.map((asset) => ({

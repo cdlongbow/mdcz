@@ -5,6 +5,7 @@ import { resolvePlayableMediaTarget } from "@mdcz/runtime/scrape/utils/strm";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { app, shell } from "electron";
+import { getDesktopUserDataPath } from "../../appIdentity";
 import { t } from "../shared";
 
 export const createAppHandlers = (
@@ -59,10 +60,10 @@ export const createAppHandlers = (
     return { success: true as const };
   }),
   [IpcChannel.App_EnsureWatermarkDirectory]: t.procedure.action(async () => ({
-    path: await ensureWatermarkDirectory(app.getPath("userData")),
+    path: await ensureWatermarkDirectory(getDesktopUserDataPath()),
   })),
   [IpcChannel.App_OpenWatermarkDirectory]: t.procedure.action(async () => {
-    const directoryPath = await ensureWatermarkDirectory(app.getPath("userData"));
+    const directoryPath = await ensureWatermarkDirectory(getDesktopUserDataPath());
     const errorMessage = await shell.openPath(directoryPath);
     if (errorMessage) {
       throw new Error(errorMessage);

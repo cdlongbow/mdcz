@@ -93,7 +93,7 @@ function LogsComponent() {
           <DialogContent className="max-w-md gap-5 rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-6 shadow-[0_28px_90px_-44px_rgba(15,23,42,0.45)]">
             <DialogHeader className="space-y-2 text-left">
               <DialogTitle>清空所有日志</DialogTitle>
-              <DialogDescription>确定要清空所有日志内容吗？此操作不可撤销。</DialogDescription>
+              <DialogDescription>确定要清空所有日志内容吗？</DialogDescription>
             </DialogHeader>
             <DialogFooter className="gap-2 sm:justify-end">
               <DialogClose asChild>

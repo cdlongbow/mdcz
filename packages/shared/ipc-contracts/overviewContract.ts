@@ -2,6 +2,7 @@ import { IpcChannel } from "../IpcChannel";
 import type { IpcProcedure } from "../ipcTypes";
 
 export interface OverviewRecentAcquisitionItem {
+  id: string;
   number: string;
   title: string | null;
   actors: string[];
@@ -19,5 +20,6 @@ export interface OverviewOutputSummary {
 
 export type OverviewIpcContract = {
   [IpcChannel.Overview_GetRecentAcquisitions]: IpcProcedure<void, { items: OverviewRecentAcquisitionItem[] }>;
+  [IpcChannel.Overview_RemoveRecentAcquisition]: IpcProcedure<{ id?: string }, { success: true }>;
   [IpcChannel.Overview_GetOutputSummary]: IpcProcedure<void, OverviewOutputSummary>;
 };

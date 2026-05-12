@@ -141,9 +141,11 @@ export interface ServerApiContract {
     refresh(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     rescan(input: LibraryDetailInput): Promise<ScanTaskDto>;
     relink(input: LibraryRelinkInput): Promise<LibraryDetailResponse>;
+    delete(input: LibraryDetailInput): Promise<{ success: true }>;
   };
   overview: {
     summary(): Promise<OverviewSummaryResponse>;
+    removeRecentAcquisition(input: LibraryDetailInput): Promise<{ success: true }>;
   };
   tools: {
     catalog(): Promise<ToolCatalogResponse>;
@@ -241,7 +243,9 @@ export type ServerApiProcedure =
   | "library.refresh"
   | "library.rescan"
   | "library.relink"
+  | "library.delete"
   | "overview.summary"
+  | "overview.removeRecentAcquisition"
   | "setup.status"
   | "setup.complete"
   | "mediaRoots.list"

@@ -185,16 +185,25 @@ export const appRouter = t.router({
         ctx.services.scrape.logs(),
         ctx.services.maintenance.logs(),
       ]);
-      const taskLogs = [...scanLogs.logs, ...scrapeLogs.logs, ...maintenanceLogs.logs].map(decorateTaskLog);
+      const taskIdFilter = new Set(input?.taskIds ?? []);
+      const taskLogsClearedAt = ctx.services.runtimeLogs.getTaskLogsClearedAt();
+      const taskLogs = [...scanLogs.logs, ...scrapeLogs.logs, ...maintenanceLogs.logs]
+        .map(decorateTaskLog)
+        .filter((log) => taskIdFilter.size === 0 || taskIdFilter.has(log.taskId))
+        .filter((log) => !taskLogsClearedAt || log.createdAt > taskLogsClearedAt);
       const runtimeLogs = kind === "task" ? [] : ctx.services.runtimeLogs.list(input).logs;
       return {
         logs: [...taskLogs, ...runtimeLogs].sort((left, right) => left.createdAt.localeCompare(right.createdAt)),
       };
     }),
-    clearRuntime: protectedProcedure.mutation(({ ctx }) => ({
-      ok: true as const,
-      cleared: ctx.services.runtimeLogs.clear(),
-    })),
+    clearRuntime: protectedProcedure.mutation(({ ctx }) => {
+      const cleared = ctx.services.runtimeLogs.clear();
+      ctx.services.runtimeLogs.clearTaskLogs();
+      return {
+        ok: true as const,
+        cleared,
+      };
+    }),
   }),
   library: t.router({
     list: protectedProcedure
@@ -212,6 +221,9 @@ export const appRouter = t.router({
     relink: protectedProcedure
       .input(libraryRelinkInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.library.relink(input)),
+    delete: protectedProcedure
+      .input(libraryDetailInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.library.deleteEntry(input.id)),
     rescan: protectedProcedure.input(libraryDetailInputSchema).mutation(async ({ ctx, input }) => {
       const detail = await ctx.services.library.detail(input.id);
       return await ctx.services.scans.start(detail.entry.rootId);
@@ -219,6 +231,9 @@ export const appRouter = t.router({
   }),
   overview: t.router({
     summary: protectedProcedure.query(async ({ ctx }) => await ctx.services.library.overview()),
+    removeRecentAcquisition: protectedProcedure
+      .input(libraryDetailInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.library.removeRecentAcquisition(input.id)),
   }),
   tools: t.router({
     catalog: protectedProcedure.query(({ ctx }) => ctx.services.tools.catalog()),

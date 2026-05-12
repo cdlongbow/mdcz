@@ -11,6 +11,7 @@ export * from "./ipcContract";
 export * from "./ipcEvents";
 export * from "./ipcTypes";
 export * from "./llm";
+export * from "./logFormatting";
 export * from "./maintenanceCommit";
 export * from "./maintenancePresets";
 export * from "./manualScrapeUrl";

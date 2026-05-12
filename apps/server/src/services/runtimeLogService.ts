@@ -25,6 +25,7 @@ export const decorateTaskLog = (event: Omit<LogEntryDto, "source" | "level">): L
 
 export class RuntimeLogService {
   private readonly entries: LogEntryDto[] = [];
+  private taskLogsClearedAt: string | null = null;
 
   constructor(
     private readonly maxEntries = 1000,
@@ -59,6 +60,7 @@ export class RuntimeLogService {
     if (this.entries.length > this.maxEntries) {
       this.entries.splice(0, this.entries.length - this.maxEntries);
     }
+    this.echoToConsole(level, message);
     this.taskEvents?.publishRealtime({
       id: entry.id,
       taskId: entry.taskId,
@@ -67,6 +69,18 @@ export class RuntimeLogService {
       log: entry,
     });
     return entry;
+  }
+
+  private echoToConsole(level: "debug" | "info" | "warn" | "error", message: string): void {
+    if (level === "error") {
+      console.error(message);
+    } else if (level === "warn") {
+      console.warn(message);
+    } else if (level === "debug") {
+      console.debug(message);
+    } else {
+      console.info(message);
+    }
   }
 
   list(input?: LogListInput): LogListResponse {
@@ -79,5 +93,14 @@ export class RuntimeLogService {
     const count = this.entries.length;
     this.entries.length = 0;
     return count;
+  }
+
+  clearTaskLogs(): string {
+    this.taskLogsClearedAt = new Date().toISOString();
+    return this.taskLogsClearedAt;
+  }
+
+  getTaskLogsClearedAt(): string | null {
+    return this.taskLogsClearedAt;
   }
 }

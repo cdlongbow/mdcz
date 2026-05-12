@@ -75,6 +75,7 @@ describe("taskRealtimeEventSchema", () => {
         createdAt,
         kind: "task-progress",
         taskKind: "scrape",
+        value: 38,
         current: 1,
         total: 2,
         message: "ABC-001.mp4",

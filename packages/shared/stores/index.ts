@@ -7,3 +7,4 @@ export * from "./scrapeStore";
 export * from "./settingsSavingStore";
 export * from "./uiStore";
 export * from "./workbenchSetupStore";
+export * from "./workbenchTaskStore";

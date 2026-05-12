@@ -105,6 +105,18 @@ const looksLikeCode = (text: string): boolean => SCRIPT_PATTERN.test(text);
 const isPrimaryImageField = (field: keyof CrawlerData): field is PrimaryImageAlternativeField =>
   field === "thumb_url" || field === "poster_url";
 
+const summarizeFailedSiteResults = (number: string, siteResults: SiteCrawlResult[]): string => {
+  const failures = siteResults
+    .filter((result) => !result.success)
+    .map((result) => `${result.site}: ${result.error ?? result.failureReason ?? "unknown error"}`);
+
+  if (failures.length === 0) {
+    return `No crawler returned metadata for ${number}`;
+  }
+
+  return `No crawler returned metadata for ${number}. ${failures.join("; ")}`;
+};
+
 export class FieldAggregator {
   private readonly behavior: AggregationBehavior;
 
@@ -466,6 +478,7 @@ const buildCrawlerOptions = ({
 
 export class AggregationService {
   private readonly cache = new Map<string, CacheEntry>();
+  private readonly failureSummaries = new Map<string, string>();
   private readonly logger: RuntimeLogger;
 
   constructor(
@@ -485,12 +498,15 @@ export class AggregationService {
     const cached = this.getFromCache(cacheKey);
     if (cached) {
       this.logger.info(`Cache hit for ${number}`);
+      this.clearFailureSummary(number);
       return cached;
     }
 
     const enabledSites = this.resolveActiveSites(number, config, manualScrape);
     if (enabledSites.length === 0) {
-      this.logger.warn(`No active sites for ${number}`);
+      const message = `No active sites for ${number}`;
+      this.recordFailureSummary(number, message);
+      this.logger.warn(message);
       return null;
     }
 
@@ -528,7 +544,9 @@ export class AggregationService {
     );
 
     if (successes.size === 0) {
-      this.logger.warn(`No successful crawls for ${number}`);
+      const message = summarizeFailedSiteResults(number, siteResults);
+      this.recordFailureSummary(number, message);
+      this.logger.warn(message);
       return null;
     }
 
@@ -550,12 +568,30 @@ export class AggregationService {
       this.logger.warn(
         `Aggregated data for ${number} does not meet minimum threshold (number=${!!data.number}, title=${!!data.title}, thumb=${!!data.thumb_url}, poster=${!!data.poster_url})`,
       );
+      this.recordFailureSummary(number, `Aggregated data for ${number} does not meet minimum threshold`);
       return null;
     }
 
     const result: AggregationResult = { data, sources, imageAlternatives, stats };
     this.putInCache(cacheKey, result);
+    this.clearFailureSummary(number);
     return result;
+  }
+
+  getFailureSummary(number: string): string | undefined {
+    return this.failureSummaries.get(this.normalizeFailureSummaryKey(number));
+  }
+
+  private recordFailureSummary(number: string, message: string): void {
+    this.failureSummaries.set(this.normalizeFailureSummaryKey(number), message);
+  }
+
+  private clearFailureSummary(number: string): void {
+    this.failureSummaries.delete(this.normalizeFailureSummaryKey(number));
+  }
+
+  private normalizeFailureSummaryKey(number: string): string {
+    return number.trim().toUpperCase();
   }
 
   clearCache(): void {

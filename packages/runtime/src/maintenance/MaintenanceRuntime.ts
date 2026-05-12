@@ -71,6 +71,8 @@ export interface MaintenanceRuntimeApplyInput {
     fieldSelections?: Record<string, MaintenanceFieldSelectionSide>;
     imageAlternatives?: MaintenanceImageAlternatives;
   };
+  progress?: { fileIndex: number; totalFiles: number };
+  signalService?: MaintenanceSignalService;
   signal?: AbortSignal;
 }
 
@@ -86,6 +88,7 @@ export interface MaintenanceRuntimeApplyEntryInput {
     assetDecisions?: import("@mdcz/shared/types").MaintenanceAssetDecisions;
   };
   progress?: { fileIndex: number; totalFiles: number };
+  signalService?: MaintenanceSignalService;
   signal?: AbortSignal;
 }
 
@@ -231,6 +234,8 @@ export class MaintenanceRuntime {
         crawlerData: input.preview.proposedCrawlerData ?? undefined,
       },
       signal: input.signal,
+      progress: input.progress,
+      signalService: input.signalService,
     });
   }
 
@@ -246,7 +251,7 @@ export class MaintenanceRuntime {
 
     const entry = input.entry;
     const config = await this.getPresetConfig(input.presetId, input.root);
-    const scraper = new MaintenanceFileScraper(this.createFileScraperDependencies(), preset);
+    const scraper = new MaintenanceFileScraper(this.createFileScraperDependencies(input.signalService), preset);
     const committedCrawlerData = buildCommittedCrawlerData(
       entry,
       {
@@ -316,7 +321,7 @@ export class MaintenanceRuntime {
     }
   }
 
-  private createFileScraperDependencies(): MaintenanceFileScraperDependencies {
+  private createFileScraperDependencies(signalService?: MaintenanceSignalService): MaintenanceFileScraperDependencies {
     return {
       actorImageService: this.deps.actorImageService,
       actorSourceProvider: this.deps.actorSourceProvider,
@@ -324,7 +329,7 @@ export class MaintenanceRuntime {
       downloadManager: this.deps.downloadManager,
       fileOrganizer: this.deps.fileOrganizer,
       nfoGenerator: this.deps.nfoGenerator,
-      signalService: this.deps.signalService ?? emptySignalService,
+      signalService: signalService ?? this.deps.signalService ?? emptySignalService,
       translateService: this.deps.translateService,
     };
   }

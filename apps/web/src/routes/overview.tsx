@@ -1,12 +1,28 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import type { OverviewRecentAcquisitionDto } from "@mdcz/shared/serverDtos";
+import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@mdcz/ui";
 import { OverviewHeroStartCard, OverviewMaintenanceCard, RecentAcquisitionsGrid } from "@mdcz/views/overview";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { toast } from "sonner";
 import { api, getLibraryAssetSrc } from "../client";
 import { AppLink, ErrorBanner } from "../routeCommon";
 import { buildHref } from "../routeHelpers";
 
+export const hasWorkbenchOutput = (input: {
+  configured: boolean;
+  output?: { fileCount: number; totalBytes: number; rootPath: string | null } | null;
+  recentCount: number;
+}): boolean =>
+  input.configured ||
+  Boolean(input.output?.rootPath) ||
+  (input.output?.fileCount ?? 0) > 0 ||
+  (input.output?.totalBytes ?? 0) > 0 ||
+  input.recentCount > 0;
+
 export function OverviewPage() {
+  const [removeTarget, setRemoveTarget] = useState<OverviewRecentAcquisitionDto | null>(null);
   const setupQ = useQuery({ queryKey: ["setup"], queryFn: () => api.setup.status(), retry: false });
   const overviewQ = useQuery({
     queryKey: ["overview", "summary"],
@@ -15,7 +31,11 @@ export function OverviewPage() {
   });
   const output = overviewQ.data?.output;
   const recent = overviewQ.data?.recentAcquisitions ?? [];
-  const configured = Boolean(setupQ.data?.configured);
+  const configured = hasWorkbenchOutput({
+    configured: Boolean(setupQ.data?.configured),
+    output,
+    recentCount: recent.length,
+  });
 
   return (
     <main className="h-full overflow-y-auto bg-surface-canvas text-foreground">
@@ -56,14 +76,50 @@ export function OverviewPage() {
             isError={overviewQ.isError}
             isLoading={overviewQ.isLoading}
             items={recent}
+            onItemRemove={setRemoveTarget}
             onRetry={() => {
               void overviewQ.refetch();
             }}
           />
         </section>
       </div>
+      <Dialog open={Boolean(removeTarget)} onOpenChange={(open) => !open && setRemoveTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>从最近入库移除</DialogTitle>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveTarget(null)}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                const target = removeTarget;
+                if (!target) return;
+                void removeRecentAcquisition(target, () => {
+                  setRemoveTarget(null);
+                  void overviewQ.refetch();
+                });
+              }}
+            >
+              确认
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
+}
+
+async function removeRecentAcquisition(item: OverviewRecentAcquisitionDto, onSuccess: () => void) {
+  try {
+    await api.overview.removeRecentAcquisition({ id: item.id });
+    toast.success("已从最近入库移除");
+    onSuccess();
+  } catch (error) {
+    toast.error(toErrorMessage(error));
+  }
 }
 
 export const Route = createFileRoute("/overview")({

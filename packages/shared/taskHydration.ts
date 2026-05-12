@@ -1,6 +1,5 @@
 import { maintenancePreviewDtoToPreviewItem, scrapeResultDtoToScrapeResult } from "./dtoAdapters";
 import type {
-  AmbiguousUncensoredItemDto,
   MaintenanceApplyLogDto,
   MaintenancePreviewResponse,
   ScanTaskDto,
@@ -12,27 +11,12 @@ import { useMaintenanceExecutionStore } from "./stores/maintenanceExecutionStore
 import { useMaintenancePreviewStore } from "./stores/maintenancePreviewStore";
 import { applyMaintenanceExecutionItemResult, applyMaintenancePreviewResult } from "./stores/maintenanceSession";
 import { useScrapeStore } from "./stores/scrapeStore";
+import { useUIStore } from "./stores/uiStore";
+import type { TaskHydrationState } from "./stores/workbenchTaskStore";
 import type { MaintenancePreviewItem } from "./types";
 
-export interface TaskHydrationState {
-  activeScrapeTaskId: string;
-  activeMaintenanceTaskId: string;
-  latestScrapeStage: { taskId: string; stage: string; message: string; relativePath?: string } | null;
-  latestTaskFailure: { taskId: string; message: string; error?: string | null } | null;
-  uncensoredTaskId: string;
-  ambiguousUncensoredItems: AmbiguousUncensoredItemDto[];
-  shouldOpenUncensoredDialog: boolean;
-}
-
-export const createTaskHydrationState = (): TaskHydrationState => ({
-  activeScrapeTaskId: "",
-  activeMaintenanceTaskId: "",
-  latestScrapeStage: null,
-  latestTaskFailure: null,
-  uncensoredTaskId: "",
-  ambiguousUncensoredItems: [],
-  shouldOpenUncensoredDialog: false,
-});
+export type { TaskHydrationState } from "./stores/workbenchTaskStore";
+export { createTaskHydrationState, useWorkbenchTaskStore } from "./stores/workbenchTaskStore";
 
 const taskStatusToScrapeStatus = (
   status: ScanTaskDto["status"],
@@ -60,6 +44,60 @@ export const hydrateScrapeResults = (response: ScrapeResultListResponse): void =
   }
 };
 
+export const selectWorkbenchScrapeResults = (
+  response: ScrapeResultListResponse,
+  activeTaskId: string,
+): { taskId: string; results: ScrapeResultListResponse["results"] } => {
+  const preferredTaskId = activeTaskId.trim();
+  const preferredResults = preferredTaskId
+    ? response.results.filter((result) => result.taskId === preferredTaskId)
+    : [];
+
+  if (preferredTaskId) {
+    return { taskId: preferredTaskId, results: preferredResults };
+  }
+
+  return { taskId: "", results: [] };
+};
+
+export const hydrateWorkbenchScrapeResults = (
+  response: ScrapeResultListResponse,
+  previous: TaskHydrationState,
+): TaskHydrationState => {
+  const selection = selectWorkbenchScrapeResults(response, previous.activeScrapeTaskId);
+  const projectedResults = selection.results.map(scrapeResultDtoToScrapeResult);
+  const scrapeStore = useScrapeStore.getState();
+  scrapeStore.clearResults();
+  for (const result of projectedResults) {
+    scrapeStore.addResult(result);
+  }
+
+  const uiStore = useUIStore.getState();
+  if (uiStore.selectedResultId && !projectedResults.some((result) => result.fileId === uiStore.selectedResultId)) {
+    uiStore.setSelectedResultId(null);
+  }
+
+  return selection.taskId ? { ...previous, activeScrapeTaskId: selection.taskId } : previous;
+};
+
+const applyScrapeTaskSnapshot = (task: ScanTaskDto): void => {
+  const scrapeStatus = taskStatusToScrapeStatus(task.status);
+  const store = useScrapeStore.getState();
+  const total = task.videos?.length ?? task.videoCount;
+  const current = (task.status === "completed" || task.status === "failed") && total > 0 ? total : task.videoCount;
+  store.setScrapeStatus(scrapeStatus);
+  store.setScraping(scrapeStatus === "running" || scrapeStatus === "paused" || scrapeStatus === "stopping");
+  const snapshotProgress = total > 0 ? (current / total) * 100 : 0;
+  const isTerminal = task.status === "completed" || task.status === "failed";
+  if (isTerminal || snapshotProgress >= store.progress) {
+    store.updateProgress(current, total);
+  }
+};
+
+const applyMaintenanceTaskSnapshot = (task: ScanTaskDto): void => {
+  useMaintenanceExecutionStore.getState().setExecutionStatus(taskStatusToMaintenanceStatus(task.status));
+};
+
 export const hydrateMaintenancePreview = (response: MaintenancePreviewResponse): MaintenancePreviewItem[] => {
   const items = response.items.map(maintenancePreviewDtoToPreviewItem);
   applyMaintenancePreviewResult({ items });
@@ -76,30 +114,43 @@ export const applyWebTaskUpdate = (payload: WebTaskUpdateDto, previous: TaskHydr
   const next = { ...previous, shouldOpenUncensoredDialog: false };
 
   if (payload.kind === "snapshot") {
-    for (const task of payload.tasks) {
-      if (task.kind === "scrape" && task.status !== "completed" && task.status !== "failed") {
-        next.activeScrapeTaskId = task.id;
-      }
-      if (task.kind === "maintenance" && task.status !== "completed" && task.status !== "failed") {
-        next.activeMaintenanceTaskId = task.id;
-      }
+    const previousScrapeTask = payload.tasks.find(
+      (task) => task.kind === "scrape" && task.id === previous.activeScrapeTaskId,
+    );
+    const previousMaintenanceTask = payload.tasks.find(
+      (task) => task.kind === "maintenance" && task.id === previous.activeMaintenanceTaskId,
+    );
+    const activeScrapeTask =
+      previousScrapeTask ??
+      payload.tasks.find((task) => task.kind === "scrape" && task.status !== "completed" && task.status !== "failed");
+    const activeMaintenanceTask =
+      previousMaintenanceTask ??
+      payload.tasks.find(
+        (task) => task.kind === "maintenance" && task.status !== "completed" && task.status !== "failed",
+      );
+
+    if (activeScrapeTask) {
+      next.activeScrapeTaskId = activeScrapeTask.id;
+      applyScrapeTaskSnapshot(activeScrapeTask);
     }
+
+    if (activeMaintenanceTask) {
+      next.activeMaintenanceTaskId = activeMaintenanceTask.id;
+      applyMaintenanceTaskSnapshot(activeMaintenanceTask);
+    }
+
     return next;
   }
 
   if (payload.kind === "task") {
     if (payload.task.kind === "scrape") {
       next.activeScrapeTaskId = payload.task.id;
-      const scrapeStatus = taskStatusToScrapeStatus(payload.task.status);
-      const store = useScrapeStore.getState();
-      store.setScrapeStatus(scrapeStatus);
-      store.setScraping(scrapeStatus === "running" || scrapeStatus === "paused" || scrapeStatus === "stopping");
-      store.updateProgress(payload.task.videoCount, payload.task.videos?.length ?? payload.task.videoCount);
+      applyScrapeTaskSnapshot(payload.task);
     }
 
     if (payload.task.kind === "maintenance") {
       next.activeMaintenanceTaskId = payload.task.id;
-      useMaintenanceExecutionStore.getState().setExecutionStatus(taskStatusToMaintenanceStatus(payload.task.status));
+      applyMaintenanceTaskSnapshot(payload.task);
     }
 
     return next;
@@ -125,13 +176,15 @@ export const applyTaskRealtimeEvent = (
       return next;
     case "task-progress":
       if (payload.taskKind === "scrape") {
-        useScrapeStore.getState().updateProgress(payload.current, payload.total);
+        useScrapeStore
+          .getState()
+          .updateProgress(payload.value ?? payload.current, payload.value === undefined ? payload.total : 100);
       }
       if (payload.taskKind === "maintenance") {
         useMaintenanceExecutionStore
           .getState()
           .setProgress(
-            payload.total > 0 ? Math.round((payload.current / payload.total) * 100) : 0,
+            payload.value ?? (payload.total > 0 ? Math.round((payload.current / payload.total) * 100) : 0),
             payload.current,
             payload.total,
           );

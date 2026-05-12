@@ -12,6 +12,7 @@ import {
 } from "@mdcz/shared/stores/maintenanceSession";
 import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
 import { useUIStore } from "@mdcz/shared/stores/uiStore";
+import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
 import type { MaintenancePresetId, UncensoredChoice } from "@mdcz/shared/types";
 import { countMaintenanceDisplayItems } from "@mdcz/shared/viewModels/maintenanceGrouping";
 import type { MaintenanceActionPort } from "./ports";
@@ -160,6 +161,7 @@ export const buildUncensoredConfirmationItems = (
 
 export const resetScrapeWorkbenchToSetup = (): void => {
   useUIStore.getState().setSelectedResultId(null);
+  useWorkbenchTaskStore.getState().reset();
   useScrapeStore.getState().reset();
 };
 

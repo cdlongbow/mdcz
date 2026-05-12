@@ -1,3 +1,4 @@
+import { getVisualLogLevel } from "@mdcz/shared/logFormatting";
 import type { LogEntryDto } from "@mdcz/shared/serverDtos";
 import { cn } from "@mdcz/ui";
 import { CheckCircle2, CircleX, FileText, Globe2, Info, TriangleAlert } from "lucide-react";
@@ -9,18 +10,7 @@ export interface LogsListViewProps {
   emptyText?: string;
 }
 
-type VisualLogLevel = "ok" | "warn" | "error" | "request" | "info";
-
-const typeLevelLabels: Record<string, LogEntryDto["level"]> = {
-  completed: "OK",
-  failed: "ERR",
-  "item-failed": "ERR",
-  "item-success": "OK",
-  paused: "WARN",
-  queued: "REQ",
-  running: "INFO",
-  stopping: "WARN",
-};
+type VisualLogLevel = ReturnType<typeof getVisualLogLevel>;
 
 function formatTimestamp(timestamp: string): string {
   try {
@@ -33,21 +23,6 @@ function formatTimestamp(timestamp: string): string {
   } catch {
     return timestamp;
   }
-}
-
-function getVisualLogLevel(log: Pick<LogEntryDto, "level" | "message" | "type">): VisualLogLevel {
-  const level = log.level ?? typeLevelLabels[log.type] ?? "INFO";
-  if (level === "OK") return "ok";
-  if (level === "ERR") return "error";
-  if (level === "WARN") return "warn";
-  if (level === "REQ") return "request";
-
-  const message = log.message.toLowerCase();
-  if (message.includes("error") || message.includes("failed") || message.includes("失败")) return "error";
-  if (message.includes("warn") || message.includes("警告")) return "warn";
-  if (message.includes("request") || message.includes("fetch") || message.includes("请求")) return "request";
-  if (message.includes("success") || message.includes("completed") || message.includes("完成")) return "ok";
-  return "info";
 }
 
 function getLevelPresentation(level: VisualLogLevel) {

@@ -10,6 +10,7 @@ import {
   NfoGenerator,
   TranslateService,
 } from "@mdcz/runtime/scrape";
+import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import type { ServerConfigService } from "./services/configService";
 
 class MemoryImageHostCooldownStore {
@@ -49,13 +50,17 @@ class MemoryImageHostCooldownStore {
 
 export const createServerMaintenanceRuntime = (config: ServerConfigService): MaintenanceRuntime => {
   const networkClient = new NetworkClient();
-  const logger = console;
+  const logger = runtimeLoggerService.getLogger("maintenance");
   return new MaintenanceRuntime({
     actorImageService: new ActorImageService({
       cacheRoot: path.join(config.runtimePaths.dataDir, "actor-image-cache"),
+      logger,
       networkClient,
     }),
-    aggregationService: new AggregationService(new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) })),
+    aggregationService: new AggregationService(
+      new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient), siteRequestConfigRegistrar: networkClient }),
+      { logger },
+    ),
     config,
     downloadManager: new DownloadManager(networkClient, {
       imageHostCooldownStore: new MemoryImageHostCooldownStore(),

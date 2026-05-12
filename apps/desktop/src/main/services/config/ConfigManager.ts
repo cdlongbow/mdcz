@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
+import { getDesktopUserDataPath } from "@main/appIdentity";
 import { IpcErrorCode } from "@main/ipc/errors";
 import { loggerService } from "@main/services/LoggerService";
 import { toErrorMessage } from "@main/utils/common";
@@ -13,7 +14,6 @@ import {
   RuntimeConfigValidationError,
   setRuntimeConfigProperty,
 } from "@mdcz/runtime/config";
-import { app } from "electron";
 import { ComputedConfig, type ComputedConfiguration } from "./computed";
 import { type Configuration, type DeepPartial, defaultConfiguration, getConfigurationPathDefault } from "./models";
 
@@ -201,11 +201,11 @@ export class ConfigManager extends EventEmitter {
     if (isAbsolute(this.configDirectory)) {
       return this.configDirectory;
     }
-    return join(app.getPath("userData"), this.configDirectory);
+    return join(getDesktopUserDataPath(), this.configDirectory);
   }
 
   private getConfigDirectoryMetaPath(): string {
-    return join(app.getPath("userData"), CONFIG_DIRECTORY_META_FILE);
+    return join(getDesktopUserDataPath(), CONFIG_DIRECTORY_META_FILE);
   }
 
   private syncConfigDirectoryFromConfiguration(): void {
@@ -243,7 +243,7 @@ export class ConfigManager extends EventEmitter {
   }
 
   private async persistConfigDirectory(): Promise<void> {
-    await mkdir(app.getPath("userData"), { recursive: true });
+    await mkdir(getDesktopUserDataPath(), { recursive: true });
     await writeFile(
       this.getConfigDirectoryMetaPath(),
       JSON.stringify({ directory: this.configDirectory }, null, 2),

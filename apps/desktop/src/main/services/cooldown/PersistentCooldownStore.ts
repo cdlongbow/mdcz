@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { loggerService } from "@main/services/LoggerService";
 import { toErrorMessage } from "@main/utils/common";
-import { app } from "electron";
+import { getDesktopUserDataPath } from "../../appIdentity";
 
 export interface CooldownEntry {
   failureCount: number;
@@ -39,7 +39,7 @@ const IMAGE_HOST_COOLDOWN_LOGGER_NAME = "ImageHostCooldownStore";
 
 const resolveStorePath = (fileName: string): string => {
   try {
-    return join(app.getPath("userData"), fileName);
+    return join(getDesktopUserDataPath(), fileName);
   } catch {
     return join(process.cwd(), ".tmp", fileName);
   }

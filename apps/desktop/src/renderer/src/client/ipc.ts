@@ -57,10 +57,14 @@ export const ipc = {
       client[IpcChannel.Overview_GetRecentAcquisitions](undefined) as Promise<{
         items: OverviewRecentAcquisitionItem[];
       }>,
+    removeRecentAcquisition: (id: string) =>
+      client[IpcChannel.Overview_RemoveRecentAcquisition]({ id }) as Promise<{ success: true }>,
     getOutputSummary: () => client[IpcChannel.Overview_GetOutputSummary](undefined) as Promise<OverviewOutputSummary>,
   },
   library: {
     list: (input?: LibraryListInput) => client[IpcChannel.Library_List](input) as Promise<LibraryListResponse>,
+    delete: (input: { deleteMediaFiles?: boolean; id: string }) =>
+      client[IpcChannel.Library_Delete](input) as Promise<{ success: true }>,
   },
   config: {
     get: (path?: string) => client[IpcChannel.Config_Get]({ path }),

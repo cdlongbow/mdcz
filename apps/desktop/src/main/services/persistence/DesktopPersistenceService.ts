@@ -10,6 +10,7 @@ import {
   TaskRepository,
 } from "@mdcz/persistence";
 import { app } from "electron";
+import { getDesktopUserDataPath } from "../../appIdentity";
 
 /**
  * Resolves the path to the Electron-ABI better_sqlite3.node binding.
@@ -37,7 +38,7 @@ export interface DesktopPersistenceState {
 export class DesktopPersistenceService {
   private state: DesktopPersistenceState | null = null;
 
-  constructor(private readonly databasePath = join(app.getPath("userData"), "mdcz.sqlite")) {}
+  constructor(private readonly databasePath = join(getDesktopUserDataPath(), "mdcz.sqlite")) {}
 
   get initialized(): boolean {
     return this.state !== null;

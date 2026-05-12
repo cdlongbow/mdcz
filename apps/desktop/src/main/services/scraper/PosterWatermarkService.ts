@@ -12,8 +12,8 @@ import {
   POSTER_TAG_BADGE_WIDTH_RATIO,
   type PosterTagBadgePosition,
 } from "@mdcz/shared/posterBadges";
-import { app } from "electron";
 import sharp from "sharp";
+import { getDesktopUserDataPath } from "../../appIdentity";
 
 const WATERMARK_DIRECTORY_NAME = "watermark";
 const BADGE_GAP_RATIO = 0.1;
@@ -177,7 +177,7 @@ const resolveBadgeOverlayPlacement = (
   return { left, top };
 };
 
-const resolveDefaultWatermarkDirectory = (): string => join(app.getPath("userData"), WATERMARK_DIRECTORY_NAME);
+const resolveDefaultWatermarkDirectory = (): string => join(getDesktopUserDataPath(), WATERMARK_DIRECTORY_NAME);
 
 const isExistingFile = async (filePath: string): Promise<boolean> => {
   try {

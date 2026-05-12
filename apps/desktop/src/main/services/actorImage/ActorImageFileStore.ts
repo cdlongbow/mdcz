@@ -10,7 +10,7 @@ import { pathExists } from "@main/utils/file";
 import { validateImage } from "@main/utils/image";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { sanitizePathSegment } from "@mdcz/runtime/scrape/utils/path";
-import { app } from "electron";
+import { getDesktopUserDataPath } from "../../appIdentity";
 import { isAbortError, throwIfAborted } from "../scraper/abort";
 import { type ActorImageIndexEntry, ActorImageIndexStore } from "./ActorImageIndexStore";
 
@@ -101,7 +101,7 @@ const resolveCachedPhotoExtension = (sourceUrl: string, bytes: Uint8Array): stri
   return detectPhotoExtension(bytes) ?? getPhotoExtensionFromUrl(sourceUrl) ?? DEFAULT_PHOTO_EXTENSION;
 };
 
-export const getActorImageCacheDirectory = (): string => join(app.getPath("userData"), CACHE_DIR_NAME);
+export const getActorImageCacheDirectory = (): string => join(getDesktopUserDataPath(), CACHE_DIR_NAME);
 
 export class ActorImageFileStore {
   private readonly cacheLayoutResolver = new CachedAsyncResolver<string, ActorImageCacheLayout>();

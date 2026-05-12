@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { rm, stat } from "node:fs/promises";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import type { MediaRoot } from "@mdcz/media-store";
 import { resolveRootRelativePath } from "@mdcz/media-store";
@@ -46,6 +46,41 @@ export class DesktopLibraryService {
     };
   }
 
+  async removeRecentAcquisition(id: string): Promise<{ success: true }> {
+    const normalizedId = id.trim();
+    if (!normalizedId) {
+      throw new Error("Library entry id is required");
+    }
+    const state = await this.persistenceService.getState();
+    await state.repositories.library.hideFromRecent(normalizedId);
+    return { success: true };
+  }
+
+  async deleteEntry(id: string, options: { deleteMediaFiles?: boolean } = {}): Promise<{ success: true }> {
+    const normalizedId = id.trim();
+    if (!normalizedId) {
+      throw new Error("Library entry id is required");
+    }
+    const state = await this.persistenceService.getState();
+    if (options.deleteMediaFiles) {
+      const [roots, entry] = await Promise.all([
+        state.repositories.mediaRoots.list(),
+        state.repositories.library.getEntryById(normalizedId),
+      ]);
+      const rootMap = new Map(roots.map((root) => [root.id, root]));
+      const filePaths = new Set(
+        entry.files
+          .map((file) => resolveAssetDisplayPath(rootMap, file.rootId, file.lastKnownPath ?? file.rootRelativePath))
+          .filter((filePath): filePath is string => typeof filePath === "string" && !isRemotePath(filePath)),
+      );
+      for (const filePath of filePaths) {
+        await rm(filePath, { force: true });
+      }
+    }
+    await state.repositories.library.deleteEntry(normalizedId);
+    return { success: true };
+  }
+
   private async toDto(entry: LibraryEntryRecord, rootMap: Map<string, MediaRoot>): Promise<LibraryEntryDto> {
     const root = rootMap.get(entry.rootId);
     const available = root ? await this.checkAvailability(root, entry.rootRelativePath) : null;
@@ -88,6 +123,7 @@ export class DesktopLibraryService {
       lastKnownPath: resolveAssetDisplayPath(rootMap, entry.rootId, entry.lastKnownPath),
       createdAt: entry.createdAt.toISOString(),
       lastRefreshedAt: toIso(entry.lastRefreshedAt),
+      hiddenFromRecentAt: toIso(entry.hiddenFromRecentAt),
       available,
       fileRefs,
       assets: entry.assets.map((asset) => ({

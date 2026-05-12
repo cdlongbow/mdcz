@@ -64,6 +64,7 @@ export interface MountedRootScrapeAggregationService {
     signal?: AbortSignal,
     manualScrape?: ManualScrapeOptions,
   ): Promise<AggregationResult | null>;
+  getFailureSummary?(number: string): string | undefined;
 }
 
 export interface MountedRootScrapeRuntimeItemInput {
@@ -73,6 +74,8 @@ export interface MountedRootScrapeRuntimeItemInput {
   localState?: NfoLocalState;
   progress: { fileIndex: number; totalFiles: number };
   onEvent?: (type: string, message: string) => Promise<void> | void;
+  onProgress?: (progress: { value: number; current: number; total: number }) => Promise<void> | void;
+  onStage?: (stage: "search" | "download" | "parse" | "organize", message: string) => Promise<void> | void;
   signal?: AbortSignal;
 }
 
@@ -135,11 +138,20 @@ class MemoryImageHostCooldownStore {
 }
 
 class MountedRootScrapeSignalService implements RuntimeScrapeSignalService {
-  constructor(private readonly emit: (type: string, message: string) => Promise<void> | void) {}
+  constructor(
+    private readonly emit: (type: string, message: string) => Promise<void> | void,
+    private readonly emitProgress: (progress: {
+      value: number;
+      current: number;
+      total: number;
+    }) => Promise<void> | void,
+    private readonly emitStage: (
+      stage: "search" | "download" | "parse" | "organize",
+      message: string,
+    ) => Promise<void> | void,
+  ) {}
 
-  showFailedInfo(input: { fileInfo: FileInfo; error: string }): void {
-    void this.emit("item-failed", `${input.fileInfo.fileName}${input.fileInfo.extension}: ${input.error}`);
-  }
+  showFailedInfo(_input: { fileInfo: FileInfo; error: string }): void {}
 
   showLogText(message: string): void {
     void this.emit("log", message);
@@ -150,15 +162,13 @@ class MountedRootScrapeSignalService implements RuntimeScrapeSignalService {
     site: CrawlerData["website"];
     step: "search" | "download" | "parse" | "organize";
   }): void {
-    void this.emit(input.step, `${input.fileInfo.fileName}${input.fileInfo.extension}: ${input.site}`);
+    void this.emitStage(input.step, `${input.fileInfo.fileName}${input.fileInfo.extension}: ${input.site}`);
   }
 
-  showScrapeResult(result: ScrapeResult): void {
-    void this.emit(result.status, `${result.fileInfo.fileName}${result.fileInfo.extension}: ${result.status}`);
-  }
+  showScrapeResult(_result: ScrapeResult): void {}
 
   setProgress(value: number, current: number, total: number): void {
-    void this.emit("progress", `刮削进度 ${current}/${total} (${value}%)`);
+    void this.emitProgress({ value, current, total });
   }
 }
 
@@ -267,6 +277,7 @@ class MountedRootFileScraperPipeline implements FileScraperPipeline {
       getConfiguration: async () => await this.getConfiguration(),
       aggregateMetadata: async (fileInfo, configuration, signal, manualScrape) =>
         await this.aggregationCoordinator.aggregate(fileInfo, configuration, signal, manualScrape),
+      getAggregationFailureMessage: (fileInfo) => this.aggregationService.getFailureSummary?.(fileInfo.number),
       handleFailedFileMove: async (fileInfo, configuration) => await this.moveToFailedFolder(fileInfo, configuration),
       loadExistingNfoLocalState: async () => this.localState,
       setProgress: (progress, stepPercent) => {
@@ -433,10 +444,18 @@ export class MountedRootScrapeRuntime {
   ) {}
 
   async scrape(input: MountedRootScrapeRuntimeItemInput): Promise<MountedRootScrapeRuntimeItemResult> {
-    const signalService = new MountedRootScrapeSignalService((type, message) => {
-      void input.onEvent?.(type, message);
-      this.logger.info(`[${type}] ${message}`);
-    });
+    const signalService = new MountedRootScrapeSignalService(
+      (type, message) => {
+        void input.onEvent?.(type, message);
+        console.info(message);
+      },
+      (progress) => {
+        void input.onProgress?.(progress);
+      },
+      (stage, message) => {
+        void input.onStage?.(stage, message);
+      },
+    );
     const scraper = new FileScraper(
       new MountedRootFileScraperPipeline(
         input.root,

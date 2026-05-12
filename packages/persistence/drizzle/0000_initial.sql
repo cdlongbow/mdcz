@@ -124,7 +124,8 @@ CREATE TABLE `library_items` (
   `number` text,
   `actors_json` text NOT NULL DEFAULT '[]',
   `created_at` integer NOT NULL,
-  `last_refreshed_at` integer
+  `last_refreshed_at` integer,
+  `hidden_from_recent_at` integer
 );
 --> statement-breakpoint
 CREATE TABLE `library_item_files` (

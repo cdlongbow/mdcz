@@ -3,11 +3,16 @@ import {
   applyTaskRealtimeEvent,
   applyWebTaskUpdate,
   createTaskHydrationState,
+  hydrateWorkbenchScrapeResults,
   maintenancePreviewDtoToPreviewItem,
+  selectWorkbenchScrapeResults,
 } from "@mdcz/shared";
 import { useMaintenanceExecutionStore } from "@mdcz/shared/stores/maintenanceExecutionStore";
 import { useMaintenancePreviewStore } from "@mdcz/shared/stores/maintenancePreviewStore";
 import { useScrapeStore } from "@mdcz/shared/stores/scrapeStore";
+import { useUIStore } from "@mdcz/shared/stores/uiStore";
+import { useWorkbenchTaskStore } from "@mdcz/shared/stores/workbenchTaskStore";
+import { buildScrapeResultGroups } from "@mdcz/shared/viewModels/scrapeResultGrouping";
 import { beforeEach, describe, expect, it } from "vitest";
 import { __workbenchTestHooks } from "./workbench";
 
@@ -16,6 +21,8 @@ describe("web workbench route contracts", () => {
     useScrapeStore.getState().reset();
     useMaintenanceExecutionStore.getState().reset();
     useMaintenancePreviewStore.getState().reset();
+    useWorkbenchTaskStore.getState().reset();
+    useUIStore.getState().setSelectedResultId(null);
   });
 
   it("keeps uncensored ambiguous flags when projecting scrape result DTOs", () => {
@@ -83,6 +90,16 @@ describe("web workbench route contracts", () => {
         workbenchMode: "scrape",
         isScraping: true,
         activeTaskId: "",
+        scrapeStartPending: true,
+      }),
+    ).toBe(false);
+    expect(
+      __workbenchTestHooks.shouldShowWorkbenchSetup({
+        baseShowSetup: false,
+        workbenchMode: "scrape",
+        isScraping: true,
+        activeTaskId: "",
+        scrapeStartPending: false,
       }),
     ).toBe(true);
     expect(
@@ -95,12 +112,170 @@ describe("web workbench route contracts", () => {
     ).toBe(false);
     expect(
       __workbenchTestHooks.shouldShowWorkbenchSetup({
+        baseShowSetup: true,
+        workbenchMode: "scrape",
+        isScraping: false,
+        activeTaskId: "task-1",
+      }),
+    ).toBe(false);
+    expect(
+      __workbenchTestHooks.shouldShowWorkbenchSetup({
         baseShowSetup: false,
         workbenchMode: "maintenance",
         isScraping: true,
         activeTaskId: "",
       }),
     ).toBe(false);
+  });
+
+  it("hydrates only the active scrape task results for workbench restoration", () => {
+    const response = {
+      results: [
+        {
+          id: "result-2",
+          taskId: "task-2",
+          rootId: "root-1",
+          rootDisplayName: "Media",
+          relativePath: "BBB-002.mp4",
+          fileName: "BBB-002.mp4",
+          status: "success" as const,
+          error: null,
+          crawlerData: null,
+          nfoRelativePath: "BBB-002.nfo",
+          outputRelativePath: "JAV_output/BBB-002/BBB-002.mp4",
+          manualUrl: null,
+          uncensoredAmbiguous: false,
+          createdAt: "2026-05-04T00:00:00.000Z",
+          updatedAt: "2026-05-04T00:00:00.000Z",
+        },
+        {
+          id: "result-1",
+          taskId: "task-1",
+          rootId: "root-1",
+          rootDisplayName: "Media",
+          relativePath: "AAA-001.mp4",
+          fileName: "AAA-001.mp4",
+          status: "success" as const,
+          error: null,
+          crawlerData: null,
+          nfoRelativePath: "AAA-001.nfo",
+          outputRelativePath: "JAV_output/AAA-001/AAA-001.mp4",
+          manualUrl: null,
+          uncensoredAmbiguous: false,
+          createdAt: "2026-05-03T00:00:00.000Z",
+          updatedAt: "2026-05-03T00:00:00.000Z",
+        },
+      ],
+    };
+
+    expect(selectWorkbenchScrapeResults(response, "")).toEqual({
+      taskId: "",
+      results: [],
+    });
+
+    const state = hydrateWorkbenchScrapeResults(response, {
+      ...createTaskHydrationState(),
+      activeScrapeTaskId: "task-1",
+    });
+    expect(state.activeScrapeTaskId).toBe("task-1");
+    expect(useScrapeStore.getState().results).toHaveLength(1);
+    expect(useScrapeStore.getState().results[0]?.fileId).toBe("root-1:AAA-001.mp4");
+    expect(useUIStore.getState().selectedResultId).toBeNull();
+  });
+
+  it("keeps an active scrape task selected even before it has results", () => {
+    expect(selectWorkbenchScrapeResults({ results: [] }, "task-running")).toEqual({
+      taskId: "task-running",
+      results: [],
+    });
+  });
+
+  it("does not label pending scrape rows as successful", () => {
+    const groups = buildScrapeResultGroups([
+      {
+        fileId: "root-1:ABC-001.mp4",
+        fileInfo: {
+          extension: "mp4",
+          fileName: "ABC-001.mp4",
+          filePath: "ABC-001.mp4",
+          isSubtitled: false,
+          number: "ABC-001",
+        },
+        status: "pending",
+      },
+    ]);
+
+    expect(groups[0]?.status).toBe("processing");
+  });
+
+  it("restores running scrape progress from task snapshots", () => {
+    const state = applyWebTaskUpdate(
+      {
+        kind: "snapshot",
+        tasks: [
+          {
+            id: "task-running",
+            kind: "scrape",
+            rootId: "root-1",
+            rootDisplayName: "Media",
+            status: "running",
+            createdAt: "2026-05-06T00:00:00.000Z",
+            updatedAt: "2026-05-06T00:00:00.000Z",
+            startedAt: "2026-05-06T00:00:01.000Z",
+            completedAt: null,
+            videoCount: 2,
+            directoryCount: 0,
+            error: null,
+            videos: ["A.mp4", "B.mp4", "C.mp4", "D.mp4"],
+          },
+        ],
+      },
+      createTaskHydrationState(),
+    );
+
+    expect(state.activeScrapeTaskId).toBe("task-running");
+    expect(useScrapeStore.getState()).toMatchObject({
+      isScraping: true,
+      scrapeStatus: "running",
+      current: 2,
+      total: 4,
+      progress: 50,
+    });
+  });
+
+  it("restores a completed active scrape task from snapshots after route changes", () => {
+    const state = applyWebTaskUpdate(
+      {
+        kind: "snapshot",
+        tasks: [
+          {
+            id: "task-completed",
+            kind: "scrape",
+            rootId: "root-1",
+            rootDisplayName: "Media",
+            status: "completed",
+            createdAt: "2026-05-06T00:00:00.000Z",
+            updatedAt: "2026-05-06T00:00:00.000Z",
+            startedAt: "2026-05-06T00:00:01.000Z",
+            completedAt: "2026-05-06T00:00:10.000Z",
+            videoCount: 1,
+            directoryCount: 0,
+            error: null,
+            videos: ["A.mp4"],
+          },
+        ],
+      },
+      { ...createTaskHydrationState(), activeScrapeTaskId: "task-completed" },
+    );
+
+    expect(state.activeScrapeTaskId).toBe("task-completed");
+    expect(useScrapeStore.getState()).toMatchObject({
+      isScraping: false,
+      scrapeStatus: "idle",
+      current: 1,
+      total: 1,
+      progress: 100,
+    });
   });
 
   it("accepts completed task events carrying ambiguous uncensored items", () => {
@@ -222,13 +397,14 @@ describe("web workbench route contracts", () => {
         createdAt: "2026-05-06T00:00:00.000Z",
         kind: "task-progress",
         taskKind: "scrape",
+        value: 35,
         current: 2,
         total: 4,
       },
       createTaskHydrationState(),
     );
 
-    expect(useScrapeStore.getState()).toMatchObject({ current: 2, total: 4, progress: 50 });
+    expect(useScrapeStore.getState()).toMatchObject({ current: 35, total: 100, progress: 35 });
     expect(useMaintenanceExecutionStore.getState()).toMatchObject({ progressCurrent: 0, progressTotal: 0 });
 
     applyTaskRealtimeEvent(
@@ -238,17 +414,18 @@ describe("web workbench route contracts", () => {
         createdAt: "2026-05-06T00:00:00.000Z",
         kind: "task-progress",
         taskKind: "maintenance",
+        value: 44,
         current: 1,
         total: 5,
       },
       createTaskHydrationState(),
     );
 
-    expect(useScrapeStore.getState()).toMatchObject({ current: 2, total: 4 });
+    expect(useScrapeStore.getState()).toMatchObject({ current: 35, total: 100 });
     expect(useMaintenanceExecutionStore.getState()).toMatchObject({
       progressCurrent: 1,
       progressTotal: 5,
-      progressValue: 20,
+      progressValue: 44,
     });
   });
 

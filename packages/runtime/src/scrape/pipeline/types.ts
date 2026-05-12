@@ -36,6 +36,7 @@ export interface FileScraperStageRuntime {
     signal?: AbortSignal,
     manualScrape?: ManualScrapeOptions,
   ): Promise<AggregationResult | null>;
+  getAggregationFailureMessage?(fileInfo: FileInfo): string | undefined;
   handleFailedFileMove(fileInfo: FileInfo, configuration: Configuration): Promise<FileInfo>;
   loadExistingNfoLocalState(filePath: string, configuration: Configuration): Promise<NfoLocalState | undefined>;
   setProgress(progress: { fileIndex: number; totalFiles: number }, stepPercent: number): void;

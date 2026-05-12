@@ -1,5 +1,7 @@
 import type { OverviewRecentAcquisitionItem } from "@mdcz/shared/ipc-contracts/overviewContract";
+import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@mdcz/ui";
 import { RecentAcquisitionsGrid as SharedRecentAcquisitionsGrid } from "@mdcz/views/overview";
+import { useState } from "react";
 import { toast } from "sonner";
 import { ipc } from "@/client/ipc";
 import { useRecentAcquisitions } from "@/hooks/useOverview";
@@ -9,21 +11,60 @@ import { getDirFromPath } from "@/utils/path";
 export function RecentAcquisitionsGrid() {
   const recentQ = useRecentAcquisitions();
   const items = recentQ.data?.items ?? [];
+  const [removeTarget, setRemoveTarget] = useState<OverviewRecentAcquisitionItem | null>(null);
 
   return (
-    <SharedRecentAcquisitionsGrid
-      getImageSrc={getImageSrc}
-      isError={recentQ.isError}
-      isLoading={recentQ.isLoading}
-      items={items}
-      onItemOpen={(item) => {
-        void openRecentAcquisition(item);
-      }}
-      onRetry={() => {
-        void recentQ.refetch();
-      }}
-    />
+    <>
+      <SharedRecentAcquisitionsGrid
+        getImageSrc={getImageSrc}
+        isError={recentQ.isError}
+        isLoading={recentQ.isLoading}
+        items={items}
+        onItemOpen={(item) => {
+          void openRecentAcquisition(item);
+        }}
+        onItemRemove={setRemoveTarget}
+        onRetry={() => {
+          void recentQ.refetch();
+        }}
+      />
+      <Dialog open={Boolean(removeTarget)} onOpenChange={(open) => !open && setRemoveTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>从最近入库移除</DialogTitle>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveTarget(null)}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                const target = removeTarget;
+                if (!target) return;
+                void removeRecentAcquisition(target, () => {
+                  setRemoveTarget(null);
+                  void recentQ.refetch();
+                });
+              }}
+            >
+              确认
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
+}
+
+async function removeRecentAcquisition(item: OverviewRecentAcquisitionItem, onSuccess: () => void) {
+  try {
+    await ipc.overview.removeRecentAcquisition(item.id);
+    toast.success("已从最近入库移除");
+    onSuccess();
+  } catch {
+    toast.error("移除最近入库记录失败");
+  }
 }
 
 async function openRecentAcquisition(item: OverviewRecentAcquisitionItem) {
