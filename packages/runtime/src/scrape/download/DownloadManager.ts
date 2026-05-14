@@ -46,7 +46,7 @@ export class DownloadManager {
     this.imageDownloader = new ImageDownloadService(networkClient, hostCooldownTracker, this.logger);
     this.sceneImageDownloader = new SceneImageDownloader(this.imageDownloader, hostCooldownTracker, this.logger);
     this.downloaders = [
-      new PrimaryImageAssetDownloader(),
+      new PrimaryImageAssetDownloader(this.logger),
       new SceneImageAssetDownloader(),
       new FanartAssetDownloader(),
       new TrailerAssetDownloader(),

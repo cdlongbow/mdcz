@@ -2,11 +2,18 @@ import { join } from "node:path";
 
 import { throwIfAborted } from "../../utils/abort";
 import { buildImageCandidates, removeStaleImageAssetVariants, resolveExistingImageAsset, runParallel } from "./helpers";
+import { PosterImageDerivationService } from "./PosterImageDerivationService";
 import type { AssetDownloader, DownloadExecutionContext, DownloadExecutionPlan, PrimaryImageKey } from "./types";
 
 type PrimaryImageTask = { key: PrimaryImageKey; candidates: string[]; path: string; keepExisting: boolean };
 
 export class PrimaryImageAssetDownloader implements AssetDownloader {
+  private readonly posterDerivation: PosterImageDerivationService;
+
+  constructor(logger: { warn(message: string): void }) {
+    this.posterDerivation = new PosterImageDerivationService(logger);
+  }
+
   shouldDownload(plan: DownloadExecutionPlan): boolean {
     return plan.config.download.downloadThumb || plan.config.download.downloadPoster;
   }
@@ -61,6 +68,39 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
           assets[task.key] = existingAsset;
         }
       }
+    }
+
+    await this.derivePosterFromThumbIfNeeded(context);
+  }
+
+  private async derivePosterFromThumbIfNeeded(context: DownloadExecutionContext): Promise<void> {
+    const { assets, plan } = context;
+    if (!plan.config.download.downloadPoster) {
+      return;
+    }
+
+    throwIfAborted(plan.signal);
+
+    const posterTargetPath = join(plan.outputDir, plan.assetFileNames.poster);
+    const result = await this.posterDerivation.deriveFromThumbIfNeeded({
+      posterPath: assets.poster,
+      targetPath: posterTargetPath,
+      thumbPath: assets.thumb,
+    });
+
+    if (result.status !== "derived") {
+      return;
+    }
+
+    assets.poster = result.path;
+    if (!assets.downloaded.includes(result.path)) {
+      assets.downloaded.push(result.path);
+    }
+    await removeStaleImageAssetVariants(posterTargetPath, result.path);
+
+    const thumbSourceUrl = plan.data.thumb_source_url ?? plan.data.thumb_url;
+    if (thumbSourceUrl) {
+      plan.data.poster_source_url = thumbSourceUrl;
     }
   }
 
