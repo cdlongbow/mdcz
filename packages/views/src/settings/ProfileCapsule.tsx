@@ -98,7 +98,7 @@ export function ProfileCapsule({
         <div className="h-px bg-border/50" />
         <div className="space-y-0.5 pt-2">
           <MenuAction icon={Plus} label="新建配置档案" onClick={() => runAction(onCreateProfile)} />
-          <MenuAction icon={Upload} label="导入 JSON 档案..." onClick={() => runAction(onImportProfile)} />
+          <MenuAction icon={Upload} label="导入配置档案..." onClick={() => runAction(onImportProfile)} />
           <MenuAction icon={Download} label="导出当前档案..." onClick={() => runAction(onExportProfile)} />
           {hasOtherProfiles && (
             <MenuAction icon={Trash2} label="删除配置档案..." onClick={() => runAction(onDeleteProfile)} />

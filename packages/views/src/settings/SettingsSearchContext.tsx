@@ -4,7 +4,6 @@ import {
   useCallback,
   useContext,
   useDeferredValue,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -14,7 +13,6 @@ import { useFormContext, useWatch } from "react-hook-form";
 import { focusSettingFieldElement, focusSettingFieldInDom } from "./focusSettingField";
 import { useSettingsServices } from "./SettingsServices";
 import { buildSettingsBrowseState } from "./settingsBrowseState";
-import type { SettingsDeepLinkSectionId } from "./settingsDeepLink";
 import { getSettingsSuggestions, replaceLastToken, type SettingsSuggestion, valuesEqual } from "./settingsFilter";
 import { FIELD_KEYS, type FieldAnchor, type FieldEntry, flattenConfig } from "./settingsRegistry";
 
@@ -35,7 +33,6 @@ interface SettingsSearchContextValue {
   isFieldModified: (key: string) => boolean;
   isAnchorVisible: (anchor: FieldAnchor) => boolean;
   isAdvancedAnchorVisible: (anchor: FieldAnchor) => boolean;
-  isSectionForceOpen: (sectionId: SettingsDeepLinkSectionId) => boolean;
   focusFirstMatch: () => void;
   registerFieldNode: (key: string, node: HTMLElement | null) => void;
 }
@@ -46,14 +43,12 @@ interface SettingsSearchProviderProps {
   children: ReactNode;
   defaultConfig: Record<string, unknown>;
   defaultConfigReady?: boolean;
-  deepLinkSettingKey?: string | null;
 }
 
 export function SettingsSearchProvider({
   children,
   defaultConfig,
   defaultConfigReady = false,
-  deepLinkSettingKey = null,
 }: SettingsSearchProviderProps) {
   const form = useFormContext<FieldValues>();
   const services = useSettingsServices();
@@ -62,7 +57,6 @@ export function SettingsSearchProvider({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const deferredQuery = useDeferredValue(query);
   const fieldNodesRef = useRef(new Map<string, HTMLElement>());
-  const focusedTargetFieldKeyRef = useRef<string | null>(null);
   const watchedValues = useWatch({
     control: form.control,
     name: FIELD_KEYS,
@@ -91,10 +85,9 @@ export function SettingsSearchProvider({
         query: deferredQuery,
         showAdvanced,
         modifiedKeys,
-        deepLinkSettingKey,
         target,
       }),
-    [deepLinkSettingKey, deferredQuery, modifiedKeys, showAdvanced, target],
+    [deferredQuery, modifiedKeys, showAdvanced, target],
   );
   const {
     parsedQuery,
@@ -105,8 +98,6 @@ export function SettingsSearchProvider({
     hasActiveFilters,
     isAdvancedVisible,
     hasVisibleAdvancedEntries,
-    targetFieldKey,
-    targetSectionId,
   } = browseState;
   const firstMatch = visibleEntries[0] ?? null;
 
@@ -131,39 +122,15 @@ export function SettingsSearchProvider({
     }
   }, [focusRegisteredField, visibleEntries]);
 
-  const registerFieldNode = useCallback(
-    (key: string, node: HTMLElement | null) => {
-      const nodes = fieldNodesRef.current;
-      if (!node) {
-        nodes.delete(key);
-        return;
-      }
-
-      nodes.set(key, node);
-      if (key === targetFieldKey && visibleKeySet.has(key) && focusedTargetFieldKeyRef.current !== key) {
-        if (focusSettingFieldElement(node)) {
-          focusedTargetFieldKeyRef.current = key;
-        }
-      }
-    },
-    [targetFieldKey, visibleKeySet],
-  );
-
-  useEffect(() => {
-    if (!targetFieldKey) {
-      focusedTargetFieldKeyRef.current = null;
+  const registerFieldNode = useCallback((key: string, node: HTMLElement | null) => {
+    const nodes = fieldNodesRef.current;
+    if (!node) {
+      nodes.delete(key);
       return;
     }
 
-    if (focusedTargetFieldKeyRef.current === targetFieldKey || !visibleKeySet.has(targetFieldKey)) {
-      return;
-    }
-
-    const node = fieldNodesRef.current.get(targetFieldKey);
-    if (node && focusSettingFieldElement(node)) {
-      focusedTargetFieldKeyRef.current = targetFieldKey;
-    }
-  }, [targetFieldKey, visibleKeySet]);
+    nodes.set(key, node);
+  }, []);
 
   const isFieldVisible = useCallback((key: string) => visibleKeySet.has(key), [visibleKeySet]);
   const isFieldHighlighted = useCallback(
@@ -179,11 +146,6 @@ export function SettingsSearchProvider({
     (anchor: FieldAnchor) => visibleAdvancedAnchorSet.has(anchor),
     [visibleAdvancedAnchorSet],
   );
-  const isSectionForceOpen = useCallback(
-    (sectionId: SettingsDeepLinkSectionId) => targetSectionId === sectionId,
-    [targetSectionId],
-  );
-
   const value = useMemo<SettingsSearchContextValue>(
     () => ({
       query,
@@ -202,7 +164,6 @@ export function SettingsSearchProvider({
       isFieldModified,
       isAnchorVisible,
       isAdvancedAnchorVisible,
-      isSectionForceOpen,
       focusFirstMatch,
       registerFieldNode,
     }),
@@ -218,7 +179,6 @@ export function SettingsSearchProvider({
       isFieldHighlighted,
       isFieldModified,
       isFieldVisible,
-      isSectionForceOpen,
       parsedQuery,
       query,
       registerFieldNode,

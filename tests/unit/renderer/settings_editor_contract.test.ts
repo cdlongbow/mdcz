@@ -18,7 +18,6 @@ import {
   NetworkTopLevelSection,
   PathsSection,
   ProfileCapsule,
-  resolveSettingsDeepLink,
   resolveSitePriorityOptions,
   runLatestRevisionTask,
   SectionAnchor,
@@ -239,15 +238,6 @@ describe("settings editor metadata and filtering", () => {
     });
     expect(grouped.hasActiveFilters).toBe(true);
     expect(grouped.visibleEntries.map((candidate) => candidate.key)).toEqual(["ui.showLogsPanel"]);
-
-    expect(resolveSettingsDeepLink(" paths.mediaPath ")).toEqual({
-      fieldKey: "paths.mediaPath",
-      sectionId: "paths",
-    });
-    expect(resolveSettingsDeepLink("aggregation.maxParallelCrawlers")).toEqual({
-      fieldKey: null,
-      sectionId: null,
-    });
   });
 
   it("reveals normal conditional rows in search while preserving the advanced visibility gate", () => {

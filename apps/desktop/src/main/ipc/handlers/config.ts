@@ -154,8 +154,11 @@ export const createConfigHandlers = (
         }
 
         const options = {
-          defaultPath: `${name}.json`,
-          filters: [{ name: "JSON", extensions: ["json"] }],
+          defaultPath: `${name}.toml`,
+          filters: [
+            { name: "TOML", extensions: ["toml"] },
+            { name: "JSON", extensions: ["json"] },
+          ],
         };
         const mainWindow = windowService.getMainWindow();
         const result = mainWindow
@@ -166,8 +169,8 @@ export const createConfigHandlers = (
           return { canceled: true as const, filePath: null, profileName: name };
         }
 
-        const filePath =
-          extname(result.filePath).toLowerCase() === ".json" ? result.filePath : `${result.filePath}.json`;
+        const extension = extname(result.filePath).toLowerCase();
+        const filePath = extension === ".toml" || extension === ".json" ? result.filePath : `${result.filePath}.toml`;
 
         await configManager.exportProfile(name, filePath);
 

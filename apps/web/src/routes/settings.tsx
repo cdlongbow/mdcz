@@ -1,5 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { SettingsEditor, SettingsLayout, SettingsServicesProvider } from "@mdcz/views/settings";
+import { SettingsEditor, SettingsLayout, SettingsProfileDialogs, SettingsServicesProvider } from "@mdcz/views/settings";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
@@ -17,7 +17,6 @@ import {
   PROFILE_IMPORT_FILTERS,
   suggestImportProfileName,
 } from "./settingsController";
-import { SettingsProfileDialogs } from "./settingsProfileDialogs";
 
 export const SettingsPage = () => {
   const queryClient = useQueryClient();
@@ -217,7 +216,6 @@ export const SettingsPage = () => {
               data={configQ.data}
               defaultConfig={defaultsQ.data}
               defaultConfigReady={Boolean(defaultsQ.data)}
-              deepLinkSettingKey={null}
               profiles={profiles}
               activeProfile={activeProfile}
               profileLoading={profilesQ.isLoading}

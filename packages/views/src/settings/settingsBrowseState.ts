@@ -1,4 +1,3 @@
-import { resolveSettingsDeepLink, type SettingsDeepLinkSectionId } from "./settingsDeepLink";
 import { getVisibleEntries, parseSettingsQuery } from "./settingsFilter";
 import { FIELD_REGISTRY, type FieldAnchor, type FieldEntry } from "./settingsRegistry";
 
@@ -6,7 +5,6 @@ export interface SettingsBrowseStateInput {
   query: string;
   showAdvanced: boolean;
   modifiedKeys: ReadonlySet<string>;
-  deepLinkSettingKey?: string | null;
   target?: "desktop" | "server";
 }
 
@@ -19,19 +17,15 @@ export interface SettingsBrowseState {
   hasActiveFilters: boolean;
   isAdvancedVisible: boolean;
   hasVisibleAdvancedEntries: boolean;
-  targetFieldKey: string | null;
-  targetSectionId: SettingsDeepLinkSectionId | null;
 }
 
 export function buildSettingsBrowseState({
   query,
   showAdvanced,
   modifiedKeys,
-  deepLinkSettingKey = null,
   target,
 }: SettingsBrowseStateInput): SettingsBrowseState {
   const parsedQuery = parseSettingsQuery(query);
-  const deepLink = resolveSettingsDeepLink(deepLinkSettingKey);
   const visibleEntries = getVisibleEntries(FIELD_REGISTRY, {
     parsedQuery,
     showAdvanced,
@@ -56,7 +50,5 @@ export function buildSettingsBrowseState({
     hasActiveFilters: parsedQuery.hasFilters,
     isAdvancedVisible: showAdvanced,
     hasVisibleAdvancedEntries,
-    targetFieldKey: deepLink.fieldKey,
-    targetSectionId: deepLink.sectionId,
   };
 }

@@ -1,5 +1,5 @@
 import type { SystemAboutResponse } from "@mdcz/shared/serverDtos";
-import { Button, quietHeroRadiusClass, quietPanelRadiusClass } from "@mdcz/ui";
+import { Badge, Button, quietHeroRadiusClass, quietPanelRadiusClass, Switch } from "@mdcz/ui";
 import { Bug, ExternalLink, Github, Server, Sparkles } from "lucide-react";
 import AppLogo from "../assets/logo.png";
 
@@ -92,9 +92,9 @@ export const AboutView = ({
             <div className="flex flex-col items-center gap-1">
               <h1 className="flex items-center gap-3 text-3xl font-bold tracking-tight">
                 {about.productName}
-                <span className="mt-1 rounded-full bg-surface-low px-2.5 py-1 text-xs font-semibold text-muted-foreground">
-                  {compactValue(about.version)}
-                </span>
+                <Badge variant="secondary" className="mt-1 opacity-80">
+                  v{compactValue(about.version)}
+                </Badge>
               </h1>
               <p className="text-xs text-muted-foreground">{loading ? "读取信息中" : ""}</p>
             </div>
@@ -139,13 +139,11 @@ export const AboutView = ({
               <div className="space-y-0.5 px-1">
                 <h2 className="text-sm font-semibold">自动检查更新</h2>
               </div>
-              <input
+              <Switch
                 aria-label="自动检查更新"
                 checked={Boolean(updateCheck)}
-                className="h-5 w-5 accent-primary disabled:opacity-50"
                 disabled={!onUpdateCheckChange || updateCheck === null || updateCheckDisabled}
-                type="checkbox"
-                onChange={(event) => onUpdateCheckChange?.(event.currentTarget.checked)}
+                onCheckedChange={(checked) => onUpdateCheckChange?.(checked)}
               />
             </section>
           )}

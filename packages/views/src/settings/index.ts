@@ -12,6 +12,7 @@ export * from "./SettingRow";
 export * from "./SettingsEditor";
 export * from "./SettingsFooter";
 export * from "./SettingsLayout";
+export * from "./SettingsProfileDialogs";
 export * from "./SettingsSearch";
 export * from "./SettingsSearchContext";
 export * from "./SettingsSectionModeContext";
@@ -21,7 +22,6 @@ export * from "./SitePriorityEditorField";
 export * from "./Subsection";
 export * from "./settingsBrowseState";
 export * from "./settingsContent";
-export * from "./settingsDeepLink";
 export {
   getSettingsSuggestions,
   parseSettingsQuery,

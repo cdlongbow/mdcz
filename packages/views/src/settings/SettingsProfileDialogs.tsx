@@ -1,5 +1,6 @@
 import {
   Button,
+  cn,
   Dialog,
   DialogClose,
   DialogContent,
@@ -14,8 +15,47 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@mdcz/ui";
-import { cn } from "../lib/utils";
-import type { ImportMode } from "./settingsController";
+
+export type SettingsProfileImportMode = "new" | "overwrite";
+
+export interface SettingsProfileImportCopy {
+  title?: string;
+  description?: string;
+  filePlaceholder?: string;
+}
+
+interface SettingsProfileDialogsProps {
+  activeProfile: string | null;
+  deletableProfiles: string[];
+  deleteProfileDialogOpen: boolean;
+  deleteProfileName: string;
+  importDialogOpen: boolean;
+  importFileLabel: string;
+  importFilePath: string;
+  importMode: SettingsProfileImportMode;
+  importProfileName: string;
+  importTargetName: string;
+  newProfileDialogOpen: boolean;
+  newProfileName: string;
+  overwriteProfileName: string;
+  profiles: string[];
+  resetDialogOpen: boolean;
+  importCopy?: SettingsProfileImportCopy;
+  onBrowseImportFile: () => void;
+  onCreateProfile: () => void;
+  onDeleteProfile: () => void;
+  onDeleteProfileDialogOpenChange: (open: boolean) => void;
+  onDeleteProfileNameChange: (name: string) => void;
+  onImportDialogOpenChange: (open: boolean) => void;
+  onImportModeChange: (mode: SettingsProfileImportMode) => void;
+  onImportProfile: () => void;
+  onImportProfileNameChange: (name: string) => void;
+  onNewProfileDialogOpenChange: (open: boolean) => void;
+  onNewProfileNameChange: (name: string) => void;
+  onOverwriteProfileNameChange: (name: string) => void;
+  onReset: () => void;
+  onResetDialogOpenChange: (open: boolean) => void;
+}
 
 const PROFILE_DIALOG_CONTENT_CLASS_NAME =
   "max-w-xl gap-6 rounded-[var(--radius-quiet-xl)] border border-border/40 bg-surface-floating p-7 shadow-[0_32px_90px_-40px_rgba(15,23,42,0.45)]";
@@ -27,39 +67,18 @@ const PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME =
   "rounded-[var(--radius-quiet-capsule)] border-border/40 bg-surface-low px-5";
 const PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME = "rounded-[var(--radius-quiet-capsule)] px-5";
 
-interface SettingsProfileDialogsProps {
-  activeProfile: string | null;
-  deletableProfiles: string[];
-  deleteProfileDialogOpen: boolean;
-  deleteProfileName: string;
-  importDialogOpen: boolean;
-  importFileLabel: string;
-  importFilePath: string;
-  importMode: ImportMode;
-  importProfileName: string;
-  importTargetName: string;
-  newProfileDialogOpen: boolean;
-  newProfileName: string;
-  overwriteProfileName: string;
-  profiles: string[];
-  resetDialogOpen: boolean;
-  onBrowseImportFile: () => void;
-  onCreateProfile: () => void;
-  onDeleteProfile: () => void;
-  onDeleteProfileDialogOpenChange: (open: boolean) => void;
-  onDeleteProfileNameChange: (name: string) => void;
-  onImportDialogOpenChange: (open: boolean) => void;
-  onImportModeChange: (mode: ImportMode) => void;
-  onImportProfile: () => void;
-  onImportProfileNameChange: (name: string) => void;
-  onNewProfileDialogOpenChange: (open: boolean) => void;
-  onNewProfileNameChange: (name: string) => void;
-  onOverwriteProfileNameChange: (name: string) => void;
-  onReset: () => void;
-  onResetDialogOpenChange: (open: boolean) => void;
-}
+const DEFAULT_IMPORT_COPY: Required<SettingsProfileImportCopy> = {
+  title: "导入配置档案",
+  description: "选择一个导出的设置文件（TOML 或 JSON），并决定导入为新档案或覆盖现有档案。",
+  filePlaceholder: "选择一个 TOML/JSON 文件",
+};
 
 export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
+  const importCopy = {
+    ...DEFAULT_IMPORT_COPY,
+    ...props.importCopy,
+  };
+
   return (
     <>
       <Dialog open={props.resetDialogOpen} onOpenChange={props.onResetDialogOpenChange}>
@@ -165,10 +184,8 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
         <DialogContent className={PROFILE_DIALOG_CONTENT_CLASS_NAME}>
           <DialogHeader className="gap-3 text-left">
             <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">配置档案</p>
-            <DialogTitle className="text-2xl font-semibold tracking-tight">导入配置档案</DialogTitle>
-            <DialogDescription className="text-sm leading-6">
-              选择一个导出的设置文件（TOML 或 JSON），并决定导入为新档案或覆盖现有档案。
-            </DialogDescription>
+            <DialogTitle className="text-2xl font-semibold tracking-tight">{importCopy.title}</DialogTitle>
+            <DialogDescription className="text-sm leading-6">{importCopy.description}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -178,7 +195,7 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
                 <Input
                   value={props.importFileLabel}
                   readOnly
-                  placeholder="选择一个 TOML/JSON 文件"
+                  placeholder={importCopy.filePlaceholder}
                   className={cn(PROFILE_DIALOG_INPUT_CLASS_NAME, "font-mono text-xs")}
                 />
                 <Button

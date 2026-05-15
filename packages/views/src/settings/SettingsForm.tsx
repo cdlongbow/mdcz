@@ -31,21 +31,15 @@ export function SettingsForm({ extraContent, flatDefaults, initialUseCustomTitle
         <SettingsEmptyState />
       ) : (
         <>
-          <PathsTopLevelSection forceOpen={search.isSectionForceOpen("paths")} />
-          <ScrapeTopLevelSection siteOptions={siteOptions} forceOpen={search.isSectionForceOpen("scrape")} />
-          <NetworkTopLevelSection forceOpen={search.isSectionForceOpen("network")} />
-          <TranslateTopLevelSection forceOpen={search.isSectionForceOpen("translate")} />
-          <NamingTopLevelSection forceOpen={search.isSectionForceOpen("naming")} />
-          <DownloadTopLevelSection forceOpen={search.isSectionForceOpen("download")} />
-          <FileBehaviorTopLevelSection forceOpen={search.isSectionForceOpen("fileBehavior")} />
-          <SystemTopLevelSection
-            initialUseCustomTitleBar={initialUseCustomTitleBar}
-            forceOpen={search.isSectionForceOpen("system")}
-          />
-          <AdvancedTopLevelSection
-            siteOptions={siteOptions}
-            forceOpen={search.isSectionForceOpen("advancedSettings")}
-          />
+          <PathsTopLevelSection />
+          <ScrapeTopLevelSection siteOptions={siteOptions} />
+          <NetworkTopLevelSection />
+          <TranslateTopLevelSection />
+          <NamingTopLevelSection />
+          <DownloadTopLevelSection />
+          <FileBehaviorTopLevelSection />
+          <SystemTopLevelSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
+          <AdvancedTopLevelSection siteOptions={siteOptions} />
         </>
       )}
 
