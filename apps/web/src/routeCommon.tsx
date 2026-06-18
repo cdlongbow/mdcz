@@ -1,17 +1,18 @@
 import type { ScanTaskDto, TaskKind } from "@mdcz/shared";
-import type { AnchorHTMLAttributes, ReactNode } from "react";
+import { Link } from "@tanstack/react-router";
+import type { ComponentProps, ReactNode } from "react";
 
 import { buildHref } from "./routeHelpers";
 
-type AppLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
+type AppLinkProps = Omit<ComponentProps<typeof Link>, "to" | "search"> & {
   to: string;
   search?: Record<string, string | undefined>;
 };
 
 export const AppLink = ({ to, search, className, children, ...props }: AppLinkProps) => (
-  <a className={className} href={buildHref(to, search)} {...props}>
+  <Link className={className} to={buildHref(to, search)} {...props}>
     {children}
-  </a>
+  </Link>
 );
 
 export const ErrorBanner = ({ children }: { children: ReactNode }) => (

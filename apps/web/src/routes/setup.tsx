@@ -17,7 +17,7 @@ import {
   Progress,
 } from "@mdcz/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { api } from "../client";
@@ -26,6 +26,7 @@ import { ErrorBanner } from "../routeCommon";
 // Web-only route: setup is the server first-run wizard for admin auth and mounted media-root registration.
 // Desktop persists local settings directly and has no browser-accessible first-run/auth boundary.
 export const SetupPage = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const setupQ = useQuery({ queryKey: ["setup"], queryFn: () => api.setup.status(), retry: false });
   const [step, setStep] = useState(0);
@@ -60,7 +61,7 @@ export const SetupPage = () => {
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries();
-      window.location.href = "/";
+      await navigate({ to: "/", replace: true });
     },
   });
 

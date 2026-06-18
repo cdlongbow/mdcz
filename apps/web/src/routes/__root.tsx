@@ -1,7 +1,8 @@
 import { AppShell, type ShellLinkProps, ThemeProvider } from "@mdcz/views/shell";
 import { useQuery } from "@tanstack/react-query";
-import { createRootRoute, Outlet } from "@tanstack/react-router";
+import { createRootRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { useEffect } from "react";
 import { api } from "../client";
 import { LoginPage } from "../components/auth/LoginPage";
 import { useWebTaskSync } from "../hooks/useWebTaskSync";
@@ -9,14 +10,33 @@ import { useWebTaskSync } from "../hooks/useWebTaskSync";
 const PUBLIC_PATHS = new Set(["/setup", "/login"]);
 
 const ShellLink = ({ to, className, onFocus, onMouseEnter, children }: ShellLinkProps) => (
-  <a className={className} href={to} onFocus={onFocus} onMouseEnter={onMouseEnter}>
+  <Link className={className} to={to} preload="intent" onFocus={onFocus} onMouseEnter={onMouseEnter}>
     {children}
-  </a>
+  </Link>
 );
 
 export const RootLayout = ({ children }: { children: ReactNode }) => {
-  const pathname = window.location.pathname;
+  const navigate = useNavigate();
+  const location = useLocation();
+  const pathname = location.pathname;
   const authQ = useQuery({ queryKey: ["auth", "status"], queryFn: () => api.auth.status(), retry: false });
+  const setupRequired = Boolean(authQ.data?.setupRequired);
+  const authenticated = Boolean(authQ.data?.authenticated);
+
+  useEffect(() => {
+    if (authQ.isLoading || !authQ.data) {
+      return;
+    }
+
+    if (setupRequired && pathname !== "/setup") {
+      void navigate({ to: "/setup", replace: true });
+      return;
+    }
+
+    if (!setupRequired && pathname === "/setup") {
+      void navigate({ to: "/", replace: true });
+    }
+  }, [authQ.data, authQ.isLoading, navigate, pathname, setupRequired]);
 
   if (authQ.isLoading) {
     return (
@@ -26,18 +46,16 @@ export const RootLayout = ({ children }: { children: ReactNode }) => {
     );
   }
 
-  if (authQ.data?.setupRequired && pathname !== "/setup") {
-    window.location.replace("/setup");
+  if (setupRequired && pathname !== "/setup") {
     return null;
   }
 
-  if (!authQ.data?.setupRequired && pathname === "/setup") {
-    window.location.replace("/");
+  if (!setupRequired && pathname === "/setup") {
     return null;
   }
 
-  if (!authQ.data?.setupRequired && !authQ.data?.authenticated && !PUBLIC_PATHS.has(pathname)) {
-    return <LoginPage />;
+  if (!setupRequired && !authenticated && !PUBLIC_PATHS.has(pathname)) {
+    return <LoginPage nextPath={pathname} />;
   }
 
   if (PUBLIC_PATHS.has(pathname)) {

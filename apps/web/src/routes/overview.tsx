@@ -7,7 +7,7 @@ import {
   RecentAcquisitionsGrid,
 } from "@mdcz/views/overview";
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api, getLibraryAssetSrc } from "../client";
@@ -26,6 +26,7 @@ export const hasWorkbenchOutput = (input: {
   input.recentCount > 0;
 
 export function OverviewPage() {
+  const navigate = useNavigate();
   const [removeTarget, setRemoveTarget] = useState<OverviewRecentAcquisitionDto | null>(null);
   const setupQ = useQuery({ queryKey: ["setup"], queryFn: () => api.setup.status(), retry: false });
   const overviewQ = useQuery({
@@ -53,15 +54,15 @@ export function OverviewPage() {
             isLoading={setupQ.isLoading || overviewQ.isLoading}
             labels={{ startAction: "去工作台", setupAction: "去初始化" }}
             onSetup={() => {
-              window.location.href = "/setup";
+              void navigate({ to: "/setup" });
             }}
             onStart={() => {
-              window.location.href = "/workbench";
+              void navigate({ to: "/workbench" });
             }}
           />
           <OverviewMaintenanceCard
             onOpen={() => {
-              window.location.href = buildHref("/workbench", { intent: "maintenance" });
+              void navigate({ to: buildHref("/workbench", { intent: "maintenance" }) });
             }}
           />
         </section>

@@ -1,11 +1,13 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { Button, Form, FormControl, FormField, FormItem, FormLabel, FormMessage, PasswordInput } from "@mdcz/ui";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { api } from "../../client";
 import { ErrorBanner } from "../../routeCommon";
 
 export const LoginPage = ({ nextPath = "/" }: { nextPath?: string }) => {
+  const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
 
@@ -20,7 +22,7 @@ export const LoginPage = ({ nextPath = "/" }: { nextPath?: string }) => {
     setIsPending(true);
     try {
       await api.auth.login({ password: values.password });
-      window.location.href = nextPath;
+      await navigate({ to: nextPath, replace: true });
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
