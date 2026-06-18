@@ -30,6 +30,40 @@ const summarizeImpitError = (message: string): string | null => {
   return null;
 };
 
+export const DomainErrorCode = {
+  CONFIG_VALIDATION: "CONFIG_VALIDATION",
+} as const;
+
+export type DomainErrorCodeType = (typeof DomainErrorCode)[keyof typeof DomainErrorCode];
+
+export interface DomainErrorShape<TDetails extends Record<string, unknown> = Record<string, unknown>> {
+  code: DomainErrorCodeType;
+  message: string;
+  details?: TDetails;
+}
+
+export interface ConfigValidationDomainErrorDetails extends Record<string, unknown> {
+  fields: string[];
+  fieldErrors?: Record<string, string>;
+}
+
+export type ConfigValidationDomainError = DomainErrorShape<ConfigValidationDomainErrorDetails> & {
+  code: typeof DomainErrorCode.CONFIG_VALIDATION;
+};
+
+export const toConfigValidationDomainError = (input: {
+  message: string;
+  fields: string[];
+  fieldErrors?: Record<string, string>;
+}): ConfigValidationDomainError => ({
+  code: DomainErrorCode.CONFIG_VALIDATION,
+  message: input.message,
+  details: {
+    fields: input.fields,
+    fieldErrors: input.fieldErrors,
+  },
+});
+
 export function formatErrorMessage(message: string): string {
   const normalized = normalizeWhitespace(message)
     .replace(ELECTRON_REMOTE_METHOD_PREFIX, "")

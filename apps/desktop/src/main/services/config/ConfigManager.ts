@@ -6,22 +6,21 @@ import { getDesktopUserDataPath } from "@main/appIdentity";
 import { IpcErrorCode } from "@main/ipc/errors";
 import { loggerService } from "@main/services/LoggerService";
 import { toErrorMessage } from "@main/utils/common";
-import {
-  getRuntimeConfigProperty,
-  mergeRuntimeConfig,
-  parseRuntimeConfiguration,
-  RuntimeConfigProfileStore,
-  RuntimeConfigValidationError,
-  setRuntimeConfigProperty,
-} from "@mdcz/runtime/config";
+import { RuntimeConfigProfileStore, RuntimeConfigService, RuntimeConfigValidationError } from "@mdcz/runtime/config";
+import { toConfigValidationDomainError } from "@mdcz/shared/error";
 import { ComputedConfig, type ComputedConfiguration } from "./computed";
-import { type Configuration, type DeepPartial, defaultConfiguration, getConfigurationPathDefault } from "./models";
+import { type Configuration, type DeepPartial, defaultConfiguration } from "./models";
 
 const CONFIG_DIRECTORY_META_FILE = ".config-directory.json";
 const DEFAULT_CONFIG_DIRECTORY = "config";
 
 export class ConfigValidationError extends RuntimeConfigValidationError {
   readonly code = IpcErrorCode.CONFIG_VALIDATION_ERROR;
+  readonly domainError = toConfigValidationDomainError({
+    message: this.message,
+    fields: this.fields,
+    fieldErrors: this.fieldErrors,
+  });
 }
 
 export class ConfigManager extends EventEmitter {
@@ -35,7 +34,20 @@ export class ConfigManager extends EventEmitter {
 
   private configDirectory = DEFAULT_CONFIG_DIRECTORY;
 
-  private store = this.createStore();
+  private readonly config = new RuntimeConfigService({
+    store: this.createStore(),
+    onBeforeSave: (configuration) => {
+      this.configuration = configuration;
+      this.syncConfigDirectoryFromConfiguration();
+      this.config.replaceStore(this.createStore());
+    },
+    onAfterSave: async (configuration) => {
+      await this.persistConfigDirectory();
+      return this.applyLoadedConfiguration(configuration);
+    },
+    onAfterLoad: (configuration) => this.applyLoadedConfiguration(configuration),
+    mapValidationError: (error) => new ConfigValidationError(error.message, error.fields, error.fieldErrors),
+  });
 
   private activeProfileName: string | undefined;
 
@@ -59,7 +71,7 @@ export class ConfigManager extends EventEmitter {
       return this.configuration;
     }
 
-    return getRuntimeConfigProperty(this.configuration as unknown as Record<string, unknown>, path);
+    return await this.config.get(path);
   }
 
   async getValidated(): Promise<Configuration> {
@@ -73,11 +85,7 @@ export class ConfigManager extends EventEmitter {
   async save(partial: DeepPartial<Configuration>): Promise<void> {
     await this.ensureLoaded();
 
-    this.configuration = this.parseConfiguration(mergeRuntimeConfig(this.configuration, partial));
-    this.syncConfigDirectoryFromConfiguration();
-    this.store = this.createStore();
-    this.configuration = await this.saveToStore(this.configuration);
-    this.computedConfig.invalidate();
+    await this.config.update(partial);
     this.notify();
   }
 
@@ -85,28 +93,12 @@ export class ConfigManager extends EventEmitter {
     await this.ensureLoaded();
 
     if (!path) {
-      this.configuration = defaultConfiguration;
-      this.syncConfigDirectoryFromConfiguration();
-      this.store = this.createStore();
-      this.configuration = await this.saveToStore(this.configuration);
-      this.computedConfig.invalidate();
+      await this.config.reset();
       this.notify();
       return;
     }
 
-    const resetDefault = getConfigurationPathDefault(path);
-    if (!resetDefault.found) {
-      throw new Error(`Path not found: ${path}`);
-    }
-
-    const next = JSON.parse(JSON.stringify(this.configuration)) as Record<string, unknown>;
-    setRuntimeConfigProperty(next, path, resetDefault.value);
-
-    this.configuration = this.parseConfiguration(next);
-    this.syncConfigDirectoryFromConfiguration();
-    this.store = this.createStore();
-    this.configuration = await this.saveToStore(this.configuration);
-    this.computedConfig.invalidate();
+    await this.config.reset(path);
     this.notify();
   }
 
@@ -120,44 +112,41 @@ export class ConfigManager extends EventEmitter {
   list(): { configPath: string; dataDir: string } {
     const dataDir = this.getDataDirectory();
     return {
-      configPath: this.store.configPath,
+      configPath: this.config.configPath,
       dataDir,
     };
   }
 
   async listProfiles(): Promise<{ profiles: string[]; active: string }> {
     await this.ensureLoaded();
-    return await this.store.listProfiles();
+    return await this.config.listProfiles();
   }
 
   async createProfile(name: string): Promise<void> {
     await this.ensureLoaded();
-    const result = await this.store.createProfile(name);
+    const result = await this.config.createProfile(name);
     this.logger.info(`Created profile: ${result.profileName}`);
   }
 
   async switchProfile(name: string): Promise<void> {
     await this.ensureLoaded();
-    this.configuration = await this.loadFromStore(() => this.store.switchProfile(name));
-    this.activeProfileName = this.store.activeProfile;
+    await this.config.switchProfile(name);
     this.syncConfigDirectoryFromConfiguration();
-    this.store = this.createStore();
-    this.configuration = await this.saveToStore(this.configuration);
-    this.computedConfig.invalidate();
+    this.config.replaceStore(this.createStore());
+    await this.config.saveFull(this.configuration);
     this.logger.info(`Switched to profile: ${name}`);
     this.notify();
   }
 
   async deleteProfile(name: string): Promise<void> {
     await this.ensureLoaded();
-    const result = await this.store.deleteProfile(name);
+    const result = await this.config.deleteProfile(name);
     this.logger.info(`Deleted profile: ${result.profileName}`);
   }
 
   async exportProfile(name: string, destinationPath: string): Promise<void> {
     await this.ensureLoaded();
-    const configuration = name === this.store.activeProfile ? this.configuration : undefined;
-    await this.store.exportProfileToFile(name, destinationPath, configuration);
+    await this.config.exportProfile(name, destinationPath);
     this.logger.info(`Exported profile: ${name} -> ${destinationPath}`);
   }
 
@@ -168,21 +157,16 @@ export class ConfigManager extends EventEmitter {
   ): Promise<{ profileName: string; overwritten: boolean; active: boolean }> {
     await this.ensureLoaded();
 
-    const result = await this.loadFromStore(() =>
-      this.store.importProfileFromFile({
-        sourcePath,
-        name,
-        overwrite,
-      }),
-    );
+    const result = await this.config.importProfileFromFile({
+      sourcePath,
+      name,
+      overwrite,
+    });
 
     if (result.active) {
-      this.configuration = await this.loadFromStore(() => this.store.load());
-      this.activeProfileName = this.store.activeProfile;
       this.syncConfigDirectoryFromConfiguration();
-      this.store = this.createStore();
-      this.configuration = await this.saveToStore(this.configuration);
-      this.computedConfig.invalidate();
+      this.config.replaceStore(this.createStore());
+      await this.config.saveFull(this.configuration);
       this.notify();
     }
 
@@ -251,54 +235,32 @@ export class ConfigManager extends EventEmitter {
     );
   }
 
-  private async saveToStore(configuration: Configuration): Promise<Configuration> {
-    const saved = await this.loadFromStore(() => this.store.save(configuration));
-    await this.persistConfigDirectory();
-    return saved;
-  }
-
   private async loadInternal(): Promise<void> {
     await this.loadConfigDirectory();
-    this.store = this.createStore();
-    await this.store.cleanupInvalidNonActiveProfiles(this.logger);
+    this.config.replaceStore(this.createStore());
+    await this.config.cleanupInvalidNonActiveProfiles(this.logger);
 
     try {
-      this.configuration = await this.loadFromStore(() => this.store.load());
-      this.activeProfileName = this.store.activeProfile;
+      await this.config.load();
       this.syncConfigDirectoryFromConfiguration();
-      this.store = this.createStore();
-      this.configuration = await this.saveToStore(this.configuration);
-      this.computedConfig.invalidate();
+      this.config.replaceStore(this.createStore());
+      await this.config.saveFull(this.configuration);
     } catch (error) {
       const message = toErrorMessage(error);
       this.logger.warn(`Failed to load config; using in-memory defaults: ${message}`);
       this.configuration = defaultConfiguration;
       this.syncConfigDirectoryFromConfiguration();
-      this.store = this.createStore();
+      this.config.replaceStore(this.createStore());
       this.computedConfig.invalidate();
     }
   }
 
-  private parseConfiguration(value: unknown): Configuration {
-    try {
-      return parseRuntimeConfiguration(value);
-    } catch (error) {
-      if (error instanceof RuntimeConfigValidationError) {
-        throw new ConfigValidationError(error.message, error.fields, error.fieldErrors);
-      }
-      throw error;
-    }
-  }
-
-  private async loadFromStore<T>(operation: () => Promise<T>): Promise<T> {
-    try {
-      return await operation();
-    } catch (error) {
-      if (error instanceof RuntimeConfigValidationError) {
-        throw new ConfigValidationError(error.message, error.fields, error.fieldErrors);
-      }
-      throw error;
-    }
+  private applyLoadedConfiguration(configuration: Configuration): Configuration {
+    this.configuration = configuration;
+    this.activeProfileName = this.config.activeProfile;
+    this.syncConfigDirectoryFromConfiguration();
+    this.computedConfig.invalidate();
+    return this.configuration;
   }
 }
 

@@ -1,4 +1,3 @@
-import { extname } from "node:path";
 import { type Configuration, configurationSchema } from "./config";
 
 export type ConfigurationFileFormat = "json" | "toml";
@@ -10,7 +9,9 @@ export const CONFIGURATION_FILE_EXTENSIONS: Record<ConfigurationFileFormat, stri
 };
 
 export const inferConfigurationFileFormat = (filePath: string): ConfigurationFileFormat => {
-  const extension = extname(filePath).toLowerCase();
+  const normalized = filePath.split(/[\\/]/u).at(-1) ?? filePath;
+  const dotIndex = normalized.lastIndexOf(".");
+  const extension = dotIndex >= 0 ? normalized.slice(dotIndex).toLowerCase() : "";
   return extension === CONFIGURATION_FILE_EXTENSIONS.json ? "json" : "toml";
 };
 

@@ -1,7 +1,13 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "@mdcz/shared/config";
+import {
+  type Configuration,
+  configurationSchema,
+  type DeepPartial,
+  defaultConfiguration,
+  getConfigurationPathDefault,
+} from "@mdcz/shared/config";
 import {
   CONFIGURATION_FILE_EXTENSIONS,
   type ConfigurationFileFormat,
@@ -230,6 +236,191 @@ export interface RuntimeProfileExportOutput {
 export interface RuntimeCleanupLogger {
   info(message: string): void;
   warn(message: string): void;
+}
+
+export interface RuntimeConfigServiceOptions {
+  store: RuntimeConfigProfileStore;
+  onBeforeLoad?: () => Promise<void> | void;
+  onAfterLoad?: (configuration: Configuration) => Promise<Configuration | undefined> | Configuration | undefined;
+  onBeforeSave?: (configuration: Configuration) => Promise<void> | void;
+  onAfterSave?: (configuration: Configuration) => Promise<Configuration | undefined> | Configuration | undefined;
+  mapValidationError?: (error: RuntimeConfigValidationError) => Error;
+}
+
+export class RuntimeConfigService {
+  private configuration: Configuration | null = null;
+  private store: RuntimeConfigProfileStore;
+
+  constructor(private readonly options: RuntimeConfigServiceOptions) {
+    this.store = options.store;
+  }
+
+  get activeProfile(): string {
+    return this.store.activeProfile;
+  }
+
+  get configPath(): string {
+    return this.store.configPath;
+  }
+
+  replaceStore(store: RuntimeConfigProfileStore): void {
+    this.store = store;
+  }
+
+  async load(): Promise<Configuration> {
+    this.configuration = await this.runWithValidation(async () => {
+      await this.options.onBeforeLoad?.();
+      const loaded = await this.store.load();
+      return await this.applyAfterLoad(loaded);
+    });
+    return this.configuration;
+  }
+
+  async get(): Promise<Configuration>;
+  async get(propertyPath: string): Promise<unknown>;
+  async get(propertyPath?: string): Promise<Configuration | unknown> {
+    if (!this.configuration) {
+      await this.load();
+    }
+
+    const configuration = this.configuration ?? defaultConfiguration;
+    if (!propertyPath) {
+      return configuration;
+    }
+
+    return getRuntimeConfigProperty(configuration as unknown as Record<string, unknown>, propertyPath);
+  }
+
+  async saveFull(configuration: Configuration): Promise<Configuration> {
+    this.configuration = await this.runWithValidation(async () => {
+      const parsed = parseRuntimeConfiguration(configuration);
+      await this.options.onBeforeSave?.(parsed);
+      const saved = await this.store.save(parsed);
+      return await this.applyAfterSave(saved);
+    });
+    return this.configuration;
+  }
+
+  defaults(): Configuration {
+    return defaultConfiguration;
+  }
+
+  async update(patch: DeepPartial<Configuration>): Promise<Configuration> {
+    return await this.runWithValidation(async () => {
+      const current = await this.get();
+      return await this.saveFull(parseRuntimeConfiguration(mergeRuntimeConfig(current, patch)));
+    });
+  }
+
+  async previewNaming(patch: DeepPartial<Configuration>): Promise<{ items: NamingPreviewItem[] }> {
+    return await this.runWithValidation(async () => buildRuntimeNamingPreview(await this.get(), patch));
+  }
+
+  async reset(propertyPath?: string): Promise<Configuration> {
+    if (!propertyPath) {
+      return await this.saveFull(defaultConfiguration);
+    }
+
+    const resetDefault = getConfigurationPathDefault(propertyPath);
+    if (!resetDefault.found) {
+      throw new Error(`Path not found: ${propertyPath}`);
+    }
+
+    return await this.runWithValidation(async () => {
+      const current = JSON.parse(JSON.stringify(await this.get())) as Record<string, unknown>;
+      setRuntimeConfigProperty(current, propertyPath, resetDefault.value);
+      return await this.saveFull(parseRuntimeConfiguration(current));
+    });
+  }
+
+  async import(content: string, format: ConfigurationFileFormat = "toml"): Promise<Configuration> {
+    return await this.runWithValidation(
+      async () => await this.saveFull(parseRuntimeConfigurationContent(content, format)),
+    );
+  }
+
+  async export(): Promise<string> {
+    return (await this.store.exportProfile(this.store.activeProfile, await this.get())).content;
+  }
+
+  async listProfiles(): Promise<RuntimeProfileListOutput> {
+    return await this.store.listProfiles();
+  }
+
+  async createProfile(name: string): Promise<{ profileName: string }> {
+    return await this.store.createProfile(name);
+  }
+
+  async switchProfile(name: string): Promise<Configuration> {
+    this.configuration = await this.runWithValidation(async () => {
+      const switched = await this.store.switchProfile(name);
+      return await this.applyAfterLoad(switched);
+    });
+    return this.configuration;
+  }
+
+  async deleteProfile(name: string): Promise<{ profileName: string }> {
+    return await this.store.deleteProfile(name);
+  }
+
+  async exportProfile(name: string, destinationPath?: string): Promise<RuntimeProfileExportOutput | undefined> {
+    const configuration = name === this.store.activeProfile ? await this.get() : undefined;
+    if (destinationPath) {
+      await this.store.exportProfileToFile(name, destinationPath, configuration);
+      return;
+    }
+    return await this.store.exportProfile(name, configuration);
+  }
+
+  async importProfile(input: {
+    name: string;
+    content: string;
+    fileName?: string;
+    overwrite?: boolean;
+  }): Promise<RuntimeProfileImportOutput> {
+    const result = await this.runWithValidation(() => this.store.importProfile(input));
+    if (result.active) {
+      this.configuration = await this.load();
+    }
+    return result;
+  }
+
+  async importProfileFromFile(input: {
+    sourcePath: string;
+    name: string;
+    overwrite?: boolean;
+  }): Promise<RuntimeProfileImportOutput> {
+    const result = await this.runWithValidation(() => this.store.importProfileFromFile(input));
+    if (result.active) {
+      this.configuration = await this.load();
+    }
+    return result;
+  }
+
+  async cleanupInvalidNonActiveProfiles(logger?: RuntimeCleanupLogger): Promise<void> {
+    await this.store.cleanupInvalidNonActiveProfiles(logger);
+  }
+
+  private async applyAfterLoad(configuration: Configuration): Promise<Configuration> {
+    const next = await this.options.onAfterLoad?.(configuration);
+    return next ?? configuration;
+  }
+
+  private async applyAfterSave(configuration: Configuration): Promise<Configuration> {
+    const next = await this.options.onAfterSave?.(configuration);
+    return next ?? configuration;
+  }
+
+  private async runWithValidation<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (error instanceof RuntimeConfigValidationError && this.options.mapValidationError) {
+        throw this.options.mapValidationError(error);
+      }
+      throw error;
+    }
+  }
 }
 
 export class RuntimeConfigProfileStore {

@@ -1,22 +1,9 @@
 import { homedir } from "node:os";
 import path from "node:path";
-import {
-  buildRuntimeNamingPreview,
-  getRuntimeConfigProperty,
-  mergeRuntimeConfig,
-  parseRuntimeConfiguration,
-  parseRuntimeConfigurationContent,
-  RuntimeConfigProfileStore,
-  RuntimeConfigValidationError,
-  setRuntimeConfigProperty,
-} from "@mdcz/runtime/config";
-import {
-  type Configuration,
-  type DeepPartial,
-  defaultConfiguration,
-  getConfigurationPathDefault,
-} from "@mdcz/shared/config";
+import { RuntimeConfigProfileStore, RuntimeConfigService, RuntimeConfigValidationError } from "@mdcz/runtime/config";
+import type { Configuration, DeepPartial } from "@mdcz/shared/config";
 import { CONFIGURATION_FILE_EXTENSIONS } from "@mdcz/shared/configCodec";
+import { toConfigValidationDomainError } from "@mdcz/shared/error";
 
 export interface ServerRuntimePaths {
   configDir: string;
@@ -48,7 +35,13 @@ export const resolveServerRuntimePaths = (options: ResolveServerRuntimePathsOpti
   };
 };
 
-export class ServerConfigValidationError extends RuntimeConfigValidationError {}
+export class ServerConfigValidationError extends RuntimeConfigValidationError {
+  readonly domainError = toConfigValidationDomainError({
+    message: this.message,
+    fields: this.fields,
+    fieldErrors: this.fieldErrors,
+  });
+}
 
 const DEFAULT_PROFILE_NAME = "default";
 
@@ -70,13 +63,15 @@ export interface ProfileExportOutput {
 }
 
 export class ServerConfigService {
-  private configuration: Configuration | null = null;
-  private readonly store: RuntimeConfigProfileStore;
+  private readonly config: RuntimeConfigService;
 
   constructor(private readonly paths: ServerRuntimePaths = resolveServerRuntimePaths()) {
-    this.store = new RuntimeConfigProfileStore({
-      configDir: paths.configDir,
-      dataDir: paths.dataDir,
+    this.config = new RuntimeConfigService({
+      store: new RuntimeConfigProfileStore({
+        configDir: paths.configDir,
+        dataDir: paths.dataDir,
+      }),
+      mapValidationError: (error) => new ServerConfigValidationError(error.message, error.fields, error.fieldErrors),
     });
   }
 
@@ -85,94 +80,63 @@ export class ServerConfigService {
   }
 
   async load(): Promise<Configuration> {
-    this.configuration = await this.runWithServerValidation(() => this.store.load());
-    return this.configuration;
+    return await this.config.load();
   }
 
   async get(): Promise<Configuration>;
   async get(propertyPath: string): Promise<unknown>;
   async get(propertyPath?: string): Promise<Configuration | unknown> {
-    if (!this.configuration) {
-      await this.load();
-    }
-
-    const configuration = this.configuration ?? defaultConfiguration;
-    if (!propertyPath) {
-      return configuration;
-    }
-
-    return getRuntimeConfigProperty(configuration as unknown as Record<string, unknown>, propertyPath);
+    return propertyPath ? await this.config.get(propertyPath) : await this.config.get();
   }
 
   async save(configuration: Configuration): Promise<Configuration> {
-    this.configuration = await this.runWithServerValidation(() => this.store.save(configuration));
-    return this.configuration;
+    return await this.config.saveFull(configuration);
   }
 
   defaults(): Configuration {
-    return defaultConfiguration;
+    return this.config.defaults();
   }
 
   async update(patch: DeepPartial<Configuration>): Promise<Configuration> {
-    return await this.runWithServerValidation(async () => {
-      const current = await this.get();
-      return await this.save(parseRuntimeConfiguration(mergeRuntimeConfig(current, patch)));
-    });
+    return await this.config.update(patch);
   }
 
   async previewNaming(
     patch: DeepPartial<Configuration>,
   ): Promise<{ items: import("@mdcz/shared/types").NamingPreviewItem[] }> {
-    return await this.runWithServerValidation(async () => buildRuntimeNamingPreview(await this.get(), patch));
+    return await this.config.previewNaming(patch);
   }
 
   async reset(propertyPath?: string): Promise<Configuration> {
-    if (!propertyPath) {
-      return await this.save(defaultConfiguration);
-    }
-
-    const resetDefault = getConfigurationPathDefault(propertyPath);
-    if (!resetDefault.found) {
-      throw new Error(`Path not found: ${propertyPath}`);
-    }
-
-    return await this.runWithServerValidation(async () => {
-      const current = JSON.parse(JSON.stringify(await this.get())) as Record<string, unknown>;
-      setRuntimeConfigProperty(current, propertyPath, resetDefault.value);
-      return await this.save(parseRuntimeConfiguration(current));
-    });
+    return await this.config.reset(propertyPath);
   }
 
   async import(content: string): Promise<Configuration> {
-    return await this.runWithServerValidation(
-      async () => await this.save(parseRuntimeConfigurationContent(content, "toml")),
-    );
+    return await this.config.import(content);
   }
 
   async export(): Promise<string> {
-    return (await this.store.exportProfile(this.store.activeProfile, await this.get())).content;
+    return await this.config.export();
   }
 
   async listProfiles(): Promise<ProfileListOutput> {
-    return await this.store.listProfiles();
+    return await this.config.listProfiles();
   }
 
   async createProfile(name: string): Promise<{ profileName: string }> {
-    return await this.store.createProfile(name);
+    return await this.config.createProfile(name);
   }
 
   async switchProfile(name: string): Promise<Configuration> {
-    this.configuration = await this.runWithServerValidation(() => this.store.switchProfile(name));
-    return this.configuration;
+    return await this.config.switchProfile(name);
   }
 
   async deleteProfile(name: string): Promise<{ profileName: string }> {
-    return await this.store.deleteProfile(name);
+    return await this.config.deleteProfile(name);
   }
 
   async exportProfile(name: string): Promise<ProfileExportOutput> {
-    const configuration = name === this.store.activeProfile ? await this.get() : undefined;
-    return await this.store.exportProfile(name, configuration);
+    return (await this.config.exportProfile(name)) as ProfileExportOutput;
   }
 
   async importProfile(input: {
@@ -181,22 +145,7 @@ export class ServerConfigService {
     fileName?: string;
     overwrite?: boolean;
   }): Promise<ProfileImportOutput> {
-    const result = await this.runWithServerValidation(() => this.store.importProfile(input));
-    if (result.active) {
-      this.configuration = await this.load();
-    }
-    return result;
-  }
-
-  private async runWithServerValidation<T>(operation: () => Promise<T>): Promise<T> {
-    try {
-      return await operation();
-    } catch (error) {
-      if (error instanceof RuntimeConfigValidationError) {
-        throw new ServerConfigValidationError(error.message, error.fields, error.fieldErrors);
-      }
-      throw error;
-    }
+    return await this.config.importProfile(input);
   }
 }
 

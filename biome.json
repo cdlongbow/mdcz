@@ -53,6 +53,172 @@
           }
         }
       }
+    },
+    {
+      "includes": [
+        "apps/web/src/**/*.ts",
+        "apps/web/src/**/*.tsx",
+        "!apps/web/src/**/*.test.ts",
+        "!apps/web/src/**/*.test.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noNodejsModules": "error"
+          },
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@mdcz/runtime": "WebUI must call runtime behavior through the server API.",
+                  "@mdcz/persistence": "Persistence is server/desktop-only.",
+                  "@mdcz/media-store": "Media store is host filesystem code.",
+                  "@main": "Desktop main aliases are Electron-only.",
+                  "@renderer": "Desktop renderer aliases are not WebUI dependencies.",
+                  "@mdcz/server": "Server code must not be bundled into WebUI.",
+                  "@mdcz/server/router": {
+                    "allowImportNames": ["AppRouter"],
+                    "message": "WebUI may only import the temporary AppRouter type contract from @mdcz/server/router."
+                  },
+                  "electron": "Electron APIs are desktop-only."
+                },
+                "patterns": [
+                  {
+                    "group": ["@mdcz/runtime/*"],
+                    "message": "WebUI must call runtime behavior through the server API."
+                  },
+                  {
+                    "group": ["@mdcz/persistence/*"],
+                    "message": "Persistence is server/desktop-only."
+                  },
+                  {
+                    "group": ["@mdcz/media-store/*"],
+                    "message": "Media store is host filesystem code."
+                  },
+                  {
+                    "group": ["@main/*"],
+                    "message": "Desktop main aliases are Electron-only."
+                  },
+                  {
+                    "group": ["@renderer/*"],
+                    "message": "Desktop renderer aliases are not WebUI dependencies."
+                  },
+                  {
+                    "group": ["@mdcz/server/*", "!@mdcz/server/router"],
+                    "message": "Server code must not be bundled into WebUI."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/shared/**/*.ts", "packages/shared/**/*.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noNodejsModules": "error"
+          },
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@mdcz/runtime": "Shared is below runtime.",
+                  "@mdcz/persistence": "Shared must not depend on persistence.",
+                  "@mdcz/media-store": "Shared DTOs must not import host filesystem packages.",
+                  "@mdcz/ui": "Shared must stay UI-free.",
+                  "@mdcz/views": "Shared must stay view-free.",
+                  "react": "Shared must not export React composition.",
+                  "react-dom": "Shared must not export React composition.",
+                  "electron": "Shared must be runtime-neutral.",
+                  "@main": "Desktop aliases are app-only.",
+                  "@renderer": "Desktop aliases are app-only."
+                },
+                "patterns": [
+                  {
+                    "group": ["@mdcz/runtime/*"],
+                    "message": "Shared is below runtime."
+                  },
+                  {
+                    "group": ["@mdcz/persistence/*"],
+                    "message": "Shared must not depend on persistence."
+                  },
+                  {
+                    "group": ["@mdcz/media-store/*"],
+                    "message": "Shared DTOs must not import host filesystem packages."
+                  },
+                  {
+                    "group": ["@mdcz/ui/*"],
+                    "message": "Shared must stay UI-free."
+                  },
+                  {
+                    "group": ["@mdcz/views/*"],
+                    "message": "Shared must stay view-free."
+                  },
+                  {
+                    "group": ["react/*", "react-dom/*"],
+                    "message": "Shared must not export React composition."
+                  },
+                  {
+                    "group": ["@main/*", "@renderer/*"],
+                    "message": "Desktop aliases are app-only."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/runtime/src/**/*.ts", "packages/runtime/src/**/*.tsx"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@mdcz/server": "Runtime must not depend on server transport.",
+                  "@mdcz/ui": "Runtime must not depend on UI packages.",
+                  "@mdcz/views": "Runtime must not depend on view packages.",
+                  "react": "Runtime must not depend on React.",
+                  "react-dom": "Runtime must not depend on React.",
+                  "electron": "Runtime must stay Electron-free.",
+                  "@main": "Desktop aliases are app-only.",
+                  "@renderer": "Desktop aliases are app-only."
+                },
+                "patterns": [
+                  {
+                    "group": ["@mdcz/server/*"],
+                    "message": "Runtime must not depend on server transport."
+                  },
+                  {
+                    "group": ["@mdcz/ui/*"],
+                    "message": "Runtime must not depend on UI packages."
+                  },
+                  {
+                    "group": ["@mdcz/views/*"],
+                    "message": "Runtime must not depend on view packages."
+                  },
+                  {
+                    "group": ["react/*", "react-dom/*"],
+                    "message": "Runtime must not depend on React."
+                  },
+                  {
+                    "group": ["@main/*", "@renderer/*"],
+                    "message": "Desktop aliases are app-only."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }
