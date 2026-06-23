@@ -99,6 +99,7 @@ const releasePackage = {
     "drizzle-orm": dependencyVersion("drizzle-orm", serverPackage),
     fastify: dependencyVersion("fastify", serverPackage),
     impit: dependencyVersion("impit", runtimePackage),
+    sharp: dependencyVersion("sharp", serverPackage, runtimePackage),
   },
   engines: {
     node: ">=24",

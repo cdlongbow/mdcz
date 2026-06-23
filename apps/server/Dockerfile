@@ -23,7 +23,7 @@ RUN npm install --omit=dev --no-audit --no-fund --no-package-lock
 # stage 3: minimal runtime
 FROM node:24-bookworm-slim
 LABEL org.opencontainers.image.source="https://github.com/ShotHeadman/mdcz"
-LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.licenses="GPL-3.0-only"
 WORKDIR /app
 COPY --from=deps /app /app
 ENV NODE_ENV=production \

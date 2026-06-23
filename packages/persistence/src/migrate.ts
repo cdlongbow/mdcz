@@ -10,6 +10,7 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const migrationFolderCandidates = [
   resolve(packageRoot, "drizzle"),
+  resolve(process.cwd(), "apps/server/dist/persistence/drizzle"),
   resolve(process.cwd(), "dist/persistence/drizzle"),
   resolve(process.cwd(), "persistence/drizzle"),
 ];

@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
@@ -15,7 +15,14 @@ const contentTypes: Record<string, string> = {
   ".webp": "image/webp",
 };
 
-export const defaultWebStaticDir = (): string => path.resolve(process.env.MDCZ_WEB_DIST_DIR ?? "dist/web");
+export const defaultWebStaticDir = (): string => {
+  if (process.env.MDCZ_WEB_DIST_DIR) {
+    return path.resolve(process.env.MDCZ_WEB_DIST_DIR);
+  }
+
+  const candidates = [path.resolve("apps/server/dist/web"), path.resolve("dist/web"), path.resolve("web")];
+  return candidates.find((candidate) => existsSync(path.join(candidate, "index.html"))) ?? path.resolve("dist/web");
+};
 
 const isPathInside = (root: string, candidate: string): boolean => {
   const relative = path.relative(root, candidate);
