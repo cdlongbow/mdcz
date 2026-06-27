@@ -7,11 +7,11 @@ import { findExistingNfoPath, nfoGenerator } from "@main/services/scraper/NfoGen
 import { toErrorMessage } from "@main/utils/common";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles } from "@main/utils/file";
 import { parseNfo, parseNfoSnapshot } from "@main/utils/nfo";
-import { isGeneratedSidecarVideo } from "@mdcz/runtime/scrape";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
 import type { CrawlerData, MediaCandidate } from "@mdcz/shared/types";
+import { isPrimaryVideoFileName } from "@mdcz/shared/videoClassification";
 import { dialog } from "electron";
 import { createIpcError, IpcErrorCode } from "../errors";
 import { asSerializableIpcError, t } from "../shared";
@@ -121,7 +121,7 @@ export const createFileHandlers = (
           await assertDirectory(dirPath);
 
           const discoveredPaths = await listVideoFiles(dirPath, true, DEFAULT_VIDEO_EXTENSIONS);
-          const uniquePaths = [...new Set(discoveredPaths.filter((filePath) => !isGeneratedSidecarVideo(filePath)))];
+          const uniquePaths = [...new Set(discoveredPaths.filter((filePath) => isPrimaryVideoFileName(filePath)))];
           const candidates: MediaCandidate[] = [];
 
           for (const filePath of uniquePaths) {

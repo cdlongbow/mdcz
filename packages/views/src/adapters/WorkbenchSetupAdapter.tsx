@@ -2,7 +2,6 @@ import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { formatBytes } from "@mdcz/shared/format";
 import {
-  filterMediaCandidates,
   mergeMediaCandidates,
   resolveMediaCandidateScanPlan,
   resolveSuccessTargetDir,
@@ -145,8 +144,8 @@ export function WorkbenchSetupAdapter({
           ...scanPlan.extraScanDirs.map((dirPath) => port.scanCandidates(dirPath)),
         ]);
         const nextCandidates = mergeMediaCandidates(
-          filterMediaCandidates(primaryResult.candidates, scanPlan.filterDirPaths),
-          ...extraResults.map((result) => filterMediaCandidates(result.candidates, scanPlan.filterDirPaths)),
+          primaryResult.candidates,
+          ...extraResults.map((result) => result.candidates),
         );
         const nextSupportedExtensions = [
           ...new Set(

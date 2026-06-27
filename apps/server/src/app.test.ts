@@ -943,6 +943,7 @@ describe("buildServer", () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-scan-root-"));
     await mkdir(join(root, "nested"));
     await writeFile(join(root, "nested", "movie.mp4"), "video");
+    await writeFile(join(root, "nested", "trailer.mp4"), "trailer");
     await writeFile(join(root, "nested", "notes.txt"), "text");
     const { fastify } = await createTestServer();
     const loginResponse = await fastify.inject({
@@ -1087,8 +1088,11 @@ describe("buildServer", () => {
   it("lists ad-hoc scan candidates and filters non-media files", async () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-candidates-root-"));
     await mkdir(join(root, "nested"), { recursive: true });
+    await mkdir(join(root, "JAV_output"), { recursive: true });
     await writeFile(join(root, "nested", "movie.mp4"), "video");
+    await writeFile(join(root, "nested", "trailer.mp4"), "trailer");
     await writeFile(join(root, "nested", "notes.txt"), "text");
+    await writeFile(join(root, "JAV_output", "done.mp4"), "video");
     const { fastify } = await createTestServer();
     const loginResponse = await fastify.inject({
       method: "POST",
@@ -1107,16 +1111,28 @@ describe("buildServer", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().result.data.candidates).toEqual([
-      expect.objectContaining({
-        name: "movie.mp4",
-        relativePath: "nested/movie.mp4",
-        rootId,
-        rootRelativePath: "nested/movie.mp4",
-        relativeDirectory: "nested",
-        extension: "mp4",
-      }),
-    ]);
+    const candidates = response.json().result.data.candidates;
+    expect(candidates).toHaveLength(2);
+    expect(candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "movie.mp4",
+          relativePath: "nested/movie.mp4",
+          rootId,
+          rootRelativePath: "nested/movie.mp4",
+          relativeDirectory: "nested",
+          extension: "mp4",
+        }),
+        expect.objectContaining({
+          name: "done.mp4",
+          relativePath: "JAV_output/done.mp4",
+          rootId,
+          rootRelativePath: "JAV_output/done.mp4",
+          relativeDirectory: "JAV_output",
+          extension: "mp4",
+        }),
+      ]),
+    );
   });
 
   it("returns no ad-hoc scan candidates for empty directories", async () => {

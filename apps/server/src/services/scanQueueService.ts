@@ -12,7 +12,7 @@ import type {
   TaskEventDto,
   TaskEventListResponse,
 } from "@mdcz/shared/serverDtos";
-import { isVideoFileName } from "@mdcz/shared/videoClassification";
+import { isPrimaryVideoFileName } from "@mdcz/shared/videoClassification";
 import type { TaskEventBus } from "../taskEvents";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
@@ -123,7 +123,9 @@ export class ScanQueueService {
       files
         .filter((file) => {
           const extension = path.extname(file.relativePath).replace(/^\./u, "").toLowerCase();
-          return supported.size > 0 ? supported.has(extension) : isVideoFileName(path.basename(file.relativePath));
+          return supported.size > 0
+            ? supported.has(extension) && isPrimaryVideoFileName(path.basename(file.relativePath))
+            : isPrimaryVideoFileName(path.basename(file.relativePath));
         })
         .map(async (file) => {
           const absolutePath = path.resolve(hostPath, file.relativePath);
@@ -223,7 +225,7 @@ export class ScanQueueService {
   private async scanDirectory(root: MediaRoot): Promise<ScanDirectoryResult> {
     const files = await listRootFiles(root, "", true);
     const videos = files
-      .filter((file) => isVideoFileName(path.basename(file.relativePath)))
+      .filter((file) => isPrimaryVideoFileName(path.basename(file.relativePath)))
       .map((file) => ({
         relativePath: file.relativePath,
         size: file.size,
