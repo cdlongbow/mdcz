@@ -11,6 +11,7 @@ on:
       - "package.json"
       - "pnpm-workspace.yaml"
       - "pnpm-lock.yaml"
+      - "scripts/**"
       - "mise.toml"
       - "tsconfig.json"
       - "tsconfig.node.json"
@@ -212,7 +213,9 @@ jobs:
           ### No-Docker self-hosters
 
           - Download `mdcz-${{ needs.version.outputs.version }}.tar.gz`.
-          - Follow the bundled README for Node/service setup and re-run `npm install --omit=dev` after extracting.
+          - This is a lightweight Node bundle and does not include `node_modules` or a bundled Node runtime.
+          - Install Node.js 24 or newer, extract the archive, then run `./install.sh` (Linux/macOS) or `.\install.ps1` (Windows). The setup helper skips Node handling when a compatible Node is already installed.
+          - Start with `./start.sh` or `.\start.bat`; follow the bundled README for systemd and environment configuration.
 
           NOTES
 

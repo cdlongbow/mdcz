@@ -19,6 +19,37 @@
 
 ## 快速开始
 
+### 下载使用
+
+WebUI / 自托管用户推荐使用 Docker：
+
+```bash
+docker run -d \
+  --name mdcz \
+  -p 3838:3838 \
+  -v mdcz-data:/data \
+  --restart unless-stopped \
+  ghcr.io/shotheadman/mdcz:latest
+```
+
+打开 `http://localhost:3838`。如需不用 Docker，可下载 `mdcz-<version>.tar.gz`，安装 Node.js 24 或更新版本。解压后运行安装脚本；
+
+```bash
+tar -xzf mdcz-<version>.tar.gz
+cd mdcz-<version>
+./install.sh
+./start.sh
+```
+
+Windows 使用：
+
+```powershell
+.\install.ps1
+.\start.bat
+```
+
+### 本地开发
+
 ```bash
 pnpm install
 pnpm dev:webui

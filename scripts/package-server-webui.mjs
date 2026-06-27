@@ -65,6 +65,8 @@ const serverDist = resolve(repoRoot, "apps/server/dist");
 await requirePath(resolve(serverDist, "server.js"), "Server bundle");
 await requirePath(resolve(serverDist, "web/index.html"), "WebUI bundle");
 await requirePath(resolve(serverDist, "persistence/drizzle"), "Drizzle migrations");
+await requirePath(resolve(templatesDir, "install.sh"), "install.sh template");
+await requirePath(resolve(templatesDir, "install.ps1"), "install.ps1 template");
 await requirePath(resolve(templatesDir, "start.sh"), "start.sh template");
 await requirePath(resolve(templatesDir, "start.bat"), "start.bat template");
 await requirePath(resolve(templatesDir, "mdcz.service"), "mdcz.service template");
@@ -78,10 +80,13 @@ await cp(resolve(serverDist, "web"), resolve(stagingDir, "web"), { recursive: tr
 await cp(resolve(serverDist, "persistence/drizzle"), resolve(stagingDir, "persistence/drizzle"), { recursive: true });
 await cp(resolve(repoRoot, "apps/server/.env.example"), resolve(stagingDir, ".env.example"));
 await cp(resolve(templatesDir, "README.md"), resolve(stagingDir, "README.md"));
+await cp(resolve(templatesDir, "install.sh"), resolve(stagingDir, "install.sh"));
+await cp(resolve(templatesDir, "install.ps1"), resolve(stagingDir, "install.ps1"));
 await cp(resolve(templatesDir, "start.sh"), resolve(stagingDir, "start.sh"));
 await cp(resolve(templatesDir, "start.bat"), resolve(stagingDir, "start.bat"));
 await mkdir(resolve(stagingDir, "systemd"), { recursive: true });
 await cp(resolve(templatesDir, "mdcz.service"), resolve(stagingDir, "systemd/mdcz.service"));
+await chmod(resolve(stagingDir, "install.sh"), 0o755);
 await chmod(resolve(stagingDir, "start.sh"), 0o755);
 
 const releasePackage = {
