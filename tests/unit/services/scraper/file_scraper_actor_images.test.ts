@@ -7,13 +7,12 @@ import { configurationSchema, defaultConfiguration } from "@main/services/config
 import { SignalService } from "@main/services/SignalService";
 import type { AggregationService } from "@main/services/scraper/aggregation";
 import type { DownloadManager } from "@main/services/scraper/DownloadManager";
-import type { FileOrganizer, OrganizePlan } from "@main/services/scraper/FileOrganizer";
 import { createFileScraper } from "@main/services/scraper/FileScraper";
 import type { NfoGenerator } from "@main/services/scraper/NfoGenerator";
-import type { TranslateService } from "@main/services/scraper/TranslateService";
 import * as imageUtils from "@main/utils/image";
-import { Website } from "@shared/enums";
-import type { CrawlerData } from "@shared/types";
+import type { FileOrganizer, OrganizePlan, TranslateService } from "@mdcz/runtime/scrape";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData } from "@mdcz/shared/types";
 import { app } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockConfigManager } from "./helpers";
@@ -32,7 +31,7 @@ const createUserDataDir = async (): Promise<string> => {
   return userDataDir;
 };
 
-const readValidPngBytes = async (): Promise<Buffer> => readFile(join(process.cwd(), "build", "icon.png"));
+const readValidPngBytes = async (): Promise<Buffer> => readFile(join(process.cwd(), "apps/desktop/build/icon.png"));
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Sample Title",

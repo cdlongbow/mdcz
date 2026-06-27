@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseConfigurationContent } from "@mdcz/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockUserDataPath = "";
@@ -51,7 +52,7 @@ describe("ConfigManager configDirectory", () => {
       },
     });
 
-    const expectedConfigPath = join(mockUserDataPath, "custom-config", "default.json");
+    const expectedConfigPath = join(mockUserDataPath, "custom-config", "default.toml");
     const expectedMetaPath = join(mockUserDataPath, ".config-directory.json");
 
     expect(await fileExists(expectedConfigPath)).toBe(true);
@@ -69,7 +70,7 @@ describe("ConfigManager configDirectory", () => {
     const manager = new ConfigManager();
     await manager.createProfile("windows-dev");
 
-    expect(await fileExists(join(mockUserDataPath, "config", "windows-dev.json"))).toBe(true);
+    expect(await fileExists(join(mockUserDataPath, "config", "windows-dev.toml"))).toBe(true);
 
     const createdProfiles = await manager.listProfiles();
     expect(createdProfiles.profiles).toEqual(expect.arrayContaining(["default", "windows-dev"]));
@@ -79,7 +80,7 @@ describe("ConfigManager configDirectory", () => {
 
     const switchedProfiles = await manager.listProfiles();
     expect(switchedProfiles.active).toBe("windows-dev");
-    expect(manager.list().configPath).toBe(join(mockUserDataPath, "config", "windows-dev.json"));
+    expect(manager.list().configPath).toBe(join(mockUserDataPath, "config", "windows-dev.toml"));
 
     await expect(manager.deleteProfile("windows-dev")).rejects.toThrow("Cannot delete the active profile");
 
@@ -88,10 +89,10 @@ describe("ConfigManager configDirectory", () => {
 
     const deletedProfiles = await manager.listProfiles();
     expect(deletedProfiles.profiles).toEqual(["default"]);
-    expect(await fileExists(join(mockUserDataPath, "config", "windows-dev.json"))).toBe(false);
+    expect(await fileExists(join(mockUserDataPath, "config", "windows-dev.toml"))).toBe(false);
   });
 
-  it("exports the active profile as formatted JSON", async () => {
+  it("exports the active profile as TOML by default", async () => {
     const { ConfigManager } = await import("@main/services/config/ConfigManager");
 
     const manager = new ConfigManager();
@@ -105,12 +106,12 @@ describe("ConfigManager configDirectory", () => {
     });
 
     const exportDir = join(mockUserDataPath, "exports");
-    const exportPath = join(exportDir, "quiet-settings.json");
+    const exportPath = join(exportDir, "quiet-settings.toml");
     await mkdir(exportDir, { recursive: true });
 
     await manager.exportProfile("default", exportPath);
 
-    const exported = JSON.parse(await readFile(exportPath, "utf8"));
+    const exported = parseConfigurationContent(await readFile(exportPath, "utf8"), "toml");
     expect(exported.naming.fileTemplate).toBe("{number}-{title}");
     expect(exported.ui.hideMenu).toBe(true);
   });
@@ -154,18 +155,102 @@ describe("ConfigManager configDirectory", () => {
     expect(reloaded.ui.hideMenu).toBe(true);
   });
 
+  it("loads a partial current-shape config and persists schema defaults", async () => {
+    const configDir = join(mockUserDataPath, "config");
+    const configPath = join(configDir, "default.json");
+    await mkdir(configDir, { recursive: true });
+
+    await writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          paths: {
+            configDirectory: "config",
+          },
+          ui: {
+            hideMenu: true,
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const { ConfigManager } = await import("@main/services/config/ConfigManager");
+
+    const manager = new ConfigManager();
+    const configuration = await manager.getValidated();
+    const persisted = parseConfigurationContent(await readFile(join(configDir, "default.toml"), "utf8"), "toml");
+
+    expect(configuration.ui.hideMenu).toBe(true);
+    expect(configuration.network.timeout).toBe(10);
+    expect(configuration.download.downloadThumb).toBe(true);
+    expect(persisted.ui.hideMenu).toBe(true);
+    expect(persisted.network.timeout).toBe(10);
+    expect(persisted.download.downloadThumb).toBe(true);
+  });
+
+  it("loads configs with unknown legacy keys without converting old fields", async () => {
+    const configDir = join(mockUserDataPath, "config");
+    const configPath = join(configDir, "default.json");
+    await mkdir(configDir, { recursive: true });
+
+    await writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          configVersion: 99,
+          download: {
+            downloadCover: false,
+            downloadNfo: false,
+          },
+          server: {
+            url: "http://192.168.1.100:8096",
+          },
+          paths: {
+            configDirectory: "config",
+          },
+          translate: {
+            llmMaxTry: 9,
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const { ConfigManager } = await import("@main/services/config/ConfigManager");
+
+    const manager = new ConfigManager();
+    const configuration = await manager.getValidated();
+    const persisted = parseConfigurationContent(await readFile(join(configDir, "default.toml"), "utf8"), "toml");
+
+    expect(configuration.download.downloadThumb).toBe(true);
+    expect(configuration.download.generateNfo).toBe(true);
+    expect(configuration.translate.llmMaxRetries).toBe(3);
+    expect(persisted).not.toHaveProperty("configVersion");
+    expect(persisted).not.toHaveProperty("server");
+    expect(persisted.download).not.toHaveProperty("downloadCover");
+    expect(persisted.download).not.toHaveProperty("downloadNfo");
+    expect(persisted.translate).not.toHaveProperty("llmMaxTry");
+  });
+
   it("does not overwrite an unreadable active config file", async () => {
     const configDir = join(mockUserDataPath, "config");
     const configPath = join(configDir, "default.json");
     await mkdir(configDir, { recursive: true });
 
-    const futureConfig = {
-      configVersion: 99,
+    const invalidConfig = {
       paths: {
         configDirectory: "config",
       },
+      jellyfin: {
+        userId: "not-a-uuid",
+      },
     };
-    await writeFile(configPath, JSON.stringify(futureConfig, null, 2), "utf8");
+    await writeFile(configPath, JSON.stringify(invalidConfig, null, 2), "utf8");
 
     const { ConfigManager } = await import("@main/services/config/ConfigManager");
 
@@ -174,20 +259,22 @@ describe("ConfigManager configDirectory", () => {
     const persisted = JSON.parse(await readFile(configPath, "utf8"));
 
     expect(configuration.paths.configDirectory).toBe("config");
-    expect(persisted).toEqual(futureConfig);
+    expect(persisted).toEqual(invalidConfig);
   });
 
-  it("preserves other profiles with unsupported future config versions during cleanup", async () => {
+  it("removes invalid non-active profile files during cleanup", async () => {
     const configDir = join(mockUserDataPath, "config");
-    const futureProfilePath = join(configDir, "windows-dev.json");
+    const invalidProfilePath = join(configDir, "windows-dev.json");
     await mkdir(configDir, { recursive: true });
     await writeFile(
-      futureProfilePath,
+      invalidProfilePath,
       JSON.stringify(
         {
-          configVersion: 99,
           paths: {
             configDirectory: "config",
+          },
+          jellyfin: {
+            userId: "not-a-uuid",
           },
         },
         null,
@@ -201,8 +288,8 @@ describe("ConfigManager configDirectory", () => {
     const manager = new ConfigManager();
     const profiles = await manager.listProfiles();
 
-    expect(profiles.profiles).toContain("windows-dev");
-    expect(await fileExists(futureProfilePath)).toBe(true);
+    expect(profiles.profiles).not.toContain("windows-dev");
+    expect(await fileExists(invalidProfilePath)).toBe(false);
   });
 
   it("retries ensureLoaded after an initial load failure", async () => {

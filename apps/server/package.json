@@ -1,0 +1,34 @@
+{
+  "name": "@mdcz/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "pnpm run build:node",
+    "build:node": "vite build --config vite.config.ts",
+    "build:web": "pnpm --filter @mdcz/web build --outDir ../server/dist/web --emptyOutDir=true",
+    "build:webui": "pnpm run build:web && pnpm run build:node",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@mdcz/media-store": "workspace:*",
+    "@mdcz/persistence": "workspace:*",
+    "@mdcz/runtime": "workspace:*",
+    "@mdcz/shared": "workspace:*",
+    "@trpc/server": "^11.16.0",
+    "better-sqlite3": "^12.9.0",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "^5.8.5",
+    "impit": "^0.13.0",
+    "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.1",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.0",
+    "vite": "^7.0.0",
+    "vitest": "^4.0.0"
+  }
+}

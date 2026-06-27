@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LocalScanService } from "@main/services/scraper/maintenance/LocalScanService";
+import { LocalScanService } from "@mdcz/runtime/maintenance";
 import { afterEach, describe, expect, it } from "vitest";
 
 const tempDirs: string[] = [];

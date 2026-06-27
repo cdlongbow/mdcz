@@ -2,10 +2,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
-import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
-import type { CrawlerInput, CrawlerResponse, SiteAdapter } from "@main/services/crawler/base/types";
-import { NetworkClient } from "@main/services/network";
-import { Website } from "@shared/enums";
+import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
+import type { CrawlerInput, CrawlerResponse, SiteAdapter } from "@mdcz/runtime/crawler/base/types";
+import { NetworkClient } from "@mdcz/runtime/network";
+import { Website } from "@mdcz/shared/enums";
 import { afterEach, describe, expect, it } from "vitest";
 
 const tempDirs: string[] = [];

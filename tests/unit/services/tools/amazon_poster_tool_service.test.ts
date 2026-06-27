@@ -1,10 +1,10 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { NetworkClient } from "@main/services/network";
 import type { AmazonJpImageService } from "@main/services/scraper/AmazonJpImageService";
 import { AmazonPosterToolService } from "@main/services/tools/AmazonPosterToolService";
-import { Website } from "@shared/enums";
+import type { NetworkClient } from "@mdcz/runtime/network";
+import { Website } from "@mdcz/shared/enums";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { validateImageMock } = vi.hoisted(() => ({

@@ -1,12 +1,11 @@
-import { randomBytes } from "node:crypto";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   PosterImageDerivationService,
   resolveThumbToPosterCropRegion,
-} from "@main/services/scraper/download/PosterImageDerivationService";
-import sharp from "sharp";
+} from "@mdcz/runtime/scrape/download/assets/PosterImageDerivationService";
+import { validateImage } from "@mdcz/runtime/scrape/utils/image";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const tempDirs: string[] = [];
@@ -17,29 +16,26 @@ const createTempDir = async (): Promise<string> => {
   return dirPath;
 };
 
-const writeRandomJpeg = async (filePath: string, width: number, height: number): Promise<void> => {
-  await sharp(randomBytes(width * height * 3), {
-    raw: {
-      width,
-      height,
-      channels: 3,
-    },
-  })
-    .jpeg({ quality: 95, chromaSubsampling: "4:4:4" })
-    .toFile(filePath);
+const writeSvgImage = async (filePath: string, width: number, height: number, fill = "#7799cc"): Promise<void> => {
+  await writeFile(
+    filePath,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="${fill}"/></svg>`,
+    "utf8",
+  );
+};
+
+const writeLargeSvgImage = async (filePath: string, width: number, height: number): Promise<void> => {
+  await writeFile(
+    filePath,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><metadata>${"x".repeat(
+      55_000,
+    )}</metadata><rect width="100%" height="100%" fill="#445577"/></svg>`,
+    "utf8",
+  );
 };
 
 const writeSmallPoster = async (filePath: string): Promise<void> => {
-  await sharp({
-    create: {
-      width: 147,
-      height: 200,
-      channels: 3,
-      background: "#7799cc",
-    },
-  })
-    .jpeg({ quality: 80 })
-    .toFile(filePath);
+  await writeSvgImage(filePath, 147, 200);
 };
 
 const createSubject = () => {
@@ -63,7 +59,7 @@ describe("PosterImageDerivationService", () => {
     const root = await createTempDir();
     const thumbPath = join(root, "thumb.jpg");
     const posterPath = join(root, "poster.jpg");
-    await writeRandomJpeg(thumbPath, 800, 538);
+    await writeSvgImage(thumbPath, 800, 538, "#445577");
     await writeSmallPoster(posterPath);
 
     const { service } = createSubject();
@@ -74,19 +70,18 @@ describe("PosterImageDerivationService", () => {
     });
 
     expect(result).toEqual({ status: "derived", path: posterPath });
-    await expect(sharp(posterPath).metadata()).resolves.toMatchObject({
+    await expect(validateImage(posterPath, 0)).resolves.toMatchObject({
+      valid: true,
       width: 379,
       height: 538,
-      format: "jpeg",
     });
-    expect((await stat(posterPath)).size).toBeGreaterThan(50_000);
   });
 
   it("uses a centered crop for near-square thumbs", async () => {
     const root = await createTempDir();
     const thumbPath = join(root, "thumb.jpg");
     const posterPath = join(root, "poster.jpg");
-    await writeRandomJpeg(thumbPath, 600, 720);
+    await writeSvgImage(thumbPath, 600, 720, "#445577");
     await writeSmallPoster(posterPath);
 
     const { service } = createSubject();
@@ -98,10 +93,10 @@ describe("PosterImageDerivationService", () => {
       }),
     ).resolves.toEqual({ status: "derived", path: posterPath });
 
-    await expect(sharp(posterPath).metadata()).resolves.toMatchObject({
+    await expect(validateImage(posterPath, 0)).resolves.toMatchObject({
+      valid: true,
       width: 480,
       height: 720,
-      format: "jpeg",
     });
   });
 
@@ -109,7 +104,7 @@ describe("PosterImageDerivationService", () => {
     const root = await createTempDir();
     const thumbPath = join(root, "thumb.jpg");
     const posterPath = join(root, "poster.jpg");
-    await writeRandomJpeg(thumbPath, 200, 300);
+    await writeSvgImage(thumbPath, 200, 300, "#445577");
     await writeSmallPoster(posterPath);
     const before = await readFile(posterPath);
 
@@ -129,8 +124,8 @@ describe("PosterImageDerivationService", () => {
     const root = await createTempDir();
     const thumbPath = join(root, "thumb.jpg");
     const posterPath = join(root, "poster.jpg");
-    await writeRandomJpeg(thumbPath, 800, 538);
-    await writeRandomJpeg(posterPath, 400, 700);
+    await writeSvgImage(thumbPath, 800, 538, "#445577");
+    await writeLargeSvgImage(posterPath, 400, 700);
     expect((await stat(posterPath)).size).toBeGreaterThanOrEqual(50_000);
     const before = await readFile(posterPath);
 

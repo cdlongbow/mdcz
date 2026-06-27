@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "rootDir": "../..",
+    "outDir": "dist"
+  },
+  "include": [
+    "src/**/*.ts",
+    "../../packages/persistence/**/*.ts",
+    "../../packages/runtime/**/*.ts",
+    "../../packages/shared/**/*.ts",
+    "../../packages/media-store/**/*.ts"
+  ],
+  "exclude": ["../../packages/shared/stores/**/*"]
+}

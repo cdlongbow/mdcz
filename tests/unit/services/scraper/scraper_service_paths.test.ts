@@ -1,10 +1,10 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
-import { NetworkClient } from "@main/services/network";
 import { SignalService } from "@main/services/SignalService";
 import { ScraperService } from "@main/services/scraper/ScraperService";
+import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
+import { NetworkClient } from "@mdcz/runtime/network";
 import { afterEach, describe, expect, it } from "vitest";
 
 const tempDirs: string[] = [];

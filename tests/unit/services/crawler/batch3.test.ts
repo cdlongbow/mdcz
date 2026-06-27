@@ -1,5 +1,5 @@
-import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
-import { Website } from "@shared/enums";
+import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
+import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
 import { Batch3FixtureNetworkClient } from "./fixtures";

@@ -6,7 +6,7 @@ import {
   isDmmRegionBlockedHtml,
   isDmmUnrenderedShellHtml,
   isDmmUsableDetailHtml,
-} from "@main/services/crawler/sites/dmm/failureClassifier";
+} from "@mdcz/runtime/crawler/sites/dmm/failureClassifier";
 import { describe, expect, it } from "vitest";
 
 describe("DMM failure classifier", () => {

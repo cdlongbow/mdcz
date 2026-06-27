@@ -1,6 +1,6 @@
-import { DmmTvCrawler } from "@main/services/crawler/sites/dmm/dmm_tv";
-import { NetworkClient } from "@main/services/network";
-import { Website } from "@shared/enums";
+import { DmmTvCrawler } from "@mdcz/runtime/crawler/sites/dmm/dmm_tv";
+import { NetworkClient } from "@mdcz/runtime/network";
+import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
 import { FixtureNetworkClient, withGateway } from "./fixtures";

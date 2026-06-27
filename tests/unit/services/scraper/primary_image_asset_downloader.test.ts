@@ -1,10 +1,10 @@
 import { join } from "node:path";
-import { defaultConfiguration } from "@main/services/config";
-import { PrimaryImageAssetDownloader } from "@main/services/scraper/download/assets/PrimaryImageAssetDownloader";
-import type { DownloadExecutionContext } from "@main/services/scraper/download/assets/types";
-import type { PosterImageDerivationService } from "@main/services/scraper/download/PosterImageDerivationService";
-import { Website } from "@shared/enums";
-import type { CrawlerData, DownloadedAssets } from "@shared/types";
+import type { PosterImageDerivationService } from "@mdcz/runtime/scrape/download/assets/PosterImageDerivationService";
+import { PrimaryImageAssetDownloader } from "@mdcz/runtime/scrape/download/assets/PrimaryImageAssetDownloader";
+import type { DownloadExecutionContext } from "@mdcz/runtime/scrape/download/assets/types";
+import { defaultConfiguration } from "@mdcz/shared/config";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData, DownloadedAssets } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 
 describe("PrimaryImageAssetDownloader", () => {

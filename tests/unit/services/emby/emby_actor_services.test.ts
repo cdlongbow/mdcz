@@ -1,8 +1,8 @@
 import type { ActorLookupResult, ActorSourceProvider } from "@main/services/actorSource";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { checkConnection, EmbyActorInfo, EmbyActorPhoto } from "@main/services/mediaServer/emby";
-import type { NetworkClient } from "@main/services/network";
 import { SignalService } from "@main/services/SignalService";
+import type { NetworkClient } from "@mdcz/runtime/network";
 import { describe, expect, it, vi } from "vitest";
 
 const createConfig = (overrides: Record<string, unknown> = {}) =>

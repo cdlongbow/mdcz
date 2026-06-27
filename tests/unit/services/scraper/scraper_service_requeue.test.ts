@@ -2,16 +2,16 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configManager, configurationSchema, defaultConfiguration } from "@main/services/config";
-import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
-import { NetworkClient } from "@main/services/network";
 import { SignalService } from "@main/services/SignalService";
 import { AggregationService } from "@main/services/scraper/aggregation";
 import type { FileScraperDependencies } from "@main/services/scraper/FileScraper";
 import * as FileScraperModule from "@main/services/scraper/FileScraper";
 import { FileScraper } from "@main/services/scraper/FileScraper";
 import { ScraperService } from "@main/services/scraper/ScraperService";
-import { Website } from "@shared/enums";
-import type { ScrapeResult } from "@shared/types";
+import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
+import { NetworkClient } from "@mdcz/runtime/network";
+import { Website } from "@mdcz/shared/enums";
+import type { ScrapeResult } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const deferred = <T>() => {

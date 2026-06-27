@@ -13,11 +13,16 @@ node_modules/
 pnpm-debug.log*
 
 # Build artifacts
+dist/
 out/
 release/
 
+# Generated native bindings (Electron-ABI better_sqlite3.node from postinstall)
+apps/desktop/native/
+
 # Runtime scratch data
 logs/
+!packages/views/src/logs/
 tmp/
 .tmp/
 

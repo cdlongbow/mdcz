@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./tsconfig.node.json" },
+    { "path": "./tsconfig.desktop-renderer.json" },
     { "path": "./tsconfig.web.json" },
     { "path": "./tsconfig.test.json" }
   ],
@@ -20,10 +21,21 @@
     "allowSyntheticDefaultImports": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/renderer/src/*"],
-      "@main/*": ["src/main/*"],
-      "@renderer/*": ["src/renderer/src/*"],
-      "@shared/*": ["packages/shared/*"]
+      "@/*": ["apps/desktop/src/renderer/src/*"],
+      "@main/*": ["apps/desktop/src/main/*"],
+      "@renderer/*": ["apps/desktop/src/renderer/src/*"],
+      "@mdcz/persistence": ["packages/persistence/src/index.ts"],
+      "@mdcz/persistence/test": ["packages/persistence/src/testDatabase.ts"],
+      "@mdcz/runtime": ["packages/runtime/src/index.ts"],
+      "@mdcz/runtime/*": ["packages/runtime/src/*"],
+      "@mdcz/server/router": ["apps/server/src/router.ts"],
+      "@mdcz/shared": ["packages/shared/index.ts"],
+      "@mdcz/shared/*": ["packages/shared/*"],
+      "@mdcz/media-store": ["packages/media-store/src/index.ts"],
+      "@mdcz/ui": ["packages/ui/src/index.ts"],
+      "@mdcz/ui/*": ["packages/ui/src/*"],
+      "@mdcz/views": ["packages/views/src/index.ts"],
+      "@mdcz/views/*": ["packages/views/src/*"]
     }
   }
 }

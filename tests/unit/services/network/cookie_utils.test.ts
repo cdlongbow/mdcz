@@ -1,4 +1,4 @@
-import { filterCookiesForUrl, InMemoryCookieJar, type ResolvedCookie } from "@main/services/network";
+import { filterCookiesForUrl, InMemoryCookieJar, type ResolvedCookie } from "@mdcz/runtime/network";
 import { describe, expect, it } from "vitest";
 
 describe("cookieUtils", () => {

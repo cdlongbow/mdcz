@@ -3,11 +3,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { PersistentCooldownStore } from "@main/services/cooldown/PersistentCooldownStore";
-import type { NetworkClient, ProbeResult } from "@main/services/network";
-import { DownloadManager } from "@main/services/scraper/DownloadManager";
-import * as imageUtils from "@main/utils/image";
-import { Website } from "@shared/enums";
-import type { CrawlerData } from "@shared/types";
+import type { RuntimeDownloadNetworkClient, RuntimeProbeResult } from "@mdcz/runtime";
+import { DownloadManager } from "@mdcz/runtime/scrape";
+import { resolveThumbToPosterCropRegion } from "@mdcz/runtime/scrape/download/assets/PosterImageDerivationService";
+import * as imageUtils from "@mdcz/runtime/scrape/utils/image";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const tempDirs: string[] = [];
@@ -67,6 +68,16 @@ const writeDownloadedFile = async (outputPath: string, url: string): Promise<str
   return outputPath;
 };
 
+const writeSvgImage = async (
+  outputPath: string,
+  options: { width: number; height: number; color: string; minBytes?: number },
+): Promise<void> => {
+  await mkdir(dirname(outputPath), { recursive: true });
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${options.width}" height="${options.height}"><rect width="100%" height="100%" fill="${options.color}"/></svg>`;
+  const padding = " ".repeat(Math.max(0, (options.minBytes ?? 0) - svg.length));
+  await writeFile(outputPath, `${svg}${padding}`, "utf8");
+};
+
 const createDownloadSubject = async (
   files: Record<string, string> = {},
   options: {
@@ -77,7 +88,15 @@ const createDownloadSubject = async (
   await seedFiles(root, files);
 
   const networkClient = new FakeNetworkClient();
-  const manager = new DownloadManager(networkClient as unknown as NetworkClient, options);
+  const imageHostCooldownStore =
+    options.imageHostCooldownStore ??
+    new PersistentCooldownStore({
+      filePath: join(root, "image-host-cooldowns.json"),
+      loggerName: "DownloadManagerTestStore",
+    });
+  const manager = new DownloadManager(networkClient as unknown as RuntimeDownloadNetworkClient, {
+    imageHostCooldownStore,
+  });
 
   return { root, networkClient, manager };
 };
@@ -130,7 +149,7 @@ const mockPrimaryProbe = (
     withoutDimensions?: string[];
   },
 ) => {
-  networkClient.probe.mockImplementation(async (url: string): Promise<ProbeResult> => {
+  networkClient.probe.mockImplementation(async (url: string): Promise<RuntimeProbeResult> => {
     const variant = url.includes("-tiny.") ? "tiny" : url.includes("-low.") ? "low" : "high";
     const isThumb = url.includes("thumb");
     const shouldIncludeDimensions = options.includeDimensions && !options.withoutDimensions?.includes(url);
@@ -215,7 +234,7 @@ class FakeNetworkClient {
   readonly download = vi.fn(async (url: string, outputPath: string) => await writeDownloadedFile(outputPath, url));
 
   readonly probe = vi.fn(
-    async (url: string): Promise<ProbeResult> => ({
+    async (url: string): Promise<RuntimeProbeResult> => ({
       ok: true,
       status: 200,
       contentLength: 1024,
@@ -722,12 +741,148 @@ describe("DownloadManager keep flags", () => {
     await expect(access(join(root, "fanart.jpg"))).rejects.toThrow();
   });
 
+  it("derives a missing poster from landscape thumb artwork and records the thumb source", async () => {
+    const { root, manager, networkClient } = await createDownloadSubject();
+    const thumbPath = join(root, "thumb.jpg");
+    networkClient.download.mockImplementation(async (url: string, outputPath: string) => {
+      if (url.includes("thumb")) {
+        await writeSvgImage(outputPath, { width: 800, height: 439, color: "#4a8bd6" });
+        return outputPath;
+      }
+
+      return await writeDownloadedFile(outputPath, url);
+    });
+    const validateImageSpy = vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
+      valid: true,
+      width: 800,
+      height: 439,
+      format: "jpeg",
+    });
+    const data = createCrawlerData({
+      thumb_url: "https://example.com/thumb.jpg",
+      thumb_source_url: "https://source.example.com/thumb.jpg",
+      poster_url: undefined,
+    });
+
+    const assets = await manager.downloadAll(
+      root,
+      data,
+      createDownloadConfig({
+        keepThumb: false,
+        keepPoster: false,
+        downloadFanart: false,
+        downloadSceneImages: false,
+        downloadTrailer: false,
+      }),
+    );
+
+    const posterPath = join(root, "poster.jpg");
+    validateImageSpy.mockRestore();
+    const metadata = await imageUtils.validateImage(posterPath, 1);
+    const cropRegion = resolveThumbToPosterCropRegion(800, 439);
+    expect(cropRegion).not.toBeNull();
+    expect(assets.thumb).toBe(thumbPath);
+    expect(assets.poster).toBe(posterPath);
+    expect(assets.downloaded).toEqual([thumbPath, posterPath]);
+    expect(data.poster_source_url).toBe("https://source.example.com/thumb.jpg");
+    expect(metadata).toMatchObject({ valid: true, width: cropRegion?.width, height: cropRegion?.height });
+    expect(networkClient.download).toHaveBeenCalledTimes(1);
+  });
+
+  it("replaces tiny poster downloads from thumb artwork", async () => {
+    const { root, manager, networkClient } = await createDownloadSubject();
+    networkClient.download.mockImplementation(async (url: string, outputPath: string) => {
+      if (url.includes("thumb")) {
+        await writeSvgImage(outputPath, { width: 800, height: 500, color: "#4a8bd6" });
+        return outputPath;
+      }
+      if (url.includes("poster")) {
+        await writeSvgImage(outputPath, { width: 120, height: 180, color: "#d64a4a" });
+        return outputPath;
+      }
+
+      return await writeDownloadedFile(outputPath, url);
+    });
+    const validateImageSpy = vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
+      valid: true,
+      width: 800,
+      height: 500,
+      format: "jpeg",
+    });
+    const data = createCrawlerData({
+      thumb_url: "https://example.com/thumb.jpg",
+      poster_url: "https://example.com/poster.jpg",
+    });
+
+    const assets = await manager.downloadAll(root, data, createPrimaryImageConfig());
+
+    validateImageSpy.mockRestore();
+    const posterStats = await imageUtils.validateImage(join(root, "poster.jpg"), 1);
+    const cropRegion = resolveThumbToPosterCropRegion(800, 500);
+    expect(assets.poster).toBe(join(root, "poster.jpg"));
+    expect(assets.downloaded).toEqual([join(root, "thumb.jpg"), join(root, "poster.jpg")]);
+    expect(data.poster_source_url).toBe("https://example.com/thumb.jpg");
+    expect(posterStats).toMatchObject({ valid: true, width: cropRegion?.width, height: cropRegion?.height });
+  });
+
+  it("keeps large and portrait poster derivation skip cases non-blocking", async () => {
+    const cases = [
+      {
+        name: "large poster",
+        seed: async (root: string) => {
+          await writeSvgImage(join(root, "thumb.jpg"), { width: 800, height: 500, color: "#4a8bd6" });
+          await writeSvgImage(join(root, "poster.jpg"), {
+            width: 800,
+            height: 1200,
+            color: "#d64a4a",
+            minBytes: 50_000,
+          });
+        },
+        expectPoster: true,
+      },
+      {
+        name: "portrait thumb",
+        seed: async (root: string) => {
+          await writeSvgImage(join(root, "thumb.jpg"), { width: 800, height: 1200, color: "#4a8bd6" });
+        },
+        expectPoster: false,
+      },
+    ];
+
+    for (const testCase of cases) {
+      const { root, manager } = await createDownloadSubject();
+      await testCase.seed(root);
+
+      const data = createCrawlerData({ thumb_url: "https://example.com/thumb.jpg" });
+      const assets = await manager.downloadAll(
+        root,
+        data,
+        createDownloadConfig({
+          keepThumb: true,
+          keepPoster: true,
+          downloadFanart: false,
+          downloadSceneImages: false,
+          downloadTrailer: false,
+        }),
+      );
+
+      expect(assets.thumb).toBe(join(root, "thumb.jpg"));
+      expect(data.poster_source_url).toBeUndefined();
+      if (testCase.expectPoster) {
+        expect(assets.poster).toBe(join(root, "poster.jpg"));
+      } else {
+        expect(assets.poster).toBeUndefined();
+        await expect(access(join(root, "poster.jpg"))).rejects.toThrow();
+      }
+    }
+  });
+
   it("uses probe metadata to minimize primary artwork downloads", async () => {
     const cases = [
       {
         setup: (networkClient: FakeNetworkClient) => {
           mockResolutionAwarePrimaryValidation();
-          networkClient.probe.mockImplementation(async (url: string): Promise<ProbeResult> => {
+          networkClient.probe.mockImplementation(async (url: string): Promise<RuntimeProbeResult> => {
             if (url.includes("-missing.")) {
               return {
                 ok: false,
@@ -1125,7 +1280,7 @@ describe("DownloadManager keep flags", () => {
       filePath: storePath,
       loggerName: "DownloadManagerHostCooldownTestStoreReloaded",
     });
-    const reloadedManager = new DownloadManager(networkClient as unknown as NetworkClient, {
+    const reloadedManager = new DownloadManager(networkClient as unknown as RuntimeDownloadNetworkClient, {
       imageHostCooldownStore: reloadedStore,
     });
     const callsBeforeSecondRun = networkClient.download.mock.calls.length;

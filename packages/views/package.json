@@ -1,0 +1,46 @@
+{
+  "name": "@mdcz/views",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./about": "./src/about/index.ts",
+    "./config-form": "./src/config-form/index.ts",
+    "./overview": "./src/overview/index.ts",
+    "./workbench": "./src/workbench/index.ts",
+    "./library": "./src/library/index.ts",
+    "./maintenance": "./src/maintenance/index.ts",
+    "./nfo": "./src/nfo/index.ts",
+    "./path": "./src/path/index.ts",
+    "./detail": "./src/detail/index.ts",
+    "./scrape": "./src/scrape/index.ts",
+    "./logs": "./src/logs/index.ts",
+    "./settings": "./src/settings/index.ts",
+    "./shell": "./src/shell/index.ts",
+    "./tools": "./src/tools/index.ts",
+    "./common": "./src/common/index.ts",
+    "./adapters": "./src/adapters/index.ts",
+    "./adapters/DetailPanelAdapter": "./src/adapters/DetailPanelAdapter.tsx",
+    "./adapters/MaintenanceBatchBarAdapter": "./src/adapters/MaintenanceBatchBarAdapter.tsx",
+    "./adapters/MaintenanceEntryListAdapter": "./src/adapters/MaintenanceEntryListAdapter.tsx",
+    "./adapters/MaintenanceWorkbenchAdapter": "./src/adapters/MaintenanceWorkbenchAdapter.tsx",
+    "./adapters/ports": "./src/adapters/ports.ts",
+    "./adapters/ResultTreeAdapter": "./src/adapters/ResultTreeAdapter.tsx",
+    "./adapters/ScrapeWorkbenchAdapter": "./src/adapters/ScrapeWorkbenchAdapter.tsx",
+    "./adapters/WorkbenchSetupAdapter": "./src/adapters/WorkbenchSetupAdapter.tsx",
+    "./adapters/workbenchSession": "./src/adapters/workbenchSession.ts"
+  },
+  "dependencies": {
+    "@mdcz/shared": "workspace:*",
+    "@mdcz/ui": "workspace:*",
+    "@tanstack/react-virtual": "^3.13.12",
+    "lucide-react": "^0.563.0",
+    "sonner": "^2.0.7",
+    "zustand": "^5.0.9"
+  },
+  "peerDependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  }
+}

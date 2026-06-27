@@ -5,11 +5,17 @@
     "types": ["node", "electron-vite/node"]
   },
   "include": [
-    "electron.vite.config.ts",
-    "src/main/**/*.ts",
-    "src/preload/**/*.ts",
-    "src/**/*.d.ts",
+    "apps/desktop/electron.vite.config.ts",
+    "apps/server/src/**/*.ts",
+    "apps/server/tsconfig*.json",
+    "apps/desktop/src/main/**/*.ts",
+    "apps/desktop/src/preload/**/*.ts",
+    "apps/desktop/src/**/*.d.ts",
+    "packages/persistence/src/**/*.ts",
+    "packages/runtime/src/**/*.ts",
     "packages/shared/**/*.ts",
+    "packages/media-store/src/**/*.ts",
     "vitest.config.ts"
-  ]
+  ],
+  "exclude": ["packages/**/*.test.ts", "packages/shared/stores/**/*"]
 }

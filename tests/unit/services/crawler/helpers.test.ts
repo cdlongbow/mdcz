@@ -1,4 +1,4 @@
-import { pickSearchResultDetailUrl } from "@main/services/crawler/sites/helpers";
+import { pickSearchResultDetailUrl } from "@mdcz/runtime/crawler/sites/helpers";
 import { describe, expect, it } from "vitest";
 
 describe("pickSearchResultDetailUrl", () => {

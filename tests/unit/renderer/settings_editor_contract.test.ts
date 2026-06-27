@@ -1,66 +1,98 @@
-import { parseBufferedNumberValue } from "@renderer/components/config-form/BufferedFieldControls";
-import { OrderedSiteFieldEditor } from "@renderer/components/config-form/OrderedSiteField";
-import { ServerPathField } from "@renderer/components/config-form/ServerPathField";
-import { ProfileCapsule } from "@renderer/components/settings/ProfileCapsule";
-import { SectionAnchor } from "@renderer/components/settings/SectionAnchor";
-import { AdvancedSettingsFooterContent } from "@renderer/components/settings/SettingsForm";
+import { Website } from "@mdcz/shared/enums";
+import { OrderedSiteFieldEditor, parseBufferedNumberValue, ServerPathField } from "@mdcz/views/config-form";
+import { dedupePathAutocompleteSuggestions } from "@mdcz/views/path";
 import {
-  SettingsSectionModeProvider,
-  shouldRenderFieldInSectionMode,
-} from "@renderer/components/settings/SettingsSectionModeContext";
-import { buildSitePrioritySummary } from "@renderer/components/settings/SitePriorityEditorField";
-import { buildSettingsBrowseState } from "@renderer/components/settings/settingsBrowseState";
-import {
+  AdvancedSettingsFooterContent,
   AssetDownloadsSection,
-  buildNamingPreviewConfig,
-  NamingSection,
-} from "@renderer/components/settings/settingsContent";
-import { resolveSettingsDeepLink } from "@renderer/components/settings/settingsDeepLink";
-import { getSettingsSuggestions } from "@renderer/components/settings/settingsFilter";
-import { FIELD_REGISTRY, flattenConfig, unflattenConfig } from "@renderer/components/settings/settingsRegistry";
-import {
-  moveSitePriorityOption,
-  resolveSitePriorityOptions,
-  toggleSitePriorityOption,
-} from "@renderer/components/settings/sitePriorityOptions";
-import {
-  FileBehaviorTopLevelSection,
-  NetworkTopLevelSection,
-  TranslateTopLevelSection,
-} from "@renderer/components/settings/TopLevelSections";
-import {
   buildAutoSaveFlatPayload,
+  buildNamingPreviewConfig,
+  buildSettingsBrowseState,
+  buildSitePrioritySummary,
+  FIELD_REGISTRY,
+  FileBehaviorTopLevelSection,
+  flattenConfig,
+  getSettingsSuggestions,
   mergeConfigWithFlatPayload,
+  moveSitePriorityOption,
+  NamingSection,
+  NetworkTopLevelSection,
+  PathsSection,
+  ProfileCapsule,
+  resolveSitePriorityOptions,
   runLatestRevisionTask,
+  SectionAnchor,
   SettingsEditorAutosaveProvider,
-} from "@renderer/hooks/useAutoSaveField";
-import { Website } from "@shared/enums";
-import { type ComponentProps, createElement, type ReactElement, type ReactNode } from "react";
+  SettingsSectionModeProvider,
+  type SettingsServices,
+  SettingsServicesProvider,
+  shouldRenderFieldInSectionMode,
+  TranslateTopLevelSection,
+  toggleSitePriorityOption,
+  unflattenConfig,
+} from "@mdcz/views/settings";
+import { type ComponentProps, createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { type ControllerRenderProps, type FieldValues, FormProvider, useForm } from "react-hook-form";
+import { type FieldValues, FormProvider, useForm } from "react-hook-form";
 import { describe, expect, it, vi } from "vitest";
 
 const noop = vi.fn();
+const testSettingsServices = {
+  browsePath: vi.fn(async () => ({})),
+  checkCookies: vi.fn(async () => ({ results: [] })),
+  decrementInFlightSaves: vi.fn(),
+  ensureWatermarkDirectory: vi.fn(async () => ({ path: "" })),
+  getInFlightSaves: vi.fn(() => 0),
+  incrementInFlightSaves: vi.fn(),
+  listCrawlerSites: vi.fn(async () => ({ sites: [] })),
+  openWatermarkDirectory: vi.fn(async () => undefined),
+  previewNaming: vi.fn(async () => ({ items: [] })),
+  probeSiteConnectivity: vi.fn(async () => ({ ok: true, message: "" })),
+  relaunchApp: vi.fn(async () => undefined),
+  resetConfig: vi.fn(async () => undefined),
+  saveConfig: vi.fn(async () => undefined),
+  testLLM: vi.fn(async () => ({ success: true, message: "" })),
+} satisfies SettingsServices;
+const createTestSettingsServices = (overrides: Partial<SettingsServices> = {}): SettingsServices => ({
+  ...testSettingsServices,
+  ...overrides,
+});
+const testSettingsNotifier = {
+  error: vi.fn(),
+  info: vi.fn(),
+  success: vi.fn(),
+};
 
 function entry(key: string) {
   return FIELD_REGISTRY.find((candidate) => candidate.key === key);
 }
 
-function FormHarness({ children, values = {} }: { children?: ReactNode; values?: Record<string, unknown> }) {
+function FormHarness({
+  children,
+  services = testSettingsServices,
+  values = {},
+}: {
+  children?: ReactNode;
+  services?: SettingsServices;
+  values?: Record<string, unknown>;
+}) {
   const form = useForm<FieldValues>({ defaultValues: values });
   const flatValues = flattenConfig(values);
 
   return createElement(
-    FormProvider,
-    form as ComponentProps<typeof FormProvider>,
+    SettingsServicesProvider,
+    { notifier: testSettingsNotifier, services },
     createElement(
-      SettingsEditorAutosaveProvider,
-      {
-        savedValues: flatValues,
-        defaultValues: flatValues,
-        defaultValuesReady: true,
-      },
-      children,
+      FormProvider,
+      form as ComponentProps<typeof FormProvider>,
+      createElement(
+        SettingsEditorAutosaveProvider,
+        {
+          savedValues: flatValues,
+          defaultValues: flatValues,
+          defaultValuesReady: true,
+        },
+        children,
+      ),
     ),
   );
 }
@@ -111,6 +143,7 @@ describe("settings editor metadata and filtering", () => {
     expect(entry("paths.defaultScanExcludeDirs")).toMatchObject({ anchor: "paths", visibility: "public" });
     expect(entry("aggregation.fieldPriorities.durationSeconds")?.visibility).toBe("advanced");
     expect(entry("naming.partStyle")?.visibility).toBe("public");
+    expect(entry("paths.defaultScanExcludeDirs")).toMatchObject({ anchor: "paths", visibility: "public" });
     expect(entry("scrape.r18MetadataLanguage")).toMatchObject({ anchor: "scrape", visibility: "hidden" });
     expect(entry("jellyfin.url")).toMatchObject({ surface: "tools" });
 
@@ -169,24 +202,25 @@ describe("settings editor metadata and filtering", () => {
     });
   });
 
-  it("path inputs commit typed string values instead of DOM events", () => {
-    const onChange = vi.fn();
-    const field = {
-      name: "paths.defaultScanExcludeDirs.0",
-      value: "failed",
-      onChange,
-      onBlur: vi.fn(),
-      ref: vi.fn(),
-    } as unknown as ControllerRenderProps<FieldValues, string>;
+  it("keeps scan exclusion directories in the paths settings surface", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        FormHarness,
+        {
+          values: {
+            paths: {
+              failedOutputFolder: "failed",
+              defaultScanExcludeDirs: ["E:/Output", "failed_22"],
+            },
+          },
+        },
+        createElement(PathsSection),
+      ),
+    );
 
-    const element = ServerPathField({ field });
-    const formControl = (element.props as { children: ReactElement[] }).children[0];
-    const input = (formControl.props as { children: ReactElement }).children;
-    const inputOnChange = (input.props as { onChange: (event: { target: { value: string } }) => void }).onChange;
-
-    inputOnChange({ target: { value: "failed_22" } });
-
-    expect(onChange).toHaveBeenCalledWith("failed_22");
+    expect(html).toContain("E:/Output");
+    expect(html).toContain("failed_22");
+    expect(html.match(/aria-autocomplete="list"/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
   it("applies PRD visibility rules for normal, advanced, modified, group, and deep-link browsing", () => {
@@ -213,15 +247,6 @@ describe("settings editor metadata and filtering", () => {
     });
     expect(grouped.hasActiveFilters).toBe(true);
     expect(grouped.visibleEntries.map((candidate) => candidate.key)).toEqual(["ui.showLogsPanel"]);
-
-    expect(resolveSettingsDeepLink(" paths.mediaPath ")).toEqual({
-      fieldKey: "paths.mediaPath",
-      sectionId: "paths",
-    });
-    expect(resolveSettingsDeepLink("aggregation.maxParallelCrawlers")).toEqual({
-      fieldKey: null,
-      sectionId: null,
-    });
   });
 
   it("reveals normal conditional rows in search while preserving the advanced visibility gate", () => {
@@ -333,9 +358,15 @@ describe("settings editor metadata and filtering", () => {
       showAdvanced: false,
       modifiedKeys: new Set<string>(),
     });
+    const h0930Search = buildSettingsBrowseState({
+      query: "h0930",
+      showAdvanced: false,
+      modifiedKeys: new Set<string>(),
+    });
 
     expect(fc2HubSearch.visibleEntries.map((candidate) => candidate.key)).toEqual(["scrape.sites"]);
     expect(wikiSearch.visibleEntries.map((candidate) => candidate.key)).toEqual(["scrape.sites"]);
+    expect(h0930Search.visibleEntries.map((candidate) => candidate.key)).toEqual(["scrape.sites"]);
   });
 
   it("matches the R18.dev site row through the grouped site-priority field only", () => {
@@ -512,6 +543,7 @@ describe("settings editor save and content helpers", () => {
       Website.KM_PRODUCE,
       Website.FC2,
       Website.FC2HUB,
+      Website.H0930,
       Website.PPVDATABANK,
       Website.SOKMIL,
       Website.KINGDOM,
@@ -531,6 +563,7 @@ describe("settings editor save and content helpers", () => {
     expect(optionsById.get("official")?.sites).not.toEqual(expect.arrayContaining(["fc2", "fc2hub", "ppvdatabank"]));
     expect(optionsById.get(Website.FC2)).toMatchObject({ sites: [Website.FC2] });
     expect(optionsById.get(Website.FC2HUB)).toMatchObject({ sites: [Website.FC2HUB] });
+    expect(optionsById.get(Website.H0930)).toMatchObject({ sites: [Website.H0930] });
     expect(optionsById.get(Website.PPVDATABANK)).toMatchObject({ sites: [Website.PPVDATABANK] });
     expect(optionsById.get(Website.SOKMIL)).toMatchObject({ sites: [Website.SOKMIL] });
     expect(optionsById.get(Website.KINGDOM)).toMatchObject({ sites: [Website.KINGDOM] });
@@ -542,12 +575,30 @@ describe("settings editor save and content helpers", () => {
     expect(optionsById.get(Website.JAV321)).toMatchObject({ sites: [Website.JAV321] });
 
     for (const option of optionsById.values()) {
-      expect(option.description.length).toBeGreaterThan(0);
+      if (option.id === Website.H0930) {
+        expect(option.description).toBeUndefined();
+        continue;
+      }
+      expect(option.description?.length).toBeGreaterThan(0);
     }
   });
 });
 
 describe("settings editor render contracts", () => {
+  it("deduplicates path autocomplete suggestions by normalized host path", () => {
+    expect(
+      dedupePathAutocompleteSuggestions([
+        { label: "Drive G", path: "G:/" },
+        { label: "Drive G duplicate", path: "G:\\" },
+        { label: "Movies", path: "G:/Movies/" },
+        { label: "Movies duplicate", path: "g:/Movies" },
+      ]),
+    ).toEqual([
+      { label: "Drive G", path: "G:/" },
+      { label: "Movies", path: "G:/Movies/" },
+    ]);
+  });
+
   it("keeps OrderedSiteFieldEditor simple mode stable while rendering grouped row details", () => {
     const simpleHtml = renderToStaticMarkup(
       createElement(
@@ -678,6 +729,35 @@ describe("settings editor render contracts", () => {
 
     expect(filteredHtml).not.toContain("显示高级设置");
     expect(browseHtml).toContain("显示高级设置");
+  });
+
+  it("hides unsupported path browse buttons while keeping server path suggestions", () => {
+    const services = createTestSettingsServices({
+      getPathSuggestions: () => [
+        { label: "Movies", path: "E:/Movies" },
+        { label: "Output", path: "E:/Output" },
+      ],
+      isServer: true,
+    });
+    const html = renderToStaticMarkup(
+      createElement(
+        FormHarness,
+        { services, values: { paths: { mediaPath: "" } } },
+        createElement(ServerPathField, {
+          field: {
+            name: "paths.mediaPath",
+            onBlur: noop,
+            onChange: noop,
+            ref: noop,
+            value: "",
+          },
+        }),
+      ),
+    );
+
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("<datalist");
+    expect(html).toContain('aria-autocomplete="list"');
   });
 
   it("renders the PRD split sections and keeps advanced-only content out of public rows", () => {

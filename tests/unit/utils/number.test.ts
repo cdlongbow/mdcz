@@ -1,4 +1,4 @@
-import { extractNumber, parseFileInfo } from "@main/utils/number";
+import { extractNumber, parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
 import { describe, expect, it } from "vitest";
 
 describe("extractNumber", () => {
@@ -7,6 +7,9 @@ describe("extractNumber", () => {
       { input: "MFC-2001", expected: "MFC-2001" },
       { input: "AFC-2001", expected: "AFC-2001" },
       { input: "S2MBD-047", expected: "S2MBD-047" },
+      { input: "H0930-gol205", expected: "H0930-GOL205" },
+      { input: "h0930_gol205", expected: "H0930-GOL205" },
+      { input: "h0930 gol205", expected: "H0930-GOL205" },
     ];
 
     for (const { input, expected } of cases) {
@@ -18,6 +21,7 @@ describe("extractNumber", () => {
     const cases = [
       { input: "ABC-123-C-CD1", expected: "ABC-123" },
       { input: "ABC-123-中文字幕", expected: "ABC-123" },
+      { input: "MNGS-051ch", expected: "MNGS-051" },
       { input: "FC2-PPV-123456-U", expected: "FC2-123456" },
       { input: "FC-123456", expected: "FC2-123456" },
       { input: "FC2-123456-1", expected: "FC2-123456" },
@@ -199,6 +203,12 @@ describe("parseFileInfo", () => {
       });
     }
 
+    expect(parseFileInfo("/tmp/MNGS-051ch.mp4")).toMatchObject({
+      number: "MNGS-051",
+      isSubtitled: true,
+      subtitleTag: "中文字幕",
+    });
+
     expect(parseFileInfo("/tmp/ABC-123-中文字幕.mp4")).toMatchObject({
       isUncensored: false,
     });
@@ -258,6 +268,11 @@ describe("parseFileInfo", () => {
 
     expect(parseFileInfo("/tmp/FC2-123456-标题①.mp4")).toMatchObject({
       number: "FC2-123456",
+      part: undefined,
+    });
+
+    expect(parseFileInfo("/tmp/H0930-gol205.mp4")).toMatchObject({
+      number: "H0930-GOL205",
       part: undefined,
     });
   });

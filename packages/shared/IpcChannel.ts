@@ -57,7 +57,11 @@ export enum IpcChannel {
   App_SyncTitleBarTheme = "app:sync-titlebar-theme",
 
   Overview_GetRecentAcquisitions = "overview:get-recent-acquisitions",
+  Overview_RemoveRecentAcquisition = "overview:remove-recent-acquisition",
   Overview_GetOutputSummary = "overview:get-output-summary",
+
+  Library_List = "library:list",
+  Library_Delete = "library:delete",
 
   Tool_JellyfinActorPhotoSync = "tool:jellyfin-actor-photo-sync",
   Tool_JellyfinActorInfoSync = "tool:jellyfin-actor-info-sync",

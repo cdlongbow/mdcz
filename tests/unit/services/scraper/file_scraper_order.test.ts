@@ -1,15 +1,14 @@
 import { type Configuration, configurationSchema, defaultConfiguration } from "@main/services/config";
-import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
-import type { CrawlerInput, CrawlerResponse } from "@main/services/crawler/base/types";
-import { NetworkClient } from "@main/services/network";
 import { SignalService } from "@main/services/SignalService";
 import { AggregationService } from "@main/services/scraper/aggregation";
 import { DownloadManager } from "@main/services/scraper/DownloadManager";
-import { FileOrganizer } from "@main/services/scraper/FileOrganizer";
 import { createFileScraper } from "@main/services/scraper/FileScraper";
 import { NfoGenerator } from "@main/services/scraper/NfoGenerator";
-import { TranslateService } from "@main/services/scraper/TranslateService";
-import { Website } from "@shared/enums";
+import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
+import type { CrawlerInput, CrawlerResponse } from "@mdcz/runtime/crawler/base/types";
+import { NetworkClient } from "@mdcz/runtime/network";
+import { FileOrganizer, TranslateService } from "@mdcz/runtime/scrape";
+import { Website } from "@mdcz/shared/enums";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockConfigManager } from "./helpers";
 

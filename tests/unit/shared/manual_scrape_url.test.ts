@@ -1,9 +1,9 @@
-import { Website } from "@shared/enums";
+import { Website } from "@mdcz/shared/enums";
 import {
   MANUAL_SCRAPE_SUPPORTED_SITE_INVALID_MESSAGE,
   MANUAL_SCRAPE_UNSUPPORTED_SITE_MESSAGE,
   validateManualScrapeUrl,
-} from "@shared/manualScrapeUrl";
+} from "@mdcz/shared/manualScrapeUrl";
 import { describe, expect, it } from "vitest";
 
 describe("validateManualScrapeUrl", () => {
@@ -45,6 +45,15 @@ describe("validateManualScrapeUrl", () => {
         mode: "detail",
         url: "https://tv.dmm.co.jp/list/?content=ssni00103&i3_ref=search",
         detailUrl: "https://tv.dmm.co.jp/list/?content=ssni00103&i3_ref=search",
+      },
+    });
+    expect(validateManualScrapeUrl("https://www.h0930.com/moviepages/gol205/index.html")).toEqual({
+      valid: true,
+      route: {
+        site: Website.H0930,
+        mode: "detail",
+        url: "https://www.h0930.com/moviepages/gol205/index.html",
+        detailUrl: "https://www.h0930.com/moviepages/gol205/index.html",
       },
     });
   });

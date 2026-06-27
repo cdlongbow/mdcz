@@ -1,5 +1,6 @@
-import { Website } from "@shared/enums";
-import type { CrawlerData, LocalScanEntry, MaintenancePreviewItem, ScrapeResult } from "@shared/types";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData, LocalScanEntry, MaintenancePreviewItem, ScrapeResult } from "@mdcz/shared/types";
+import { buildDetailArtworkCandidates } from "@mdcz/views/detail";
 import { describe, expect, it } from "vitest";
 import {
   formatBitrate,
@@ -117,6 +118,23 @@ describe("detail panel adapter contract", () => {
       outputPath: "/output/ABC-123",
       nfoPath: "/output/ABC-123/ABC-123.nfo",
       rating: 4.6,
+    });
+  });
+
+  it("builds the same poster and thumbnail fallback candidates as the desktop detail controller", () => {
+    expect(
+      buildDetailArtworkCandidates({
+        id: "file:/library/ABC-123/ABC-123.mp4",
+        status: "success",
+        number: "ABC-123",
+        path: "/library/ABC-123/ABC-123.mp4",
+        outputPath: "/output/ABC-123",
+        posterUrl: "/output/ABC-123/custom-poster.jpg",
+        thumbUrl: "relative-thumb.jpg",
+      }),
+    ).toEqual({
+      poster: ["/output/ABC-123/custom-poster.jpg", "/output/ABC-123/ABC-123-poster.jpg", "/output/ABC-123/poster.jpg"],
+      thumb: ["/output/ABC-123/relative-thumb.jpg", "/output/ABC-123/ABC-123-thumb.jpg", "/output/ABC-123/thumb.jpg"],
     });
   });
 

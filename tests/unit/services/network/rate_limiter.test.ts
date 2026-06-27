@@ -1,4 +1,4 @@
-import { RateLimiter } from "@main/services/network/RateLimiter";
+import { RateLimiter } from "@mdcz/runtime/network";
 import { describe, expect, it, vi } from "vitest";
 
 const getQueueCount = (limiter: RateLimiter): number => {

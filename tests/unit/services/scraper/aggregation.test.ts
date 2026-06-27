@@ -1,11 +1,10 @@
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import { CrawlerProvider, FetchGateway } from "@main/services/crawler";
-import type { CrawlerInput, CrawlerResponse, FailureReason } from "@main/services/crawler/base/types";
-import { NetworkClient } from "@main/services/network";
-import { AggregationService } from "@main/services/scraper/aggregation/AggregationService";
-import { FieldAggregator } from "@main/services/scraper/aggregation/FieldAggregator";
-import { Website } from "@shared/enums";
-import type { CrawlerData } from "@shared/types";
+import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
+import type { CrawlerInput, CrawlerResponse, FailureReason } from "@mdcz/runtime/crawler/base/types";
+import { NetworkClient } from "@mdcz/runtime/network";
+import { AggregationService, FieldAggregator } from "@mdcz/runtime/scrape";
+import { Website } from "@mdcz/shared/enums";
+import type { CrawlerData } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";
 
 const makeCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
