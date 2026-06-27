@@ -1,14 +1,15 @@
 # syntax=docker/dockerfile:1.7
 
 # stage 1: build webui artifacts + staging dir via package script
-FROM node:24-bookworm-slim AS builder
+FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS builder
 WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@10.28.2 --activate
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY apps apps
+COPY apps/server apps/server
+COPY apps/web apps/web
 COPY packages packages
 COPY scripts scripts
-COPY tsconfig.json tsconfig.node.json tsconfig.web.json tsconfig.test.json ./
+COPY tsconfig.json tsconfig.node.json tsconfig.web.json tsconfig.desktop-renderer.json tsconfig.test.json ./
 RUN pnpm install --frozen-lockfile
 RUN pnpm build:webui
 ARG MDCZ_RELEASE_VERSION=docker
