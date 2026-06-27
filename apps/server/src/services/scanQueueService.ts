@@ -105,6 +105,7 @@ export class ScanQueueService {
 
   async candidates(input: ScanCandidatesInput): Promise<ScanCandidatesResponse> {
     const hostPath = normalizeHostPath(input.scanDir);
+    const excludeDirPaths = input.excludeDirPaths?.map((path) => normalizeHostPath(path)) ?? [];
     const registeredRoots = (await this.mediaRoots.list()).roots.filter((root) => root.enabled);
     const root: MediaRoot = {
       id: "adhoc-scan",
@@ -123,6 +124,10 @@ export class ScanQueueService {
       files
         .filter((file) => {
           const extension = path.extname(file.relativePath).replace(/^\./u, "").toLowerCase();
+          const absolutePath = path.resolve(hostPath, file.relativePath);
+          if (excludeDirPaths.some((directoryPath) => isHostPathWithinDirectory(absolutePath, directoryPath))) {
+            return false;
+          }
           return supported.size > 0
             ? supported.has(extension) && isPrimaryVideoFileName(path.basename(file.relativePath))
             : isPrimaryVideoFileName(path.basename(file.relativePath));

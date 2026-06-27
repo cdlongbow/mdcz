@@ -19,6 +19,7 @@ import type {
   MaintenanceCommitItem,
   MaintenanceItemResult,
   MaintenancePresetId,
+  MediaCandidate,
   ScrapeResult,
   UncensoredConfirmItem,
 } from "@mdcz/shared/types";
@@ -92,8 +93,15 @@ export const ipc = {
   },
   file: {
     listEntries: (dirPath: string) => client[IpcChannel.File_ListEntries]({ dirPath }),
-    listMediaCandidates: (dirPath: string) => client[IpcChannel.File_ListMediaCandidates]({ dirPath }),
-    exists: (path: string) => client[IpcChannel.File_Exists]({ path }),
+    listMediaCandidates: (dirPath: string, excludeDirPaths?: readonly string[]) =>
+      client[IpcChannel.File_ListMediaCandidates]({
+        dirPath,
+        excludeDirPaths: excludeDirPaths ? [...excludeDirPaths] : undefined,
+      }) as Promise<{
+        candidates: MediaCandidate[];
+        supportedExtensions: string[];
+      }>,
+    exists: (path: string) => client[IpcChannel.File_Exists]({ path }) as Promise<{ exists: boolean }>,
     browse: (type: "file" | "directory", filters?: Array<{ name: string; extensions: string[] }>) =>
       client[IpcChannel.File_Browse]({ type, filters }),
     delete: (filePaths: string[]) => client[IpcChannel.File_Delete]({ filePaths }),

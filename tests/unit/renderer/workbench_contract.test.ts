@@ -66,11 +66,11 @@ describe("workbench setup contract", () => {
   it("plans normal scrape scans from configured paths and excludes output folders", () => {
     const plan = resolveMediaCandidateScanPlan("scrape", rootDir, createConfig());
 
-    expect(plan.filterDirPaths).toEqual([successDir, failedDir]);
+    expect(plan.excludeDirPaths).toEqual([successDir, failedDir]);
     expect(plan.extraScanDirs).toEqual([softlinkDir]);
   });
 
-  it("plans default scan exclusions from configured relative and absolute directories", () => {
+  it("uses only configured scan exclude directories", () => {
     const plan = resolveMediaCandidateScanPlan(
       "scrape",
       rootDir,
@@ -79,14 +79,34 @@ describe("workbench setup contract", () => {
           mediaPath: rootDir,
           successOutputFolder: "JAV_output",
           failedOutputFolder: "failed",
-          defaultScanExcludeDirs: ["JAV_output", "failed", "skip", absoluteSkippedDir],
           softlinkPath: softlinkDir,
           outputSummaryPath: "",
+          defaultScanExcludeDirs: ["JAV_output", "failed", "thumbnails"],
         },
       } as Partial<ConfigOutput>),
     );
 
-    expect(plan.filterDirPaths).toEqual([successDir, failedDir, skippedDir, absoluteSkippedDir]);
+    const thumbnailsDir = process.platform === "win32" ? "D:\\media\\thumbnails" : "/media/thumbnails";
+    expect(plan.excludeDirPaths).toEqual([successDir, failedDir, thumbnailsDir]);
+  });
+
+  it("does not hide the active success target when it is removed from configured exclusions", () => {
+    const plan = resolveMediaCandidateScanPlan(
+      "scrape",
+      rootDir,
+      createConfig({
+        paths: {
+          mediaPath: rootDir,
+          successOutputFolder: "JAV_output",
+          failedOutputFolder: "failed",
+          softlinkPath: softlinkDir,
+          outputSummaryPath: "",
+          defaultScanExcludeDirs: ["failed"],
+        },
+      } as Partial<ConfigOutput>),
+    );
+
+    expect(plan.excludeDirPaths).toEqual([failedDir]);
   });
 
   it("filters output-folder candidates and dedupes merged scan roots", () => {

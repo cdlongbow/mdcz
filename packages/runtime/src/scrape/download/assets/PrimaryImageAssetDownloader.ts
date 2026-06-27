@@ -8,11 +8,7 @@ import type { AssetDownloader, DownloadExecutionContext, DownloadExecutionPlan, 
 type PrimaryImageTask = { key: PrimaryImageKey; candidates: string[]; path: string; keepExisting: boolean };
 
 export class PrimaryImageAssetDownloader implements AssetDownloader {
-  private readonly posterDerivation: PosterImageDerivationService;
-
-  constructor(logger: { warn(message: string): void }) {
-    this.posterDerivation = new PosterImageDerivationService(logger);
-  }
+  constructor(private readonly posterDerivationService?: PosterImageDerivationService) {}
 
   shouldDownload(plan: DownloadExecutionPlan): boolean {
     return plan.config.download.downloadThumb || plan.config.download.downloadPoster;
@@ -70,38 +66,7 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
       }
     }
 
-    await this.derivePosterFromThumbIfNeeded(context);
-  }
-
-  private async derivePosterFromThumbIfNeeded(context: DownloadExecutionContext): Promise<void> {
-    const { assets, plan } = context;
-    if (!plan.config.download.downloadPoster) {
-      return;
-    }
-
-    throwIfAborted(plan.signal);
-
-    const posterTargetPath = join(plan.outputDir, plan.assetFileNames.poster);
-    const result = await this.posterDerivation.deriveFromThumbIfNeeded({
-      posterPath: assets.poster,
-      targetPath: posterTargetPath,
-      thumbPath: assets.thumb,
-    });
-
-    if (result.status !== "derived") {
-      return;
-    }
-
-    assets.poster = result.path;
-    if (!assets.downloaded.includes(result.path)) {
-      assets.downloaded.push(result.path);
-    }
-    await removeStaleImageAssetVariants(posterTargetPath, result.path);
-
-    const thumbSourceUrl = plan.data.thumb_source_url ?? plan.data.thumb_url;
-    if (thumbSourceUrl) {
-      plan.data.poster_source_url = thumbSourceUrl;
-    }
+    await this.deriveSmallPosterFromThumb(context);
   }
 
   private buildPrimaryImageTasks(plan: DownloadExecutionPlan): PrimaryImageTask[] {
@@ -148,5 +113,37 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
       path,
       keepExisting,
     });
+  }
+
+  private async deriveSmallPosterFromThumb(context: DownloadExecutionContext): Promise<void> {
+    const { assets, logger, plan } = context;
+    if (!plan.config.download.downloadPoster) {
+      return;
+    }
+
+    throwIfAborted(plan.signal);
+
+    const posterTargetPath = join(plan.outputDir, plan.assetFileNames.poster);
+    const service = this.posterDerivationService ?? new PosterImageDerivationService(logger);
+    const result = await service.deriveFromThumbIfNeeded({
+      posterPath: assets.poster,
+      targetPath: posterTargetPath,
+      thumbPath: assets.thumb,
+    });
+
+    if (result.status !== "derived") {
+      return;
+    }
+
+    assets.poster = result.path;
+    if (!assets.downloaded.includes(result.path)) {
+      assets.downloaded.push(result.path);
+    }
+    await removeStaleImageAssetVariants(posterTargetPath, result.path);
+
+    const thumbSourceUrl = plan.data.thumb_source_url ?? plan.data.thumb_url;
+    if (thumbSourceUrl) {
+      plan.data.poster_source_url = thumbSourceUrl;
+    }
   }
 }

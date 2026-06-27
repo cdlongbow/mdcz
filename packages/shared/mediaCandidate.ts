@@ -4,7 +4,7 @@ import type { MediaCandidate } from "./types";
 export type WorkbenchSetupMode = "scrape" | "maintenance";
 
 export interface MediaCandidateScanPlan {
-  filterDirPaths: string[];
+  excludeDirPaths: string[];
   extraScanDirs: string[];
   scanKey: string;
 }
@@ -66,6 +66,24 @@ export const isHostPathWithinDirectory = (filePath: string, directoryPath: strin
   return normalizedFilePath === normalizedDirectoryPath || normalizedFilePath.startsWith(`${normalizedDirectoryPath}/`);
 };
 
+const dedupePathsByComparableKey = (paths: ReadonlyArray<string | undefined>): string[] => {
+  const seen = new Set<string>();
+  const outputs: string[] = [];
+  for (const path of paths) {
+    const trimmed = path?.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const key = normalizeComparableHostPath(trimmed);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    outputs.push(trimmed);
+  }
+  return outputs;
+};
+
 export const resolveMediaCandidateScanPlan = (
   mode: WorkbenchSetupMode,
   scanDir: string,
@@ -73,8 +91,8 @@ export const resolveMediaCandidateScanPlan = (
 ): MediaCandidateScanPlan => {
   if (mode !== "scrape") {
     return {
-      filterDirPaths: [],
       extraScanDirs: [],
+      excludeDirPaths: [],
       scanKey: "",
     };
   }
@@ -84,16 +102,17 @@ export const resolveMediaCandidateScanPlan = (
     config?.behavior?.scrapeSoftlinkPath && scanDir.trim()
       ? resolveConfiguredDir(scanDir, config?.paths?.softlinkPath)
       : undefined;
-  const filterDirPaths = defaultExcludeDirPaths.filter((path) => Boolean(path.trim()));
+
+  const excludeDirPaths = dedupePathsByComparableKey(defaultExcludeDirPaths);
   const extraScanDirs =
     softlinkDirPath && normalizeComparableHostPath(softlinkDirPath) !== normalizeComparableHostPath(scanDir)
       ? [softlinkDirPath]
       : [];
 
   return {
-    filterDirPaths,
+    excludeDirPaths,
     extraScanDirs,
-    scanKey: [...filterDirPaths, ...extraScanDirs].map(normalizeComparableHostPath).join("|"),
+    scanKey: [...excludeDirPaths, ...extraScanDirs].map(normalizeComparableHostPath).join("|"),
   };
 };
 

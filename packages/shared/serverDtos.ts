@@ -197,6 +197,7 @@ export const scanStartInputSchema = z.object({
 export type ScanStartInput = z.infer<typeof scanStartInputSchema>;
 
 export const scanCandidatesInputSchema = z.object({
+  excludeDirPaths: z.array(z.string().trim().min(1)).optional(),
   scanDir: z.string().trim().min(1),
   supportedExtensions: z.array(z.string().trim().min(1)).optional(),
 });

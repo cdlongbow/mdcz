@@ -167,6 +167,11 @@ export const scanAmazonPosters = async (
     const xml = await readFile(nfoPath, "utf8");
     const parsed = parseNfo(xml, nfoPath);
     const directory = dirname(nfoPath);
+    const nfoBaseName = basename(nfoPath, extname(nfoPath)).toLowerCase();
+    if (nfoBaseName === MOVIE_NFO_BASE_NAME && (directoryNamedNfoCounts.get(directory) ?? 0) > 0) {
+      continue;
+    }
+
     const currentPosterPath = await findCurrentPosterPath(
       directory,
       nfoPath,
@@ -191,6 +196,7 @@ export const scanAmazonPosters = async (
       nfoPath,
       directory,
       title: parsed.title,
+      searchTitle: parsed.title,
       number: parsed.number,
       currentPosterPath,
       currentPosterWidth,

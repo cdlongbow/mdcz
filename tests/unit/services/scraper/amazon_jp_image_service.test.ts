@@ -46,6 +46,39 @@ class FakeNetworkClient {
   }
 }
 
+class FakeNetworkClientWithSearchMap {
+  readonly sessionUrls: string[] = [];
+  readonly head = vi.fn(async (url: string) => ({
+    status: this.reachable.has(url) ? 200 : 404,
+    ok: this.reachable.has(url),
+  }));
+
+  constructor(
+    private readonly searchHtmlByKeyword: Map<string, string>,
+    private readonly detailHtmlByPath: Map<string, string>,
+    private readonly reachable: Set<string>,
+  ) {}
+
+  createSession(): NetworkSession {
+    return {
+      getText: vi.fn(async (url: string) => {
+        this.sessionUrls.push(url);
+        if (url.includes("/black-curtain/save-eligibility/black-curtain")) {
+          const keyword = extractKeywordFromSearchUrl(url);
+          return this.searchHtmlByKeyword.get(keyword) ?? "<html></html>";
+        }
+
+        const path = new URL(url).pathname;
+        const html = this.detailHtmlByPath.get(path);
+        if (html === undefined) {
+          throw new Error(`Unexpected URL: ${url}`);
+        }
+        return html;
+      }),
+    };
+  }
+}
+
 const extractKeywordFromSearchUrl = (url: string): string => {
   const returnUrl = new URL(url).searchParams.get("returnUrl") ?? "";
   const query = returnUrl.includes("?") ? returnUrl.slice(returnUrl.indexOf("?") + 1) : "";
@@ -110,6 +143,67 @@ describe("AmazonJpImageService", () => {
     expect(networkClient.head).not.toHaveBeenCalled();
   });
 
+  it("reports unmatched products separately from empty search results", async () => {
+    const networkClient = new FakeNetworkClient(
+      `
+        <div data-component-type="s-search-result" data-asin="B000OTHER1">
+          <h2><a href="/dp/B000OTHER1"><span>別の商品タイトル</span></a></h2>
+        </div>
+      `,
+      new Map(),
+      new Set(),
+    );
+    const service = new AmazonJpImageService(networkClient as unknown as NetworkClient);
+
+    const result = await service.enhance(baseCrawlerData, Website.JAVDB);
+
+    expect(result).toEqual({
+      upgraded: false,
+      reason: "未找到匹配商品",
+    });
+    expect(networkClient.head).not.toHaveBeenCalled();
+  });
+
+  it("accepts an ASIN as a direct lookup input", async () => {
+    const asin = "B0GRZVQ216";
+    const imageUrl = "https://m.media-amazon.com/images/I/81asin._AC_SL1500_.jpg";
+    const networkClient = new FakeNetworkClientWithSearchMap(
+      new Map([
+        [
+          asin,
+          `
+            <div data-component-type="s-search-result" data-asin="${asin}">
+              <h2><a href="/dp/${asin}"><span>Amazon Title [DVD]</span></a></h2>
+            </div>
+          `,
+        ],
+      ]),
+      new Map([
+        [
+          `/dp/${asin}`,
+          `
+            <div id="leftCol">
+              <div id="imageBlock">
+                <img src="${imageUrl}" />
+              </div>
+            </div>
+          `,
+        ],
+      ]),
+      new Set([imageUrl]),
+    );
+    const service = new AmazonJpImageService(networkClient as unknown as NetworkClient);
+
+    const result = await service.enhance({ ...baseCrawlerData, title: asin }, Website.JAVDB);
+
+    expect(result).toEqual({
+      poster_url: imageUrl,
+      upgraded: true,
+      reason: "已升级为Amazon商品海报",
+    });
+    expect(networkClient.sessionUrls.some((url) => extractKeywordFromSearchUrl(url) === asin)).toBe(true);
+  });
+
   it("prefers the largest dynamic image candidate when src is missing", async () => {
     const small = "https://m.media-amazon.com/images/I/81small._AC_SL500_.jpg";
     const large = "https://m.media-amazon.com/images/I/81large._AC_SL1500_.jpg";
@@ -126,6 +220,68 @@ describe("AmazonJpImageService", () => {
             <div id="leftCol">
               <div id="imageBlock">
                 <img data-a-dynamic-image='{"${small}":[500,500],"${large}":[1500,1500]}' />
+              </div>
+            </div>
+          `,
+        ],
+      ]),
+      new Set([large]),
+    );
+    const service = new AmazonJpImageService(networkClient as unknown as NetworkClient);
+
+    const result = await service.enhance(baseCrawlerData, Website.JAVDB);
+
+    expect(result.poster_url).toBe(large);
+    expect(result.upgraded).toBe(true);
+  });
+
+  it("prefers the largest dynamic image candidate over a small src thumbnail", async () => {
+    const small = "https://m.media-amazon.com/images/I/81small._AC_US40_.jpg";
+    const large = "https://m.media-amazon.com/images/I/81large._AC_SL1500_.jpg";
+    const networkClient = new FakeNetworkClient(
+      `
+        <div data-component-type="s-search-result" data-asin="B000TEST03">
+          <h2><a href="/dp/B000TEST03"><span>原題</span></a></h2>
+        </div>
+      `,
+      new Map([
+        [
+          "/dp/B000TEST03",
+          `
+            <div id="leftCol">
+              <div id="imageBlock">
+                <img src="${small}" data-a-dynamic-image='{"${small}":[40,40],"${large}":[1500,1500]}' />
+              </div>
+            </div>
+          `,
+        ],
+      ]),
+      new Set([large]),
+    );
+    const service = new AmazonJpImageService(networkClient as unknown as NetworkClient);
+
+    const result = await service.enhance(baseCrawlerData, Website.JAVDB);
+
+    expect(result.poster_url).toBe(large);
+    expect(result.upgraded).toBe(true);
+  });
+
+  it("promotes low-resolution Amazon image variants to large poster URLs", async () => {
+    const small = "https://m.media-amazon.com/images/I/81same._AC_US40_.jpg";
+    const large = "https://m.media-amazon.com/images/I/81same._AC_SL1500_.jpg";
+    const networkClient = new FakeNetworkClient(
+      `
+        <div data-component-type="s-search-result" data-asin="B000TEST04">
+          <h2><a href="/dp/B000TEST04"><span>原題</span></a></h2>
+        </div>
+      `,
+      new Map([
+        [
+          "/dp/B000TEST04",
+          `
+            <div id="leftCol">
+              <div id="imageBlock">
+                <img src="${small}" />
               </div>
             </div>
           `,

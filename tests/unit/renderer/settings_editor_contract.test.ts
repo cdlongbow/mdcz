@@ -140,6 +140,7 @@ describe("settings editor metadata and filtering", () => {
     expect(entry("download.tagBadgeTypes")).toMatchObject({ anchor: "download", visibility: "public" });
     expect(entry("download.tagBadgePosition")).toMatchObject({ anchor: "download", visibility: "public" });
     expect(entry("download.tagBadgeImageOverrides")).toMatchObject({ anchor: "download", visibility: "public" });
+    expect(entry("paths.defaultScanExcludeDirs")).toMatchObject({ anchor: "paths", visibility: "public" });
     expect(entry("aggregation.fieldPriorities.durationSeconds")?.visibility).toBe("advanced");
     expect(entry("naming.partStyle")?.visibility).toBe("public");
     expect(entry("paths.defaultScanExcludeDirs")).toMatchObject({ anchor: "paths", visibility: "public" });
@@ -150,6 +151,9 @@ describe("settings editor metadata and filtering", () => {
     expect(keys.has("behavior.updateCheck")).toBe(false);
     expect(keys.has("ui.theme")).toBe(false);
     expect(keys.has("ui.language")).toBe(false);
+    expect(FIELD_REGISTRY.findIndex((candidate) => candidate.key === "paths.defaultScanExcludeDirs")).toBe(
+      FIELD_REGISTRY.findIndex((candidate) => candidate.key === "paths.failedOutputFolder") + 1,
+    );
   });
 
   it("round-trips registered settings, including scrape order and aggregation paths", () => {
@@ -163,6 +167,9 @@ describe("settings editor metadata and filtering", () => {
       scrape: {
         sites: ["javdb"],
         r18MetadataLanguage: "en",
+      },
+      paths: {
+        defaultScanExcludeDirs: ["failed_22", "/archive/output"],
       },
       aggregation: {
         fieldPriorities: {
@@ -179,6 +186,7 @@ describe("settings editor metadata and filtering", () => {
       "download.tagBadgeImageOverrides": true,
       "scrape.sites": ["javdb"],
       "scrape.r18MetadataLanguage": "en",
+      "paths.defaultScanExcludeDirs": ["failed_22", "/archive/output"],
       "aggregation.fieldPriorities.durationSeconds": ["dmm_tv", "avbase"],
     });
     expect(unflattenConfig(flat)).toMatchObject({
@@ -189,6 +197,7 @@ describe("settings editor metadata and filtering", () => {
         tagBadgeImageOverrides: true,
       },
       scrape: { sites: ["javdb"], r18MetadataLanguage: "en" },
+      paths: { defaultScanExcludeDirs: ["failed_22", "/archive/output"] },
       aggregation: { fieldPriorities: { durationSeconds: ["dmm_tv", "avbase"] } },
     });
   });

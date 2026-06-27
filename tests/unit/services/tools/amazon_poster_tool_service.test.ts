@@ -111,6 +111,7 @@ describe("AmazonPosterToolService", () => {
     expect(items.map((item) => item.number)).toEqual(["AAA-001", "BBB-002"]);
     expect(items[0]).toMatchObject({
       title: "天然成分由来 瀧本雫葉汁 120% 83",
+      searchTitle: "天然成分由来 瀧本雫葉汁 120% 83",
       currentPosterPath: posterPath,
       currentPosterWidth: 1500,
       currentPosterHeight: 1012,
@@ -131,6 +132,25 @@ describe("AmazonPosterToolService", () => {
     await expect(service.scan(root)).resolves.toEqual([]);
   });
 
+  it("skips movie.nfo when a named NFO exists in the same directory", async () => {
+    const root = await createTempDir();
+    const namedNfoPath = join(root, "JUR-070.nfo");
+    const movieNfoPath = join(root, "movie.nfo");
+
+    await writeFile(namedNfoPath, createNfoXml({ title: "Named Title", number: "JUR-070" }), "utf8");
+    await writeFile(movieNfoPath, createNfoXml({ title: "Movie Title", number: "JUR-070" }), "utf8");
+
+    const { service } = createService();
+    const items = await service.scan(root);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      nfoPath: namedNfoPath,
+      title: "Named Title",
+      number: "JUR-070",
+    });
+  });
+
   it("returns lookup misses without writing posters and reports successful Amazon hits", async () => {
     const missRoot = await createTempDir();
     const missEnhance = vi.fn(async () => ({ upgraded: false, reason: "搜索无结果" }));
@@ -149,13 +169,13 @@ describe("AmazonPosterToolService", () => {
     }));
     const { service } = createService({ enhance: hitEnhance });
 
-    const hitResult = await service.lookup(join(hitRoot, "ABC-123.nfo"), "Lookup Title");
+    const hitResult = await service.lookup(join(hitRoot, "ABC-123.nfo"), "Custom Amazon Title");
 
     expect(hitResult.amazonPosterUrl).toBe("https://m.media-amazon.com/images/I/81test._AC_SL1500_.jpg");
     expect(hitEnhance).toHaveBeenCalledTimes(1);
     const firstCall = hitEnhance.mock.calls.at(0) as unknown[] | undefined;
     expect(firstCall?.[0] as Record<string, unknown> | undefined).toMatchObject({
-      title: "Lookup Title",
+      title: "Custom Amazon Title",
       poster_url: "lookup",
     });
     expect(firstCall).toHaveLength(1);

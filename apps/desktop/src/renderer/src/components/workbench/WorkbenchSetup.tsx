@@ -7,7 +7,7 @@ const createDesktopSetupPort = (config: WorkbenchSetupAdapterProps["config"]): W
     const selection = await ipc.file.browse("directory");
     return selection.paths?.[0]?.trim() || null;
   },
-  scanCandidates: async (scanDir) => await ipc.file.listMediaCandidates(scanDir),
+  scanCandidates: async (scanDir, excludeDirPaths) => await ipc.file.listMediaCandidates(scanDir, excludeDirPaths),
   savePaths: async (scanDir, targetDir) => {
     const currentPaths = config?.paths;
     if (!currentPaths) {

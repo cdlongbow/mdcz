@@ -45,7 +45,7 @@ const normalizeAmazonImageUrl = (value: string): string | null => {
   if (!trimmed?.includes(AMAZON_IMAGE_HOST) || !/\.(?:jpe?g|png)(?:$|[?#])/iu.test(trimmed)) {
     return null;
   }
-  return trimmed;
+  return trimmed.replace(/\._[A-Z0-9_,]+_\.(jpe?g|png)([?#].*)?$/iu, "._AC_SL1500_.$1$2");
 };
 
 const normalizeAmazonDetailPath = (value: string): string | null => {
@@ -54,6 +54,10 @@ const normalizeAmazonDetailPath = (value: string): string | null => {
   }
 
   const trimmed = value.trim();
+  if (/^[A-Z0-9]{10}$/u.test(trimmed)) {
+    return `/dp/${trimmed}`;
+  }
+
   const match = trimmed.match(/\/dp\/([A-Z0-9]{10})/u);
   if (match) {
     return `/dp/${match[1]}`;
@@ -66,6 +70,11 @@ const normalizeAmazonDetailPath = (value: string): string | null => {
   } catch {
     return null;
   }
+};
+
+const extractAsinFromDetailPath = (detailPath: string): string | null => {
+  const match = detailPath.match(/^\/dp\/([A-Z0-9]{10})$/u);
+  return match ? match[1] : null;
 };
 
 export class AmazonJpImageService {
@@ -88,6 +97,12 @@ export class AmazonJpImageService {
     const session = this.networkClient.createSession({
       cookieJar: new InMemoryCookieJar(),
     });
+
+    const directDetailPath = normalizeAmazonDetailPath(searchTitle);
+    if (directDetailPath) {
+      return this.enhanceFromDirectDetailPath(session, directDetailPath, currentPoster);
+    }
+
     const searchUrl = this.buildBlackCurtainUrl(`/s?k=${encodeAmazonKeyword(searchTitle)}&ref=nb_sb_noss`);
 
     let html: string;
@@ -104,7 +119,12 @@ export class AmazonJpImageService {
       return { upgraded: false, reason: "搜索无结果" };
     }
 
+    const searchResultCount = this.countSearchResultCards(html);
     const detailCandidates = this.extractDetailCandidates(html, searchTitle);
+    if (detailCandidates.length === 0) {
+      return { upgraded: false, reason: searchResultCount > 0 ? "未找到匹配商品" : "搜索无结果" };
+    }
+
     let hadUnreachableImage = false;
 
     for (const candidate of detailCandidates) {
@@ -129,8 +149,52 @@ export class AmazonJpImageService {
 
     return {
       upgraded: false,
-      reason: hadUnreachableImage ? "图片链接校验失败" : "搜索无结果",
+      reason: hadUnreachableImage ? "图片链接校验失败" : "Amazon 商品页无法读取",
     };
+  }
+
+  private async enhanceFromDirectDetailPath(
+    session: NetworkSession,
+    detailPath: string,
+    currentPoster: string | undefined,
+  ): Promise<AmazonJpPosterEnhanceResult> {
+    const directImageUrl = await this.fetchDetailPoster(session, detailPath, { useEligibilityGate: true });
+    const imageUrl = directImageUrl ?? (await this.fetchPosterViaAsinSearch(session, detailPath));
+    if (!imageUrl) {
+      return { upgraded: false, reason: "Amazon 商品页无法读取" };
+    }
+
+    const reachable = await this.isImageReachable(imageUrl);
+    if (!reachable) {
+      this.logger.warn(`Amazon detail image is not reachable for "${detailPath}" (${imageUrl})`);
+      return { upgraded: false, reason: "图片链接校验失败" };
+    }
+
+    return {
+      poster_url: imageUrl,
+      upgraded: imageUrl !== currentPoster,
+      reason: imageUrl === currentPoster ? "已命中相同海报" : "已升级为Amazon商品海报",
+    };
+  }
+
+  private async fetchPosterViaAsinSearch(session: NetworkSession, detailPath: string): Promise<string | null> {
+    const asin = extractAsinFromDetailPath(detailPath);
+    if (!asin) {
+      return null;
+    }
+
+    let html: string;
+    try {
+      html = await session.getText(this.buildBlackCurtainUrl(`/s?k=${asin}&ref=nb_sb_noss`), {
+        headers: AMAZON_HEADERS,
+      });
+    } catch (error) {
+      this.logger.warn(`Amazon ASIN search failed for "${asin}": ${toErrorMessage(error)}`);
+      return null;
+    }
+
+    const candidate = this.extractAsinCandidate(html, asin);
+    return candidate ? this.fetchDetailPoster(session, candidate.detailPath) : null;
   }
 
   private getSkipReason(currentPoster: string | undefined, posterSource?: Website): string | null {
@@ -169,6 +233,10 @@ export class AmazonJpImageService {
     return url.toString();
   }
 
+  private countSearchResultCards(html: string): number {
+    return load(html)('div[data-component-type="s-search-result"][data-asin]').length;
+  }
+
   private extractDetailCandidates(html: string, title: string): DetailCandidate[] {
     const $ = load(html);
     const expectedTitle = normalizeCompareText(title);
@@ -203,6 +271,30 @@ export class AmazonJpImageService {
     return matches.slice(0, 4);
   }
 
+  private extractAsinCandidate(html: string, asin: string): DetailCandidate | null {
+    const $ = load(html);
+    const cards = $('div[data-component-type="s-search-result"][data-asin]');
+
+    for (const card of cards.toArray()) {
+      const cardAsin = ($(card).attr("data-asin") ?? "").trim();
+      if (cardAsin !== asin) {
+        continue;
+      }
+
+      const detailPath = this.extractDetailPath($, card, cardAsin);
+      if (!detailPath) {
+        continue;
+      }
+
+      return {
+        detailPath,
+        detailTitle: normalizeWhitespace($(card).find("h2 a span, h2 span").first().text()),
+      };
+    }
+
+    return null;
+  }
+
   private extractDetailPath(
     $: ReturnType<typeof load>,
     card: Parameters<ReturnType<typeof load>>[0],
@@ -225,8 +317,14 @@ export class AmazonJpImageService {
     return null;
   }
 
-  private async fetchDetailPoster(session: NetworkSession, detailPath: string): Promise<string | null> {
-    const detailUrl = new URL(detailPath, AMAZON_ORIGIN).toString();
+  private async fetchDetailPoster(
+    session: NetworkSession,
+    detailPath: string,
+    options: { useEligibilityGate?: boolean } = {},
+  ): Promise<string | null> {
+    const detailUrl = options.useEligibilityGate
+      ? this.buildBlackCurtainUrl(detailPath)
+      : new URL(detailPath, AMAZON_ORIGIN).toString();
 
     let html: string;
     try {
@@ -269,12 +367,17 @@ export class AmazonJpImageService {
       return oldHires;
     }
 
+    const dynamicImage = this.extractDynamicImageUrl(node.attr("data-a-dynamic-image") ?? "");
+    if (dynamicImage) {
+      return dynamicImage;
+    }
+
     const src = normalizeAmazonImageUrl(node.attr("src") ?? "");
     if (src) {
       return src;
     }
 
-    return this.extractDynamicImageUrl(node.attr("data-a-dynamic-image") ?? "");
+    return null;
   }
 
   private extractDynamicImageUrl(value: string): string | null {

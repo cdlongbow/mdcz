@@ -75,6 +75,7 @@ export type AmazonPosterScanItem = {
   nfoPath: string;
   directory: string;
   title: string;
+  searchTitle: string;
   number: string;
   currentPosterPath: string | null;
   currentPosterWidth: number;

@@ -105,7 +105,7 @@ export const createFileHandlers = (
         }
       },
     ),
-    [IpcChannel.File_ListMediaCandidates]: t.procedure.input<{ dirPath?: string }>().action(
+    [IpcChannel.File_ListMediaCandidates]: t.procedure.input<{ dirPath?: string; excludeDirPaths?: string[] }>().action(
       async ({
         input,
       }): Promise<{
@@ -114,13 +114,21 @@ export const createFileHandlers = (
       }> => {
         try {
           const dirPath = input?.dirPath?.trim();
+          const excludeDirPaths =
+            input?.excludeDirPaths?.map((path) => path.trim()).filter((path): path is string => Boolean(path)) ?? [];
           if (!dirPath) {
             throw createIpcError(IpcErrorCode.DIRECTORY_NOT_FOUND, "Directory path is required");
           }
 
           await assertDirectory(dirPath);
 
-          const discoveredPaths = await listVideoFiles(dirPath, true, DEFAULT_VIDEO_EXTENSIONS);
+          const discoveredPaths = await listVideoFiles(
+            dirPath,
+            true,
+            DEFAULT_VIDEO_EXTENSIONS,
+            undefined,
+            excludeDirPaths,
+          );
           const uniquePaths = [...new Set(discoveredPaths.filter((filePath) => isPrimaryVideoFileName(filePath)))];
           const candidates: MediaCandidate[] = [];
 

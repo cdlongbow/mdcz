@@ -25,7 +25,7 @@ export interface CandidateScanResult {
 
 export interface WorkbenchSetupPort {
   browseDirectory(kind: "scan" | "target", currentPath: string): Promise<string | null>;
-  scanCandidates(scanDir: string): Promise<CandidateScanResult>;
+  scanCandidates(scanDir: string, excludeDirPaths?: readonly string[]): Promise<CandidateScanResult>;
   savePaths(scanDir: string, targetDir: string): Promise<void>;
   isServer?: boolean;
   suggestDirectory?: (input: { kind: "scan" | "target"; path: string }) => Promise<ServerPathSuggestResponse>;
@@ -140,8 +140,8 @@ export function WorkbenchSetupAdapter({
 
       try {
         const [primaryResult, ...extraResults] = await Promise.all([
-          port.scanCandidates(trimmedDir),
-          ...scanPlan.extraScanDirs.map((dirPath) => port.scanCandidates(dirPath)),
+          port.scanCandidates(trimmedDir, scanPlan.excludeDirPaths),
+          ...scanPlan.extraScanDirs.map((dirPath) => port.scanCandidates(dirPath, scanPlan.excludeDirPaths)),
         ]);
         const nextCandidates = mergeMediaCandidates(
           primaryResult.candidates,
